@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-theme="green">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>GREEN TERMINAL — analysis · automation · execution</title>
+    <meta
+      name="description"
+      content="One terminal for chart analysis, strategy automation and execution. Indicators, a declarative automation DSL, vectorized backtesting and risk-gated paper execution."
+    />
+    <link rel="stylesheet" href="/src/styles/terminal.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307100b'/%3E%3Cpath d='M9 22V10M9 10l6 4 6-4v12' stroke='%233ee08f' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div id="boot" class="boot">
+      <div class="boot__inner">
+        <div class="boot__mark">▮▮▮ GREEN TERMINAL</div>
+        <pre id="boot-log" class="boot__log"></pre>
+      </div>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header id="topbar" class="topbar"></header>
+
+      <main class="workspace">
+        <aside id="watchlist" class="dock dock--left"></aside>
+
+        <section class="stage">
+          <div id="chart" class="chart-wrap"></div>
+          <div id="console" class="console"></div>
+        </section>
+
+        <aside id="dock" class="dock dock--right"></aside>
+      </main>
+
+      <footer id="statusbar" class="statusbar"></footer>
+    </div>
+
+    <script type="module" src="/src/app/main.js"></script>
+    <noscript>
+      <p style="padding: 24px; color: #3ee08f; font-family: monospace">
+        GREEN TERMINAL requires JavaScript — the chart, automation engine and backtester
+        all run locally in your browser.
+      </p>
+    </noscript>
+  </body>
+</html>
