@@ -2751,7 +2751,14 @@ async function runSwitchProvider(name) {
     // otherwise fall back to the catalog's first row.
     const pending = state.pendingShellSymbol;
     const restored = pending && state.instruments.some((i) => i.symbol === pending);
-    state.symbol = restored ? pending : state.instruments[0].symbol;
+    // Keyless demo first open: prefer GOLD (XAU/USD-style flagship) over
+    // whatever happens to be catalog row 0. Saved workspace still wins.
+    let first = state.instruments[0] && state.instruments[0].symbol;
+    if (!restored && state.provider === "demo") {
+      const gold = state.instruments.find((i) => i.symbol === "DEMO:GOLD");
+      if (gold) first = gold.symbol;
+    }
+    state.symbol = restored ? pending : first;
     if (restored) {
       state.pendingShellSymbol = null;
       const input = $("symbol");

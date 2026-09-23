@@ -30,12 +30,15 @@ _TF_SECONDS = {
 }
 
 # symbol -> (name, category, base price, per-bar log-return scale)
+# Insertion order IS the catalog / watchlist order (search() walks this map).
+# GOLD leads so a keyless first open lands on the XAU/USD-style flagship
+# instrument from the Phase 3-UI target screen — not Bitcoin.
 _UNIVERSE = {
-    "DEMO:BTC": ("Demo Bitcoin", "Crypto", 67000.0, 0.004),
-    "DEMO:SPX": ("Demo S&P 500", "Indices", 5600.0, 0.0012),
-    "DEMO:EURUSD": ("Demo Euro / Dollar", "Forex", 1.09, 0.0006),
-    "DEMO:AAPL": ("Demo Apple", "Stocks", 230.0, 0.0022),
     "DEMO:GOLD": ("Demo Gold", "Commodities", 2400.0, 0.0015),
+    "DEMO:EURUSD": ("Demo Euro / Dollar", "Forex", 1.09, 0.0006),
+    "DEMO:SPX": ("Demo S&P 500", "Indices", 5600.0, 0.0012),
+    "DEMO:AAPL": ("Demo Apple", "Stocks", 230.0, 0.0022),
+    "DEMO:BTC": ("Demo Bitcoin", "Crypto", 67000.0, 0.004),
     "DEMO:VIX": ("Demo Volatility", "Volatility", 14.0, 0.01),
 }
 
