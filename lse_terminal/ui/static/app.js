@@ -9483,6 +9483,8 @@ const SUBRAIL = {
   markets: [
     { id: "sub-mk-charts", label: "PRICE & CHARTS",
       go: () => $("rail-markets").click() },
+    { id: "sub-mk-flow", label: "ORDER FLOW",
+      go: () => { $("rail-markets").click(); showOrderFlowPage(); } },
     { id: "sub-mk-options", label: "OPTIONS",
       go: () => { $("rail-markets").click(); showOptionsPage(); } },
     { id: "sub-mk-news", label: "NEWS",
@@ -10563,9 +10565,87 @@ function showOptionsPage() {
   $("side").classList.add("hidden");
   $("charts").classList.add("hidden");
   $("lse-connect").classList.add("hidden");
+  if ($("orderflow")) $("orderflow").classList.add("hidden");
+  stopOrderFlowHost();
   $("optpage").classList.remove("hidden");
   optInit();
   optRefresh();
+}
+
+/* ── Phase 4: MARKET → ORDER FLOW — hosts the REAL EdgeDepth runtime ─────
+   Not a lookalike: #of-frame loads /edgedepth/ (official WASM build of
+   edgedepth-terminal). DOM / heatmap / tape / footprint all run inside
+   that engine. This shell only provides GREEN TERMINAL navigation, status
+   (gateway reachability + artifact readiness), and layout. */
+const ofState = { poll: 0, ready: false };
+
+function stopOrderFlowHost() {
+  if (ofState.poll) { clearInterval(ofState.poll); ofState.poll = 0; }
+  const fr = $("of-frame");
+  if (fr) fr.removeAttribute("src");
+  ofState.ready = false;
+}
+
+async function refreshOrderFlowStatus() {
+  const art = await fetch("/api/edgedepth/artifacts").then(r => r.json()).catch(() => null);
+  const gw = await fetch("/api/edgedepth/status").then(r => r.json()).catch(() => null);
+  const set = (id, val, cls) => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = val;
+    el.classList.remove("on", "warn", "off");
+    if (cls) el.classList.add(cls);
+  };
+  const ready = !!(art && art.ready);
+  const gwOn = !!(gw && (gw.reachable || gw.state === "CONNECTED"));
+  set("of-source", "EDGEDEPTH GATEWAY", gwOn ? "on" : "warn");
+  set("of-gw", gwOn ? "LIVE" : ((gw && gw.state) || "OFFLINE"), gwOn ? "on" : "off");
+  set("of-art", ready ? "RUNTIME READY" : "RUNTIME ARTIFACTS MISSING",
+      ready ? "on" : "off");
+  set("of-sym", state.symbol || "—");
+  const missing = art && art.present
+    ? Object.entries(art.present).filter(([, ok]) => !ok).map(([k]) => k)
+    : ["index.js", "index.wasm", "index.data"];
+  const banner = $("of-banner");
+  if (banner) {
+    if (!ready) {
+      banner.classList.remove("hidden");
+      $("of-banner-title").textContent = "EDGEDEPTH RUNTIME NOT LOADED";
+      $("of-banner-detail").textContent =
+        "Order Flow hosts the official EdgeDepth WASM build (DOM, heatmap, " +
+        "tape, footprint). Missing: " + missing.join(", ") +
+        ". Build third_party/edgedepth-terminal (see edgedepth/README.md). " +
+        "No simulated depth is substituted.";
+    } else {
+      banner.classList.add("hidden");
+    }
+  }
+  const fr = $("of-frame");
+  if (fr && ready && !fr.getAttribute("src")) {
+    // Real EdgeDepth client; symbol via query if router expects it.
+    const sym = (state.symbol || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    fr.src = "/edgedepth/shell.html" + (sym ? ("?symbol=" + sym) : "");
+    ofState.ready = true;
+  }
+  if (fr && !ready) fr.removeAttribute("src");
+}
+
+function showOrderFlowPage() {
+  subrailMark("sub-mk-flow");
+  document.title = "Order Flow · GREEN TERMINAL";
+  // Same chrome rules as PRICE & CHART (sidebar stays for symbol sync).
+  setSidebar(true);
+  $("optpage").classList.add("hidden");
+  $("scrpage").classList.add("hidden");
+  $("news").classList.add("hidden");
+  $("charts").classList.add("hidden");
+  $("lse-connect").classList.add("hidden");
+  stopOrderFlowHost();
+  $("orderflow").classList.remove("hidden");
+  refreshOrderFlowStatus();
+  if (!ofState.poll) ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
+  // Reuse instrument header for L1 context above the EdgeDepth surface.
+  refreshInstrumentBarSoon();
 }
 
 /* ---------- MARKETS > NEWS: the globe ---------------------------------
@@ -11411,6 +11491,8 @@ async function newsBuildGlobe() {
 }
 
 function showNewsPage(ctx) {
+  if ($("orderflow")) $("orderflow").classList.add("hidden");
+  stopOrderFlowHost();
   // The same NEWS page is reachable from MARKETS and from ECONOMIC (news and
   // the economic calendar overlap), so mark whichever subrail it was opened
   // from and hide every other section regardless of the entry point.
@@ -12423,6 +12505,7 @@ function setupRail() {
     $("optpage").classList.add("hidden");
     $("scrpage").classList.add("hidden");
     $("news").classList.add("hidden");
+    if ($("orderflow")) $("orderflow").classList.add("hidden");
     $("backtest").classList.add("hidden");
     $("mydata").classList.add("hidden");
     $("econcal").classList.add("hidden");
@@ -17707,6 +17790,8 @@ const SCR_VIEWS = {
 const SCR_ROW_H = 26;
 
 function showScreenerPage() {
+  if ($("orderflow")) $("orderflow").classList.add("hidden");
+  stopOrderFlowHost();
   subrailMark("sub-mk-screener");
   document.title = "Screener · LSE Terminal";
   // Full-page like OPTIONS/NEWS: the watchlist is chart context, hide it.

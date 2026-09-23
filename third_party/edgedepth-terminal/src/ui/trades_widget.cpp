@@ -1,0 +1,267 @@
+#include "ui/trades_widget.h"
+#include "core/display_time_zone.h"
+#include "core/stream_presence.h"
+#include "rendering/theme.h"
+#include "imgui.h"
+#include <algorithm>
+#include <cstdio>
+
+TradesWidget::TradesWidget(const Terminal::Pair& pair, const AppContext& ctx, const PriceFormatter& fmt)
+    : pair_(pair)
+    , title_(std::string("     Trades  ") + widget_symbol_label(pair.symbol) + "###trades_" + pair.exchange + "_" + pair.symbol)
+    , stream_key_{pair, Terminal::Stream::Trades, 0}
+    , ctx_(ctx)
+    , fmt_(fmt)
+{
+    trade_flash_times_.fill(0.0f);
+    trade_alphas_.fill(0.0f);
+    StreamHandler<Terminal::Trade> handler{
+        .widget_ptr = this,
+        .callback = [](void* ptr, const Terminal::Trade& t) {
+            static_cast<TradesWidget*>(ptr)->handle_trade(t);
+        }
+    };
+    subscribed_streams_ = &ctx_.stream_mgr();
+    subscribed_streams_->subscribe_trades(stream_key_, handler);
+}
+
+TradesWidget::~TradesWidget() {
+    if (subscribed_streams_) subscribed_streams_->unsubscribe_trades(stream_key_, this);
+}
+
+void TradesWidget::refresh_instrument() {
+    const PriceFormatter f =
+        SymbolRegistry::instance().get_formatter(pair_.exchange, pair_.symbol);
+    if (!f.resolved) return;
+    if (f.price_precision == fmt_.price_precision &&
+        f.qty_precision   == fmt_.qty_precision &&
+        fmt_.resolved) return;
+    fmt_ = f;
+    // The tape holds the raw trades, so the visible rows can be re-printed at
+    // the real precision instead of being thrown away.
+    const size_t count = std::min(trade_count_, MAX_TRADES);
+    for (size_t i = 0; i < count; ++i) {
+        RowText& txt = row_text_[i];
+        snprintf(txt.price, sizeof(txt.price), fmt_.price_fmt, trades_[i].price);
+        snprintf(txt.qty,   sizeof(txt.qty),   fmt_.qty_fmt,   trades_[i].qty);
+    }
+}
+
+// For data-driven events.
+void TradesWidget::handle_trade(const Terminal::Trade& trade) {
+    // Provisional precision until the registry answers: the tape is the one
+    // widget that always has a price in hand, and printing every print of a
+    // sub-cent perp as "0.24" is worse than a magnitude-derived guess.
+    if (!fmt_.resolved && trade.price > 0.0) {
+        fmt_ = PriceFormatter::provisional_for_price(trade.price);
+    }
+    const size_t slot = trade_count_ % MAX_TRADES;
+    trades_[slot] = trade;
+    // Format ONCE at insert - trades are immutable (see RowText).
+    RowText& txt = row_text_[slot];
+    snprintf(txt.price, sizeof(txt.price), fmt_.price_fmt, trade.price);
+    snprintf(txt.qty, sizeof(txt.qty), fmt_.qty_fmt, trade.qty);
+    format_trade_time(slot);
+    formatted_time_zone_generation_ = DisplayTimeZone::instance().generation();
+    trade_count_++;
+    // Rolling qty EMA for "big print" detection (slow alpha - stable baseline)
+    qty_ema_ = (qty_ema_ <= 0.0) ? trade.qty : qty_ema_ * 0.98 + trade.qty * 0.02;
+}
+
+void TradesWidget::update() {  // Calculate statistics if enabled
+    auto& time_zone = DisplayTimeZone::instance();
+    if (formatted_time_zone_generation_ != time_zone.generation()) {
+        const size_t count = std::min(trade_count_, MAX_TRADES);
+        for (size_t i = 0; i < count; ++i) {
+            const size_t slot = (trade_count_ - 1 - i) % MAX_TRADES;
+            format_trade_time(slot);
+        }
+        formatted_time_zone_generation_ = time_zone.generation();
+    }
+    // Track new trades (newest rendered at top, no scroll needed)
+    if (trade_count_ > last_rendered_count_) {
+        last_rendered_count_ = trade_count_;
+    }
+}
+
+void TradesWidget::format_trade_time(size_t slot) {
+    if (!DisplayTimeZone::instance().format(trades_[slot].timestamp_ms,
+                                             TimeZoneFormat::TimeSeconds,
+                                             row_text_[slot].time,
+                                             sizeof(row_text_[slot].time))) {
+        snprintf(row_text_[slot].time, sizeof(row_text_[slot].time), "--:--:--");
+    }
+}
+
+void TradesWidget::calculate_statistics() {
+    float current_time = ImGui::GetTime();
+    constexpr float WINDOW_SECONDS = 60.0f;
+    volume_buy_1m_ = 0.0;
+    volume_sell_1m_ = 0.0;
+    size_t recent_trades = 0;
+    size_t count_to_check = std::min(trade_count_, MAX_TRADES);
+    for (size_t i = 0; i < count_to_check; ++i) {
+        size_t idx = (trade_count_ - 1 - i) % MAX_TRADES;
+        const auto& trade = trades_[idx];
+        // Check if trade is within time window
+        float trade_time = static_cast<float>(trade.timestamp_ms) / 1000.0f;
+        float age = current_time - trade_time;
+        if (age > WINDOW_SECONDS) break;
+        recent_trades++;
+        if (trade.is_buy) {
+            volume_buy_1m_ += trade.qty;
+        } else {
+            volume_sell_1m_ += trade.qty;
+        }
+    }
+    // Calculate buy pressure (0.0 = all sells, 1.0 = all buys)
+    double total_volume = volume_buy_1m_ + volume_sell_1m_;
+    if (total_volume > 0.0) {
+        buy_pressure_ = static_cast<float>(volume_buy_1m_ / total_volume);
+    } else {
+        buy_pressure_ = 0.5f;
+    }
+    // Trades per second
+    trades_per_second_ = static_cast<size_t>(recent_trades / WINDOW_SECONDS);
+}
+
+void TradesWidget::render_header() {
+    // Minimal header - just trade count
+    ImGui::Text("%zu trades", std::min(trade_count_, MAX_TRADES));
+}
+
+void TradesWidget::render_table() {
+    // A tape that has never printed looks identical to a broken app: column
+    // headers over nothing, with no clue whose fault it is. The terminal
+    // already knows the difference, and knows it about five seconds before the
+    // gateway logs its own warning. Four other surfaces already say so from the
+    // same detector; say it here too, because this is the panel a stranger
+    // stares at first. Keyed on frame absence rather than entitlements, since
+    // bare mode defaults to Pro and cannot tell the feeds apart.
+    //
+    // Replaces the table rather than adding a row to it: the note needs the
+    // panel width, and inside the table it would wrap to the PRICE column and
+    // be clipped at that column's edge. Column headers over nothing carry no
+    // information anyway, and the moment one trade arrives absent() goes false
+    // and the table comes back.
+    if (trade_count_ == 0 &&
+        StreamPresence::instance().absent(static_cast<uint32_t>(Terminal::Stream::Trades))) {
+        const float ww = ImGui::GetContentRegionAvail().x;
+        const float pad = 10.0f;
+        ImGui::PushFont(Theme::Fonts::label());
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Tokens::TX3);
+        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + pad, ImGui::GetCursorPosY() + pad));
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ww - pad * 2.0f);
+        ImGui::TextUnformatted(
+            "No trades received. The feed is connected but its trade stream has "
+            "not delivered anything, which some networks block. The tape is "
+            "waiting, not broken.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+        return;
+    }
+
+    // .tape-* - mono numerics, hairline-free dense rows, micro-label header
+    ImGui::PushFont(Theme::Fonts::mono_sm());
+    const float row_h = 18.0f;
+    const float pad_y = std::max(0.0f, (row_h - ImGui::GetFontSize()) * 0.5f);
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(8.0f, pad_y));
+
+    const ImGuiTableFlags flags = ImGuiTableFlags_ScrollY;
+    if (!ImGui::BeginTable("TradesTable", 3, flags)) {
+        ImGui::PopStyleVar();
+        ImGui::PopFont();
+        return;
+    }
+
+    ImGui::TableSetupColumn("PRICE", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+    ImGui::TableSetupColumn("QTY",   ImGuiTableColumnFlags_WidthStretch, 1.0f);
+    ImGui::TableSetupColumn("TIME",  ImGuiTableColumnFlags_WidthFixed, 72.0f);
+    ImGui::TableSetupScrollFreeze(0, 1);
+
+    // Custom header - uppercase micro-labels, TX4 (PRICE left, QTY/TIME right)
+    {
+        ImGui::TableNextRow(ImGuiTableRowFlags_Headers, 20.0f);
+        ImGui::PushFont(Theme::Fonts::label());
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Tokens::TX4);
+        auto head = [](int col, const char* t, bool right) {
+            ImGui::TableSetColumnIndex(col);
+            if (right) {
+                const float w = ImGui::GetContentRegionAvail().x;
+                const float tw = ImGui::CalcTextSize(t).x;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (w > tw ? w - tw : 0.0f));
+            }
+            ImGui::TextUnformatted(t);
+        };
+        head(0, "PRICE", false);
+        head(1, "QTY", true);
+        head(2, "TIME", true);
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+    }
+
+    // Render trades (most recent first)
+    const size_t display_count = std::min(trade_count_, MAX_TRADES);
+    for (size_t i = 0; i < display_count; ++i) {
+        const size_t idx = (trade_count_ - 1 - i) % MAX_TRADES;
+        render_trade_row(trades_[idx], row_text_[idx]);
+    }
+
+    ImGui::EndTable();
+    ImGui::PopStyleVar();
+    ImGui::PopFont();
+}
+
+void TradesWidget::render_trade_row(const Terminal::Trade& trade, const RowText& txt) {
+    ImGui::TableNextRow(ImGuiTableRowFlags_None, 18.0f);
+
+    // Outsized print - brand-soft wash (design: .tape-row.big)
+    if (qty_ema_ > 0.0 && trade.qty > qty_ema_ * 8.0) {
+        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                               Theme::u32(Theme::Tokens::BRAND_SOFT));
+    }
+
+    const ImVec4& side = trade.is_buy ? Theme::Tokens::UP : Theme::Tokens::DOWN;
+
+    // PRICE - sign-colored, left
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextColored(side, "%s", txt.price);
+
+    // QTY - sign-colored, right
+    ImGui::TableSetColumnIndex(1);
+    {
+        const float w = ImGui::GetContentRegionAvail().x;
+        const float tw = ImGui::CalcTextSize(txt.qty).x;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (w > tw ? w - tw : 0.0f));
+        ImGui::TextColored(side, "%s", txt.qty);
+    }
+
+    // TIME - TX4, right
+    ImGui::TableSetColumnIndex(2);
+    {
+        const float w = ImGui::GetContentRegionAvail().x;
+        const float tw = ImGui::CalcTextSize(txt.time).x;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (w > tw ? w - tw : 0.0f));
+        ImGui::TextColored(Theme::Tokens::TX4, "%s", txt.time);
+    }
+}
+
+const char* TradesWidget::format_timestamp(int64_t unix_ms) const {
+    static char buf[16];
+    DisplayTimeZone::instance().format(unix_ms, TimeZoneFormat::TimeSeconds,
+                                       buf, sizeof(buf));
+    return buf;
+}
+
+void TradesWidget::render() {
+    if (!is_open) return;
+    // Use title_suffix_ for ImGui ID uniqueness (e.g. "##replay" during replay)
+    std::string window_title = title_suffix_.empty() ? title_ : title_ + title_suffix_;
+    if (!ImGui::Begin(window_title.c_str(), &is_open, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+    render_table();
+    ImGui::End();
+}

@@ -459,6 +459,30 @@ def my_ind(df, length=20):
       <pre id="lse-key-err" class="hidden"></pre>
     </div>
   </section>
+  <!-- Phase 4: MARKET → ORDER FLOW — hosts the REAL EdgeDepth WASM runtime
+       (third_party/edgedepth-terminal → static/edgedepth). The DOM, liquidity
+       heatmap, tape and footprint all execute inside that engine; this section
+       is only GREEN TERMINAL chrome + honest gateway/artifact status. -->
+  <section id="orderflow" class="hidden" aria-label="Order Flow workspace">
+    <div id="of-bar">
+      <span class="of-k">ORDER FLOW</span>
+      <span class="of-sep"></span>
+      <span class="of-k">SOURCE</span><span id="of-source" class="of-v">EDGEDEPTH GATEWAY</span>
+      <span class="of-k">GATEWAY</span><span id="of-gw" class="of-v off">OFFLINE</span>
+      <span class="of-k">RUNTIME</span><span id="of-art" class="of-v off">—</span>
+      <span class="of-k">SYMBOL</span><span id="of-sym" class="of-v">—</span>
+      <span class="of-flex"></span>
+      <a class="of-link" href="/edgedepth/shell.html" target="_blank" rel="opener">Open EdgeDepth full</a>
+    </div>
+    <div id="of-banner" class="hidden" role="status">
+      <div id="of-banner-title" class="of-bt">EDGEDEPTH RUNTIME NOT LOADED</div>
+      <div id="of-banner-detail" class="of-bd"></div>
+    </div>
+    <div id="of-stage">
+      <iframe id="of-frame" title="EdgeDepth order-flow engine" allow="cross-origin-isolated"
+              referrerpolicy="no-referrer"></iframe>
+    </div>
+  </section>
   <!-- Host for the ported manual backtester (mounted on demand). -->
   <section id="manual-backtest" class="hidden"></section>
   <section id="portfolio-backtest" class="hidden" aria-label="Portfolio backtesting">

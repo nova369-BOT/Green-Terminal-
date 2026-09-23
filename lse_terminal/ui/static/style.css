@@ -4092,3 +4092,85 @@ body { padding-bottom: 22px; }
   color: var(--dim, #7a8a80);
   opacity: 0.85;
 }
+
+
+/* ── Phase 4: ORDER FLOW (hosts real EdgeDepth WASM) ───────────────────── */
+#orderflow {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+}
+#orderflow.hidden { display: none !important; }
+#of-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--panel, var(--bg));
+  border-bottom: 1px solid var(--edge);
+  font: 11px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  color: var(--dim);
+  flex: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#of-bar .of-k {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  opacity: 0.7;
+}
+#of-bar .of-v { color: var(--text); }
+#of-bar .of-v.on { color: var(--up); }
+#of-bar .of-v.warn { color: var(--warn, #d9a441); }
+#of-bar .of-v.off { color: var(--dim); }
+#of-bar .of-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--edge);
+}
+#of-bar .of-flex { flex: 1; }
+#of-bar .of-link {
+  color: var(--dim);
+  text-decoration: none;
+  border: 1px solid var(--edge);
+  padding: 3px 8px;
+  border-radius: 2px;
+}
+#of-bar .of-link:hover { color: var(--text); border-color: var(--dim); }
+#of-banner {
+  flex: none;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--panel, #111) 92%, #000);
+  border-bottom: 1px solid var(--edge);
+}
+#of-banner.hidden { display: none !important; }
+#of-banner .of-bt {
+  font: 600 13px/1.3 var(--sans, system-ui, sans-serif);
+  color: var(--warn, #d9a441);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+#of-banner .of-bd {
+  font: 11px/1.5 var(--mono, ui-monospace, monospace);
+  color: var(--dim);
+  max-width: 960px;
+}
+#of-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #0b0e13;
+}
+#of-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #0b0e13;
+}

@@ -641,6 +641,15 @@ def create_app() -> FastAPI:
         # desktop app). Cost of no-store on localhost is zero.
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
+        # Phase 4: EdgeDepth WASM needs cross-origin isolation (SharedArrayBuffer
+        # / pthreads). Only the EdgeDepth surface gets COOP/COEP so the rest of
+        # the shell is unaffected (audit Option B host rules).
+        path = request.url.path
+        if path.startswith("/edgedepth") or path.endswith((".wasm", ".data")):
+            response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+            response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+        if path.endswith(".wasm"):
+            response.headers["Content-Type"] = "application/wasm"
         return response
     app.state.registry = reg
     app.state.user_indicators = user_indicators
@@ -8074,6 +8083,33 @@ def create_app() -> FastAPI:
             md.shutdown()
         except Exception:
             pass
+
+    # Phase 4: serve the REAL EdgeDepth runtime artifacts (index.wasm/js/data)
+    # under /edgedepth — never a lookalike DOM/heatmap.
+    _EDGE_DIR = _STATIC / "edgedepth"
+    _EDGE_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/edgedepth", StaticFiles(directory=str(_EDGE_DIR), html=True),
+              name="edgedepth")
+
+    @app.get("/api/edgedepth/artifacts")
+    def edgedepth_artifacts():
+        """Which real EdgeDepth build outputs are present. No fabrication."""
+        names = ["index.html", "shell.html", "index.js", "index.wasm",
+                 "index.data", "coi-serviceworker.js", "edgedepth-config.js"]
+        present = {n: (_EDGE_DIR / n).is_file() for n in names}
+        sizes = {n: (_EDGE_DIR / n).stat().st_size
+                 for n, ok in present.items() if ok}
+        ready = bool(present.get("index.js") and present.get("index.wasm")
+                     and present.get("index.data"))
+        return {
+            "present": present,
+            "sizes": sizes,
+            "ready": ready,
+            "source": "third_party/edgedepth-terminal",
+            "note": ("Artifacts are produced by the official EdgeDepth "
+                     "Emscripten build (see edgedepth/README.md). Missing "
+                     "files are reported — never replaced with simulated UI."),
+        }
 
     app.mount("/", StaticFiles(directory=str(_STATIC), html=True), name="ui")
     return app

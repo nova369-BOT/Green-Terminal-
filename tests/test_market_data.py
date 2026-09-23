@@ -284,3 +284,37 @@ def test_shell_waiting_markers():
     assert "dw-title" in html
     assert "WAITING FOR MARKET DATA" in html
     assert "ts-edge" in html
+
+
+def test_edgedepth_artifacts_endpoint(client: TestClient):
+    """Real EdgeDepth build outputs are reported honestly (never faked)."""
+    r = client.get("/api/edgedepth/artifacts")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["source"] == "third_party/edgedepth-terminal"
+    assert "present" in body and "ready" in body
+    # coi-serviceworker ships with the integration; wasm may be unbuilt.
+    assert body["present"].get("coi-serviceworker.js") is True
+    assert body["ready"] is (body["present"].get("index.js")
+                             and body["present"].get("index.wasm")
+                             and body["present"].get("index.data"))
+
+
+def test_orderflow_workspace_markers():
+    """MARKET → ORDER FLOW section hosts the real EdgeDepth iframe."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "lse_terminal/ui/static/index.html").read_text()
+    app = (root / "lse_terminal/ui/static/app.js").read_text()
+    assert 'id="orderflow"' in html
+    assert 'id="of-frame"' in html
+    assert "EDGEDEPTH GATEWAY" in html
+    assert "showOrderFlowPage" in app
+    assert "sub-mk-flow" in app
+    # No lookalike DOM ladder in the shell (real engine lives in the iframe).
+    assert "of-ladder" not in html
+    # Vendored authoritative EdgeDepth source present.
+    assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
+    assert (root / "third_party/edgedepth-terminal/src/core/heatmap_manager.cpp").is_file()
+    assert (root / "third_party/edgedepth-terminal/protos/messages.proto").is_file()
+    assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
