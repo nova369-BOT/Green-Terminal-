@@ -140,10 +140,29 @@ function updateInstrumentBar() {
   ses.textContent = sesText;
 
   const live = $("ib-live");
-  const wsUp = state.ws && state.ws.readyState === 1;
-  live.textContent = wsUp ? "LIVE" : "NO STREAM";
-  live.classList.toggle("on", !!wsUp);
-  live.classList.toggle("off", !wsUp);
+  // Phase 3: honest feed status from the chart bundle's market-data fabric.
+  // NEVER claim LIVE for a stale socket, delayed feed, or historical window.
+  let feed = null;
+  try {
+    if (window.LSEChart && typeof window.LSEChart.feedStatus === "function") {
+      feed = window.LSEChart.feedStatus(state.feedMode || "live");
+    }
+  } catch (e) { /* bundle without feedStatus */ }
+  if (feed && feed.label) {
+    live.textContent = feed.label; // "● LIVE" | "● DELAYED" | … (honest)
+    live.title = feed.detail || "Live feed";
+    const on = feed.status === "LIVE";
+    const warn = feed.status === "DELAYED" || feed.status === "RECONNECTING";
+    live.classList.toggle("on", on);
+    live.classList.toggle("off", !on && !warn);
+    live.classList.toggle("warn", warn);
+  } else {
+    // Fallback before the bundle exposes feedStatus: socket open only.
+    const wsUp = state.ws && state.ws.readyState === 1;
+    live.textContent = wsUp ? "LIVE" : "OFFLINE";
+    live.classList.toggle("on", !!wsUp);
+    live.classList.toggle("off", !wsUp);
+  }
 }
 
 // Keep the header in step with shell navigation and data pushes.
@@ -457,25 +476,62 @@ async function pollPrices() {
   finally { pricePollBusy = false; }
 }
 
+/* Phase 3: the shell shares ONE multiplexed market-data socket.
+   /api/market-data/ws — same protocol as the React chart's connection
+   (hello/subscribed/tick/status). Reconnect with backoff; no per-chart
+   reconnect logic. Legacy /api/ws stays for non-market consumers. */
+let _mdReconnectTimer = null;
+let _mdAttempt = 0;
 function connectStream() {
   if (state.ws) { state.ws.close(); state.ws = null; }
+  if (_mdReconnectTimer) { clearTimeout(_mdReconnectTimer); _mdReconnectTimer = null; }
   const syms = [state.symbol].filter(Boolean);
   if (!syms.length) return;
-  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${API_PREFIX}/api/ws` +
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${API_PREFIX}/api/market-data/ws` +
     `?provider=${encodeURIComponent(state.provider)}&symbols=${encodeURIComponent(syms.join(","))}`);
+  ws.onopen = () => {
+    if (state.ws !== ws) return;
+    _mdAttempt = 0;
+    // Belt-and-braces: query params already subscribe; this covers proxies
+    // that strip the query string on the upgrade.
+    try {
+      ws.send(JSON.stringify({ type: "subscribe", provider: state.provider, symbols: syms }));
+    } catch (e) { /* socket just opened; next tick will retry via reconnect */ }
+    refreshInstrumentBarSoon();
+  };
   ws.onmessage = (ev) => {
     // Ticks queued on a replaced stream (old provider/symbol set) must not
     // paint prices or extend candles after the switch.
     if (state.ws !== ws) return;
-    const m = JSON.parse(ev.data);
+    let m;
+    try { m = JSON.parse(ev.data); } catch (e) { return; }
     if (m.type === "error") {
       // "does not stream" is a capability, not a fault; stay quiet.
       if (!/does not stream/i.test(m.message || "")) status(`stream: ${m.message}`);
       return;
     }
-    if (m.type === "tick") onTick(m);
+    if (m.type === "hello" || m.type === "subscribed" || m.type === "status" ||
+        m.type === "pong" || m.type === "unsubscribed") {
+      refreshInstrumentBarSoon();
+      return;
+    }
+    if (m.type === "tick") {
+      state.lastTickAt = Date.now();
+      onTick(m);
+    }
   };
-  ws.onclose = () => { if (state.ws === ws) state.ws = null; };
+  ws.onclose = () => {
+    if (state.ws !== ws) return;
+    state.ws = null;
+    refreshInstrumentBarSoon();
+    // Exponential backoff reconnect (shared shell socket, not per-chart).
+    const delay = Math.min(30000, 500 * Math.pow(2, Math.min(_mdAttempt, 6)));
+    _mdAttempt += 1;
+    _mdReconnectTimer = setTimeout(() => {
+      _mdReconnectTimer = null;
+      if (!state.ws && state.symbol) connectStream();
+    }, delay);
+  };
   state.ws = ws;
 }
 

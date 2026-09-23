@@ -40,6 +40,9 @@ import { isMarketOpenForPair } from '@/lib/marketHours';
 import { initWorkspaceBridge } from '@/lib/workspaceBridge';
 import { api, invalidateSection } from '@/lib/api';
 import { toCustomIndicators, type EngineIndicatorPayload } from '@/lib/engineIndicators';
+import { getHistory, HistoryAbortedError } from '@/market-data/history';
+import { deriveStatus } from '@/market-data/status';
+import { getConnection } from '@/market-data/connection';
 import './index.css';
 
 // Converter handed up by ProChart once it has laid out its axes. The overlay
@@ -435,23 +438,19 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     const endIso = new Date(oldest.time - 1).toISOString();
     setIsLoadingMore(true);
     try {
-      const url =
-        `/api/candles?provider=${encodeURIComponent(provider)}` +
-        `&symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}` +
-        `&limit=5000&end=${encodeURIComponent(endIso)}`;
-      const res = await fetch(url);
-      if (!res.ok) return;
-      const data = await res.json();
-      const rows: any[] = data.candles || [];
+      // Phase 3: page through the shared HistoricalDataService (cache + dedupe
+      // + gap detection). End is exclusive of the oldest bar we already have.
+      const history = await getHistory().fetch({
+        provider,
+        symbol,
+        timeframe,
+        limit: 5000,
+        end: oldest.time - 1,
+      });
+      const rows = history.candles;
       if (!rows.length) return;
-      // Drop the row at `end` boundary duplicates already in the array.
       const known = new Set(candles.map((c) => c.time));
       const older: Candle[] = rows
-        .map(([ts, o, h, l, c, v]) => ({
-          time: ts < 1e12 ? ts * 1000 : ts,
-          open: o, high: h, low: l, close: c,
-          volume: v != null ? v : undefined,
-        }))
         .filter((c: Candle) => c.time < oldest.time && !known.has(c.time))
         .sort((a: Candle, b: Candle) => a.time - b.time);
       if (!older.length) return;
@@ -1492,6 +1491,39 @@ declare global {
   createRoot(el).render(<LayoutButton />);
 };
 (LSEChart as any).layoutStore = layoutStore;
+
+// ── Phase 3: feed status for #ib-live ──────────────────────────────────────
+// The shell polls this so the instrument bar never claims LIVE when the data
+// is historical, delayed, reconnecting or offline. mode: 'live' | 'historical' | 'replay'.
+(LSEChart as any).feedStatus = (mode: 'live' | 'historical' | 'replay' = 'live') => {
+  const view = deriveStatus({
+    mode,
+    conn: getConnection(),
+    providerHealth: null,
+  });
+  return {
+    status: view.status,
+    label: view.label,
+    tone: view.tone,
+    detail: view.detail,
+    lastTickAgeMs: view.lastTickAgeMs,
+    connection: getConnection().getState(),
+  };
+};
+(LSEChart as any).subscribeFeedStatus = (
+  cb: (s: import('@/market-data/status').StatusView & { connection: string }) => void,
+  mode: 'live' | 'historical' | 'replay' = 'live'
+) => {
+  const conn = getConnection();
+  const push = () => cb((LSEChart as any).feedStatus(mode));
+  push();
+  const offs = [conn.on('connection', push), conn.on('tick', push)];
+  const id = setInterval(push, 2000);
+  return () => {
+    offs.forEach((o: () => void) => o());
+    clearInterval(id);
+  };
+};
 window.LSEChart = LSEChart;
 window.LSEChartPanes = LSEChartPanes;
 window.LSEManualBacktest = LSEManualBacktest;

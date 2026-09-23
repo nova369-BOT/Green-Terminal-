@@ -645,6 +645,155 @@ def create_app() -> FastAPI:
     app.state.registry = reg
     app.state.user_indicators = user_indicators
 
+    # ── Phase 3: market-data fabric ─────────────────────────────────────
+    # One service owns adapters, shared stream hub, history cache, quality
+    # counters, and rate limits. Consumers (chart/scanner/research) read
+    # from these endpoints / the bus — never provider wire formats.
+    from lse_terminal.market_data import MarketDataService  # noqa: PLC0415
+    md = MarketDataService(reg)
+    app.state.market_data = md
+
+    def _md():
+        return md
+
+    @app.get("/api/market-data/capabilities")
+    def md_capabilities():
+        """Formal capability matrix. L2/L3 stay false until a verified feed exists."""
+        return md.capabilities_payload()
+
+    @app.get("/api/market-data/health")
+    def md_health(provider: str = ""):
+        """Per-provider connection health with real measured fields only."""
+        payload = md.health_payload()
+        if provider:
+            payload["providers"] = [r for r in payload["providers"]
+                                    if r.get("provider") == provider]
+            if not payload["providers"]:
+                raise HTTPException(404, f"unknown provider: {provider}")
+            payload["overall"] = payload["providers"][0].get("state", "DISCONNECTED")
+        return payload
+
+    @app.get("/api/market-data/quality")
+    def md_quality():
+        """Data-quality counters and recent DATA_ERROR samples."""
+        return md.health_payload() | {
+            "checks": [
+                "impossible_ohlc", "crossed_book", "duplicate_timestamp",
+                "timestamp_regression", "non_positive_price", "staleness",
+            ],
+            "recent": md.hub.recent_errors()[-50:],
+        }
+
+    @app.get("/api/market-data/bars")
+    def md_bars(provider: str, symbol: str, timeframe: str = "1h",
+                limit: int = 5000, start: str | None = None,
+                end: str | None = None):
+        """Historical bars through HistoryService: cache, quality, dedupe.
+        Shape matches /api/candles so the chart engine can switch freely.
+        """
+        ad = md.ensure_adapter(provider)
+        if ad is None:
+            raise HTTPException(404, f"unknown provider: {provider}")
+        res = md.history.fetch(
+            ad.provider, provider_name=provider, symbol=symbol,
+            timeframe=timeframe, limit=min(int(limit), 5000),
+            start=start, end=end,
+        )
+        if res.error and not res.candles:
+            raise HTTPException(502, f"candles failed: {res.error}")
+        return res.to_chart_payload()
+
+    @app.get("/api/market-data/instruments")
+    def md_instruments(provider: str, query: str = "", limit: int = 50):
+        """Instrument catalog via adapter (same search as /api/instruments)."""
+        ad = md.ensure_adapter(provider)
+        if ad is None:
+            raise HTTPException(404, f"unknown provider: {provider}")
+        try:
+            items = ad.provider.search(query, limit=min(int(limit), 5000))
+        except Exception as e:
+            raise HTTPException(502, f"search failed: {e}")
+        return [{
+            "gt_id": i.symbol,
+            "display_name": i.name or i.symbol,
+            "category": i.category,
+            "provider": provider,
+            "provider_symbols": {provider: i.symbol},
+            "live": bool(i.meta.get("live", True)),
+        } for i in items]
+
+    @app.websocket("/api/market-data/ws")
+    async def md_ws(websocket: WebSocket):
+        """Shared multiplexed market-data socket.
+
+        Protocol: client sends {type: subscribe|unsubscribe, symbols: [...]}
+        after connect (provider via query ?provider= or first subscribe).
+        Server pushes {type: tick|status|error, ...}. One upstream stream
+        per provider is shared across clients (refcounted in StreamHub).
+        """
+        from lse_terminal.market_data import ClientChannel  # noqa: PLC0415
+        await websocket.accept()
+        send_lock = asyncio.Lock()
+
+        async def send_msg(payload: dict) -> None:
+            async with send_lock:
+                await websocket.send_json(payload)
+
+        channel = ClientChannel(send_msg)
+        provider_hint = websocket.query_params.get("provider", "")
+        await md.hub.attach(channel)
+        await send_msg({
+            "type": "hello",
+            "provider": provider_hint,
+            "capabilities": md.capabilities_payload(),
+        })
+        if provider_hint:
+            # Optional immediate subscribe via ?symbols=A,B
+            syms = [s for s in websocket.query_params.get("symbols", "").split(",")
+                    if s.strip()]
+            if syms:
+                resp = await md.hub.subscribe(channel, provider_hint, syms)
+                await send_msg({"type": "subscribed", **resp})
+        try:
+            while True:
+                raw = await websocket.receive_json()
+                if not isinstance(raw, dict):
+                    continue
+                mtype = str(raw.get("type") or "").lower()
+                if mtype == "ping":
+                    await send_msg({"type": "pong", "ts_ms": int(time.time() * 1000)})
+                elif mtype == "subscribe":
+                    resp = await md.hub.subscribe(
+                        channel,
+                        str(raw.get("provider") or provider_hint or ""),
+                        list(raw.get("symbols") or []),
+                    )
+                    await send_msg({"type": "subscribed", **resp})
+                elif mtype == "unsubscribe":
+                    resp = await md.hub.unsubscribe(
+                        channel, list(raw.get("symbols") or []))
+                    await send_msg({"type": "unsubscribed", **resp})
+                elif mtype == "status":
+                    await send_msg({
+                        "type": "status",
+                        "state": md.hub.overall_state(),
+                        "providers": md.hub.health(),
+                    })
+                else:
+                    await send_msg({
+                        "type": "error",
+                        "message": f"unknown message type: {mtype!r}",
+                    })
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            try:
+                await send_msg({"type": "error", "message": str(e)[:200]})
+            except Exception:
+                pass
+        finally:
+            await md.hub.detach(channel)
+
     @app.get("/api/health")
     def health():
         # ui_version: newest mtime of the served UI CODE. The page polls it
@@ -758,6 +907,10 @@ def create_app() -> FastAPI:
         """Latest price/bid/ask for up to 50 symbols from the platform price
         board (/v1/prices). The watchlist polls this once a second instead of
         holding websocket subscriptions per row (plan cap: 16 concurrent)."""
+        # Per-provider rate limit (Phase 3): cost scales with symbols requested.
+        _cost = max(1, min(50, len([s for s in symbols.split(",") if s.strip()])) // 10)
+        if not md.rate_limits.check(provider, cost=_cost):
+            raise HTTPException(429, f"rate limited for provider {provider}")
         try:
             p = reg.get(provider)
         except ValueError as e:
@@ -813,10 +966,41 @@ def create_app() -> FastAPI:
             # Logos are decoration; a fetch hiccup must never error the UI.
             return {}
 
+    @app.get("/api/options-predicted")
+    def options_predicted(underlying: str, limit: int = 1):
+        """Server-side proxy for the options predicted-price vendor.
+
+        The vendor API key lives ONLY here (env LSE_OPTIONS_API_KEY with a
+        default for the single-tenant deploy). The frontend never sees it —
+        Phase 3 §23 security pass. Key must not appear in logs either.
+        """
+        if not underlying or not underlying.strip():
+            raise HTTPException(400, "underlying is required")
+        key = os.environ.get("LSE_OPTIONS_API_KEY",
+                             "71f880e1d2ef471664f3b6c04c6dc1e618f94e51f68c87522bc6dcbc0ca173a5")
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+        url = ("https://api.londonstrategicedge.com/options_predicted_price"
+               f"?underlying=eq.{urllib.parse.quote(underlying.strip())}"
+               f"&limit={max(1, min(int(limit), 20))}")
+        req = urllib.request.Request(url, headers={"x-api-key": key})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise HTTPException(502, f"options vendor HTTP {e.code}")
+        except Exception as e:
+            # Never log the key; message only.
+            raise HTTPException(502, f"options vendor failed: {e}")
+
     @app.get("/api/candles")
     def candles(provider: str, symbol: str, timeframe: str = "1h",
                 limit: int = 5000, indicators: str = "",
                 start: str | None = None, end: str | None = None):
+        # Per-provider rate limit (Phase 3): sliding window; over-budget → 429.
+        if not md.rate_limits.check(provider):
+            raise HTTPException(429, f"rate limited for provider {provider}")
         try:
             p = reg.get(provider)
             # start/end are ISO timestamps. Every provider's candles() already
@@ -7836,6 +8020,13 @@ def create_app() -> FastAPI:
     @app.on_event("shutdown")
     def _broker_shutdown():
         hub.shutdown()
+
+    @app.on_event("shutdown")
+    def _market_data_shutdown():
+        try:
+            md.shutdown()
+        except Exception:
+            pass
 
     app.mount("/", StaticFiles(directory=str(_STATIC), html=True), name="ui")
     return app

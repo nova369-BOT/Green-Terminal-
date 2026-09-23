@@ -3881,3 +3881,4 @@ html:not(.dark) #gd-side {
 #instrument-bar .ib-live { font-size: 10px; letter-spacing: 0.06em; margin-left: auto; }
 #instrument-bar .ib-live.on { color: var(--up); }
 #instrument-bar .ib-live.off { color: var(--dim); }
+#instrument-bar .ib-live.warn { color: var(--warn, #d9a441); }

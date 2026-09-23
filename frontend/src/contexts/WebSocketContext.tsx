@@ -1,15 +1,17 @@
 // ============================================================================
-// WebSocketContext.tsx - terminal stub for the website's live-feed context.
+// WebSocketContext.tsx — live tick context for the ported chart.
 //
-// Upstream, BTCandlestickChart subscribes to the site's central tick feed via
-// useLiveTick so the right edge of a live chart moves between candle closes.
-// The terminal is a local app with no live feed, and in manual backtesting the
-// chart is always mounted with a replay startDate, which is exactly the
-// condition under which the upstream chart disables its live-tick subscription
-// (enabled = !startDate && !externalRawCandles). This stub keeps the import
-// contract identical while always reporting "no tick, not connected", so the
-// ported chart takes its historical-only code path.
+// Phase 3: replaces the historical "no feed" stub. useLiveTick now reads the
+// shared market-data connection (refcounted per symbol). When the socket is
+// down, or `enabled` is false (manual backtest / replay startDate), it keeps
+// the original contract: { tick: null, isConnected: false } so the chart
+// takes its historical-only code path.
+//
+// Ticks are normalized to epoch SECONDS (central-feed convention the chart
+// already expects) without inventing prices — only real bus events surface.
 // ============================================================================
+
+import { useMarketFeed } from '@/market-data/hooks';
 
 export interface TickData {
   symbol: string;
@@ -20,9 +22,51 @@ export interface TickData {
   ts: number;
 }
 
+function toEpochSec(tsMs: number | undefined, recvMs: number): number {
+  const ms = tsMs && tsMs > 1e11 ? tsMs : recvMs;
+  return Math.floor(ms / 1000);
+}
+
 export const useLiveTick = (
-  _symbol: string | null,
-  _enabled: boolean = true
+  symbol: string | null,
+  enabled: boolean = true
 ): { tick: TickData | null; isConnected: boolean } => {
-  return { tick: null, isConnected: false };
+  const { tick, isConnected, quote } = useMarketFeed(symbol, undefined, enabled && !!symbol);
+
+  if (!enabled || !symbol || !tick || !isConnected) {
+    return { tick: null, isConnected: false };
+  }
+  if (tick.symbol && tick.symbol !== symbol) {
+    return { tick: null, isConnected };
+  }
+  const price =
+    typeof tick.price === 'number' && Number.isFinite(tick.price)
+      ? tick.price
+      : typeof quote?.price === 'number'
+        ? quote.price
+        : null;
+  if (price == null) {
+    // Connected but this frame had no price — do not fabricate one.
+    return { tick: null, isConnected };
+  }
+
+  const tsMs =
+    typeof tick.ts_ms === 'number'
+      ? tick.ts_ms
+      : typeof tick.ts === 'number'
+        ? tick.ts > 1e11
+          ? tick.ts
+          : tick.ts * 1000
+        : tick.recv_ms;
+
+  return {
+    tick: {
+      symbol: tick.symbol || symbol,
+      price,
+      bid: typeof tick.bid === 'number' ? tick.bid : quote?.bid,
+      ask: typeof tick.ask === 'number' ? tick.ask : quote?.ask,
+      ts: toEpochSec(tsMs, tick.recv_ms),
+    },
+    isConnected,
+  };
 };

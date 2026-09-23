@@ -482,13 +482,15 @@ const ProChart: React.FC<ProChartProps> = ({
 
     const fetchPrediction = async () => {
       try {
-        const API_BASE = 'https://api.londonstrategicedge.com';
-        const API_KEY = '71f880e1d2ef471664f3b6c04c6dc1e618f94e51f68c87522bc6dcbc0ca173a5';
-
+        // Phase 3 §23: the vendor key stays on the server. The chart only
+        // calls the local proxy — no secrets in the frontend bundle.
         const res = await fetch(
-          `${API_BASE}/options_predicted_price?underlying=eq.${underlying}&limit=1`,
-          { headers: { 'x-api-key': API_KEY } }
+          `/api/options-predicted?underlying=${encodeURIComponent(underlying)}&limit=1`
         );
+        if (!res.ok) {
+          setOptionsPdfData(null);
+          return;
+        }
         const data = await res.json();
         if (!data || data.length === 0) { setOptionsPdfData(null); return; }
 
