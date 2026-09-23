@@ -3882,3 +3882,172 @@ html:not(.dark) #gd-side {
 #instrument-bar .ib-live.on { color: var(--up); }
 #instrument-bar .ib-live.off { color: var(--dim); }
 #instrument-bar .ib-live.warn { color: var(--warn, #d9a441); }
+
+/* ═══ Phase 3-UI: Market → Price & Chart professional workspace ═══ */
+
+/* Chart stage: main column + right info rail side by side. */
+#chart-stage {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+#chart-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#charts {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Workspace actions (fullscreen / save / load / reset) — compact strip
+   aligned right under the instrument header. */
+#ws-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 3px 10px;
+  background: var(--panel, var(--bg));
+  border-bottom: 1px solid var(--edge);
+}
+#ws-controls.hidden { display: none; }
+.ws-btn {
+  font: 10px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 2px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.ws-btn:hover { color: var(--text); border-color: var(--up); }
+.ws-btn.active { color: var(--up); border-color: var(--up); }
+
+/* Right information rail: dense OHLC / market / session / technical. */
+#info-rail {
+  width: 210px;
+  flex: 0 0 210px;
+  overflow-y: auto;
+  border-left: 1px solid var(--edge);
+  background: var(--panel, var(--bg));
+  font: 11px/1.4 var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  color: var(--text);
+  user-select: none;
+  padding: 4px 0 12px;
+}
+#info-rail.hidden { display: none; }
+#info-rail .ir-sect { padding: 6px 10px 8px; border-bottom: 1px solid var(--edge); }
+#info-rail .ir-head {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+#info-rail .ir-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+}
+#info-rail .ir-row span { color: var(--dim); }
+#info-rail .ir-row b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-align: right;
+}
+#info-rail .ir-row b.up { color: var(--up); }
+#info-rail .ir-row b.down { color: var(--down); }
+#info-rail .ir-ind b { font-size: 10px; color: var(--accent, var(--up)); }
+
+/* Fullscreen: chart workspace takes the whole viewport, chrome stays. */
+body.ws-fullscreen #side,
+body.ws-fullscreen #ai-rail,
+body.ws-fullscreen #controls,
+body.ws-fullscreen #subrail,
+body.ws-fullscreen #acct-dock { display: none !important; }
+body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 0; z-index: 80; background: var(--bg); }
+body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
+body.ws-fullscreen #term-status { z-index: 90; }
+
+/* Bottom status strip: DATA · FEED · LATENCY · SESSION · SYMBOL · TF */
+#term-status {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px;
+  background: var(--panel, var(--bg));
+  border-top: 1px solid var(--edge);
+  font: 10px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  color: var(--dim);
+  z-index: 70;
+  user-select: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+#term-status .ts-cell { display: inline-flex; align-items: center; gap: 5px; }
+#term-status .ts-k {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  opacity: 0.7;
+}
+#term-status .ts-v { color: var(--text); font-variant-numeric: tabular-nums; }
+#term-status .ts-v.on { color: var(--up); }
+#term-status .ts-v.warn { color: var(--warn, #d9a441); }
+#term-status .ts-v.off { color: var(--dim); }
+#term-status .ts-right { margin-left: auto; }
+
+/* Give main room for the fixed status strip. */
+body { padding-bottom: 22px; }
+
+/* GREEN TERMINAL accent on the active rail item (restrained green). */
+.rail-btn.active {
+  box-shadow: inset 0 -2px 0 var(--up);
+  color: var(--text);
+}
+#subrail .subrail-btn.active {
+  color: var(--up);
+  border-bottom-color: var(--up);
+}
+
+/* Watchlist % change column (Phase 3-UI density). */
+#watchlist .wpricecol { display: flex; flex-direction: column; align-items: flex-end; gap: 0; min-width: 72px; }
+#watchlist .wchg {
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  line-height: 1.1;
+}
+#watchlist .wchg i.up, #watchlist .wprice.up { color: var(--up); font-style: normal; }
+#watchlist .wchg i.down, #watchlist .wprice.down { color: var(--down); font-style: normal; }
+#watchlist .wrow {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Watchlist change % column (Phase 3-UI density). */
+#watchlist .wrow { display: grid; grid-template-columns: auto 1fr auto auto; gap: 4px; align-items: center; }
+#watchlist .wpricecol { display: flex; flex-direction: column; align-items: flex-end; min-width: 70px; }
+#watchlist .wchgcol { min-width: 52px; text-align: right; }
+#watchlist .wchg {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+#watchlist .wchg.up { color: var(--up); }
+#watchlist .wchg.down { color: var(--down); }
+#watchlist .wspread { font-size: 9px; opacity: 0.75; }

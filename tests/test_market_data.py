@@ -203,3 +203,29 @@ def test_instruments_via_market_data(client: TestClient):
         assert "gt_id" in rows[0]
         # Provider IDs stay mapped; UI consumes gt_id / display_name.
         assert rows[0]["gt_id"].startswith("DEMO:")
+
+def test_demo_price_board_shape(client: TestClient):
+    """Demo board rows carry price/bid/ask/change for the watchlist — real
+    walk values, not UI-side fabrications."""
+    r = client.get("/api/prices", params={"provider": "demo",
+                                         "symbols": "DEMO:GOLD,DEMO:BTC"})
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert {x["symbol"] for x in rows} == {"DEMO:GOLD", "DEMO:BTC"}
+    for row in rows:
+        assert row["price"] and row["price"] > 0
+        assert row["bid"] < row["ask"]
+        assert "change_pct" in row
+
+
+def test_shell_phase3_ui_markers():
+    """Price & Chart shell must ship the Phase 3-UI workspace chrome."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1]
+            / "lse_terminal/ui/static/index.html").read_text()
+    for needle in (
+        "GREEN TERMINAL", "instrument-bar", "info-rail", "term-status",
+        "ws-controls", "chart-stage", "ib-live", "watchlist",
+        "chart-type", "ind-open",
+    ):
+        assert needle in html, f"missing {needle}"

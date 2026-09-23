@@ -79,4 +79,7 @@ class Provider(ABC):
             caps.add("quote")
         if type(self).stream is not Provider.stream:
             caps.add("stream")
+        if getattr(type(self), "prices", None) is not None and \
+                type(self).prices is not getattr(Provider, "prices", None):
+            caps.add("prices")
         return caps

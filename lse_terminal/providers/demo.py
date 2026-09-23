@@ -139,6 +139,39 @@ class DemoProvider(Provider):
         self._walk(symbol, "1m")
         return Quote(symbol=symbol, price=self._last[symbol], ts=time.time())
 
+    def prices(self, symbols: list[str]) -> list[dict]:
+        """Price-board rows for the watchlist: last close + change vs the
+        prior bar on the 1m walk (the same series the chart streams). Bid/ask
+        straddle the last by half a typical tick — derived from the walk, not
+        invented outside it. Shaped exactly like the LSE board so the shell
+        paints rows with no source-specific rules."""
+        out: list[dict] = []
+        for sym in symbols:
+            if sym not in _UNIVERSE:
+                continue
+            df = self._walk(sym, "1m")
+            if len(df) < 2:
+                continue
+            last = float(df.iloc[-1]["close"])
+            prev = float(df.iloc[-2]["close"])
+            # Live drift continues off the 1m close when the stream has ticked.
+            price = float(self._last.get(sym, last))
+            chg = price - prev
+            pct = (chg / prev * 100.0) if prev else 0.0
+            # Half-spread from the bar's own range so FX vs equity scale with
+            # the instrument rather than a fixed epsilon.
+            bar_range = float(df.iloc[-1]["high"]) - float(df.iloc[-1]["low"])
+            half = max(bar_range * 0.05, abs(price) * 1e-6)
+            out.append({
+                "symbol": sym,
+                "price": round(price, 6),
+                "bid": round(price - half, 6),
+                "ask": round(price + half, 6),
+                "change": round(chg, 6),
+                "change_pct": round(pct, 4),
+            })
+        return out
+
     async def stream(self, symbols: list[str]):
         wanted = [s for s in symbols if s in _UNIVERSE]
         if not wanted:

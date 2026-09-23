@@ -20,6 +20,7 @@ const state = {
   // needs the free API key), BACKTEST / MY DATA = "userdata" (imported
   // files). There is no user-facing source dropdown.
   provider: null, providers: [], lseConfigured: false, indicatorSpecs: [],
+  chg: {}, mdLatencyMs: null,
   groupsOpen: {},                  // sidebar folders the user expanded
   groupShown: {},                  // rows revealed so far per opened folder
   hosted: false,                   // hosted web terminal: no local subprocesses
@@ -75,7 +76,8 @@ function updateInstrumentBar() {
   const inst = (state.instruments || []).find((i) => i.symbol === sym);
   $("ib-symbol").textContent = sym;
   $("ib-name").textContent = (inst && inst.name) || "";
-  $("ib-provider").textContent = state.provider || "";
+  const provMeta = (state.providers || []).find((x) => x.name === state.provider);
+  $("ib-provider").textContent = (provMeta && provMeta.title) || state.provider || "";
   $("ib-tf").textContent = state.timeframe || "";
 
   const last = state.candleData && state.candleData.length
@@ -171,7 +173,247 @@ function refreshInstrumentBarSoon() {
   refreshInstrumentBarSoon._t = setTimeout(() => {
     refreshInstrumentBarSoon._t = null;
     updateInstrumentBar();
+    updateInfoRail();
+    updateTermStatus();
   }, 50);
+}
+
+/* Phase 3-UI: right info rail + bottom status strip — real series / quote /
+   feed facts only. Missing fields stay "—"; latency comes from the
+   market-data health EWMA when present, never a made-up number. */
+function updateInfoRail() {
+  const rail = $("info-rail");
+  if (!rail) return;
+  const charts = $("charts");
+  const onCharts = charts && !charts.classList.contains("hidden");
+  if (!onCharts || !state.symbol) { rail.classList.add("hidden"); return; }
+  rail.classList.remove("hidden");
+
+  const data = state.candleData || [];
+  const last = data.length ? data[data.length - 1] : null;
+  const prev = data.length >= 2 ? data[data.length - 2] : null;
+  const q = state.quotes[state.symbol];
+  const set = (id, val, cls) => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = val == null || val === "" ? "—" : val;
+    el.classList.remove("up", "down");
+    if (cls) el.classList.add(cls);
+  };
+  const f = (p) => (p == null || !isFinite(p)) ? null : fmt(p);
+
+  if (last) {
+    set("ir-open", f(last.open));
+    set("ir-high", f(last.high));
+    set("ir-low", f(last.low));
+    const vol = last.volume != null && isFinite(last.volume) ? last.volume : null;
+    set("ir-vol", vol == null ? null
+      : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M"
+      : vol >= 1e3 ? (vol / 1e3).toFixed(2) + "K"
+      : String(Math.round(vol)));
+    set("ir-prev", prev ? f(prev.close) : null);
+    // Session high/low over the visible series (real bars only).
+    const hi = Math.max(...data.slice(-200).map(c => c.high));
+    const lo = Math.min(...data.slice(-200).map(c => c.low));
+    set("ir-shigh", f(hi));
+    set("ir-slow", f(lo));
+    set("ir-last", f(state.prices[state.symbol] != null ? state.prices[state.symbol] : last.close));
+  } else {
+    for (const id of ["ir-open","ir-high","ir-low","ir-prev","ir-vol","ir-shigh","ir-slow","ir-last"])
+      set(id, null);
+  }
+  set("ir-bid", q && q.bid != null ? f(q.bid) : null);
+  set("ir-ask", q && q.ask != null ? f(q.ask) : null);
+  set("ir-spread", q && q.ask > q.bid ? fmtSpread(q.ask - q.bid) : null);
+  set("ir-tf", state.timeframe || null);
+
+  let ses = "—", sesCls = null;
+  try {
+    if (window.LSEChart && typeof window.LSEChart.sessionOpen === "function") {
+      const open = window.LSEChart.sessionOpen(state.symbol);
+      if (open === true) { ses = "OPEN"; sesCls = "up"; }
+      else if (open === false) { ses = "CLOSED"; }
+    }
+  } catch (e) { /* keep — */ }
+  if (ses === "—" && q && Date.now() - (q.ts || 0) < 15000) { ses = "LIVE QUOTE"; sesCls = "up"; }
+  set("ir-ses", ses, sesCls);
+
+  // Technical: real indicator values from the active series when computable.
+  const closes = data.map(c => c.close);
+  const sma = (arr, n) => arr.length >= n
+    ? arr.slice(-n).reduce((a, b) => a + b, 0) / n : null;
+  const emaN = (arr, n) => {
+    if (arr.length < n) return null;
+    const k = 2 / (n + 1);
+    let e = arr.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    for (let i = n; i < arr.length; i++) e = arr[i] * k + e * (1 - k);
+    return e;
+  };
+  const rsi14 = (arr, n = 14) => {
+    if (arr.length < n + 1) return null;
+    let g = 0, l = 0;
+    for (let i = arr.length - n; i < arr.length; i++) {
+      const d = arr[i] - arr[i - 1];
+      if (d >= 0) g += d; else l -= d;
+    }
+    if (l === 0) return 100;
+    const rs = (g / n) / (l / n);
+    return 100 - 100 / (1 + rs);
+  };
+  // VWAP over the visible window (typical price × volume).
+  let vwap = null;
+  if (data.length) {
+    let pv = 0, vv = 0;
+    for (const c of data.slice(-300)) {
+      const tp = (c.high + c.low + c.close) / 3;
+      const v = c.volume || 0;
+      pv += tp * v; vv += v;
+    }
+    if (vv > 0) vwap = pv / vv;
+  }
+  set("ir-sma20", f(sma(closes, 20)));
+  set("ir-ema20", f(emaN(closes, 20)));
+  set("ir-vwap", f(vwap));
+  const r = rsi14(closes);
+  set("ir-rsi", r == null ? null : r.toFixed(1));
+  const act = (state.activeIndicators || []).map(i => (i.name || "").toUpperCase()).filter(Boolean);
+  set("ir-inds", act.length ? act.join(" · ") : null);
+}
+
+function updateTermStatus() {
+  const set = (id, val, cls) => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = val == null || val === "" ? "—" : val;
+    el.classList.remove("on", "warn", "off");
+    if (cls) el.classList.add(cls);
+  };
+  const prov = state.provider || "—";
+  set("ts-data", prov.toUpperCase());
+  set("ts-sym", state.symbol || null);
+  set("ts-tf", state.timeframe || null);
+
+  let feed = null;
+  try {
+    if (window.LSEChart && typeof window.LSEChart.feedStatus === "function")
+      feed = window.LSEChart.feedStatus(state.feedMode || "live");
+  } catch (e) { /* bundle without feedStatus */ }
+  if (feed && feed.label) {
+    set("ts-feed", feed.label.replace(/^●\s*/, ""));
+    const on = feed.status === "LIVE";
+    const warn = feed.status === "DELAYED" || feed.status === "RECONNECTING";
+    set("ts-feed", feed.label, on ? "on" : warn ? "warn" : "off");
+  } else {
+    const wsUp = state.ws && state.ws.readyState === 1;
+    set("ts-feed", wsUp ? "LIVE" : "OFFLINE", wsUp ? "on" : "off");
+  }
+
+  // Latency: only from market-data health EWMA (or WS RTT if we ever stamp it).
+  const lat = state.mdLatencyMs;
+  set("ts-lat", lat != null && isFinite(lat) ? Math.round(lat) + " ms" : null,
+      lat != null ? "on" : null);
+
+  let ses = "—";
+  try {
+    if (window.LSEChart && typeof window.LSEChart.sessionOpen === "function" && state.symbol) {
+      const open = window.LSEChart.sessionOpen(state.symbol);
+      if (open === true) ses = "OPEN";
+      else if (open === false) ses = "CLOSED";
+    }
+  } catch (e) { /* keep — */ }
+  if (ses === "—" && state.quotes[state.symbol] &&
+      Date.now() - (state.quotes[state.symbol].ts || 0) < 15000) ses = "QUOTE FRESH";
+  set("ts-ses", ses, ses === "OPEN" || ses === "QUOTE FRESH" ? "on" : null);
+
+  const active = document.querySelector(".rail-btn.active");
+  const sub = document.querySelector(".subrail-btn.active");
+  const ws = sub ? sub.textContent : (active ? active.textContent : "—");
+  set("ts-ws", ws);
+}
+
+// Poll real market-data latency (EWMA) for the status strip — honest only.
+async function pollMdHealth() {
+  try {
+    const res = await fetch("/api/market-data/health");
+    if (!res.ok) return;
+    const body = await res.json();
+    const prov = (body.providers || []).find(p => p.provider === state.provider)
+      || (body.providers || [])[0];
+    if (prov && prov.latency_ewma_ms != null && isFinite(prov.latency_ewma_ms)) {
+      state.mdLatencyMs = prov.latency_ewma_ms;
+      updateTermStatus();
+    } else if (prov && prov.state) {
+      // No EWMA yet: leave latency as — rather than inventing a number.
+      state.mdLatencyMs = null;
+    }
+  } catch (e) { /* health unavailable */ }
+}
+
+/* Workspace controls: Save / Load / Reset on the existing shell store
+   (/api/workspace/shell) — same fields the boot path already restores. */
+function setupWsControls() {
+  const full = $("ws-full"), save = $("ws-save"),
+        load = $("ws-load"), reset = $("ws-reset");
+  if (!full) return;
+  full.onclick = () => {
+    const on = document.body.classList.toggle("ws-fullscreen");
+    full.classList.toggle("active", on);
+    full.textContent = on ? "Exit fullscreen" : "Fullscreen";
+    // Chart engine needs a resize tick after the layout flips.
+    setTimeout(() => {
+      window.dispatchEvent(new Event("resize"));
+      if (window.LSEChart && typeof window.LSEChart.resize === "function") {
+        try { window.LSEChart.resize(); } catch (e) { /* engine handles */ }
+      }
+    }, 50);
+  };
+  if (save) save.onclick = async () => {
+    try {
+      if (typeof saveShellState === "function") await saveShellState();
+      status("workspace saved");
+      setTimeout(() => status(""), 1500);
+    } catch (e) { status("save failed"); }
+  };
+  if (load) load.onclick = async () => {
+    try {
+      const body = await fetch("/api/workspace/shell").then(r => r.ok ? r.json() : null);
+      const shell = body && body.value;
+      if (!shell) { status("no saved workspace"); return; }
+      if (shell.chartType) {
+        state.chartType = shell.chartType;
+        const ct = $("chart-type");
+        if (ct) ct.value = shell.chartType;
+      }
+      if (typeof shell.activeIndicators === "string") {
+        try { state.activeIndicators = JSON.parse(shell.activeIndicators); }
+        catch (e) { /* keep current */ }
+      } else if (Array.isArray(shell.activeIndicators)) {
+        state.activeIndicators = shell.activeIndicators;
+      }
+      if (shell.symbol && shell.symbol !== state.symbol) setSymbol(shell.symbol);
+      else { pushToChart(); renderActiveIndicators(); }
+      if (shell.timeframe && shell.timeframe !== state.timeframe) {
+        state.timeframe = shell.timeframe;
+        renderTimeframes();
+        loadChart();
+      }
+      status("workspace loaded");
+      setTimeout(() => status(""), 1500);
+    } catch (e) { status("load failed"); }
+  };
+  if (reset) reset.onclick = () => {
+    state.activeIndicators = [{ name: "sma" }];
+    state.chartType = "candles";
+    const ct = $("chart-type");
+    if (ct) ct.value = "candles";
+    document.body.classList.remove("ws-fullscreen");
+    if (full) { full.classList.remove("active"); full.textContent = "Fullscreen"; }
+    renderActiveIndicators();
+    pushToChart();
+    if (typeof saveShellState === "function") saveShellState();
+    status("workspace reset");
+    setTimeout(() => status(""), 1500);
+  };
 }
 
 const fmt = (p) => p >= 1000 ? p.toFixed(1) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
@@ -448,14 +690,37 @@ function paintBoardPrice(r) {
   if (state.staleFromCache) state.staleFromCache.delete(r.symbol);
   // Every row of that symbol: a starred instrument sits in WATCHLIST and in
   // its own folder at once, and both must read the same price.
+  // Board may carry change / change_pct (demo + LSE): cache for the row paint.
+  if (r.change != null || r.change_pct != null) {
+    state.chg[r.symbol] = {
+      d: r.change != null ? r.change : null,
+      p: r.change_pct != null ? r.change_pct : null,
+    };
+  }
   for (const cell of document.querySelectorAll(`.wrow[data-symbol="${CSS.escape(r.symbol)}"] .wprice`)) {
     cell.textContent = fmt(r.price);
     cell.classList.remove("stale"); // live now; drop the cached-price dimming
-    cell.classList.toggle("up", prev !== undefined && r.price >= prev);
-    cell.classList.toggle("down", prev !== undefined && r.price < prev);
+    const ch = state.chg[r.symbol];
+    const d = ch && ch.d != null ? ch.d : (prev !== undefined ? r.price - prev : null);
+    cell.classList.toggle("up", d != null ? d >= 0 : prev !== undefined && r.price >= prev);
+    cell.classList.toggle("down", d != null ? d < 0 : prev !== undefined && r.price < prev);
     const q = state.quotes[r.symbol];
     const sc = cell.parentElement.querySelector(".wspread");
     if (sc && q) sc.textContent = spreadText(r.symbol, q);
+    const chEl = cell.parentElement.querySelector(".wchg");
+    if (chEl && ch) {
+      if (ch.p != null) {
+        const sign = ch.p > 0 ? "+" : "";
+        chEl.textContent = `${sign}${ch.p.toFixed(2)}%`;
+        chEl.classList.toggle("up", ch.p >= 0);
+        chEl.classList.toggle("down", ch.p < 0);
+      } else if (ch.d != null) {
+        const sign = ch.d > 0 ? "+" : "";
+        chEl.textContent = `${sign}${fmt(ch.d)}`;
+        chEl.classList.toggle("up", ch.d >= 0);
+        chEl.classList.toggle("down", ch.d < 0);
+      }
+    }
   }
 }
 
@@ -895,6 +1160,12 @@ function renderWatchlist() {
         : `<span class="wpricecol">` +
           `<span class="wprice${stale ? " stale" : ""}">${state.prices[ins.symbol] ? fmt(state.prices[ins.symbol]) : "–"}</span>` +
           `<span class="wspread">${spreadText(ins.symbol, state.quotes[ins.symbol])}</span>` +
+          `<span class="wchg">${(() => {
+              const ch = state.chg && state.chg[ins.symbol];
+              if (!ch || ch.p == null) return "—";
+              const sign = ch.p > 0 ? "+" : "";
+              return `<i class="${ch.p >= 0 ? "up" : "down"}">${sign}${ch.p.toFixed(2)}%</i>`;
+            })()}</span>` +
           `</span>`) +
       `<button class="wstar${fav ? " on" : ""}" title="${fav ? "Remove from watchlist" : "Add to watchlist"}">` +
       `${fav ? "&#9733;" : "&#9734;"}</button>`;
@@ -1043,7 +1314,7 @@ function renderConnBar() {
   const p = activeLiveProvider();
   const isLse = !p || p.name === "lse";
   const connected = isLse ? state.lseConfigured : true; // customs always carry a key
-  $("conn-title").textContent = (p && p.title) || "London Strategic Edge";
+  $("conn-title").textContent = (p && p.title) || "GREEN TERMINAL";
   // "your LSE key" / "your own key" was saying what the title directly above
   // it already says (the title IS the provider whose key is in use), so the
   // line now states only the fact the title does not carry: whether the feed
@@ -12084,22 +12355,19 @@ function setupRail() {
     $("research").classList.add("hidden");
     $("guide").classList.add("hidden");
     closeBacktestPages();
-    // MARKETS hosts live sources only: LSE and the user's own configured
-    // vendors, never imported files. Without an LSE key (and no custom
-    // source active) the tab IS the connect form; a user living off their
-    // own vendor key is never locked out because the top-left key manager
-    // (conn bar) lists custom sources and switches to them. The sidebar is
-    // cleared explicitly: a visit to MY DATA/BACKTEST leaves the user's
-    // library rendered there.
+    // MARKETS hosts live sources: LSE, the user's own vendors, or the
+    // bundled demo feed. Phase 3-UI: the Price & Chart workspace must open
+    // immediately — without an LSE key we land on the demo provider (honest
+    // DEMO source, synthetic walk) instead of a connect wall that hid the
+    // entire chart. The connect form stays one click away via the conn bar.
     if (!state.lseConfigured && !isLiveSource(state.provider)) {
       renderConnBar();
-      const wl = $("watchlist");
-      wl.innerHTML =
-        '<div class="empty-actions"><div class="md-empty">' +
-        'Live pairs appear here once your LSE API key is connected.</div></div>';
-      $("charts").classList.add("hidden");
-      $("lse-connect").classList.remove("hidden");
-      $("lse-key").focus();
+      $("lse-connect").classList.add("hidden");
+      $("charts").classList.remove("hidden");
+      const wantDemo = state.provider !== "demo" && state.provider !== "userdata";
+      if (wantDemo || !state.provider) switchProvider("demo");
+      else renderWatchlist();
+      updateInstrumentBar();
       return;
     }
     $("lse-connect").classList.add("hidden");
@@ -15130,16 +15398,25 @@ async function boot() {
     const off = $("charts").classList.contains("hidden");
     $("controls").classList.toggle("hidden", off);
     $("ind-active").classList.toggle("hidden", off);
-    // Instrument header rides with the chart surface only.
+    // Instrument header + workspace controls + info rail ride with charts.
     const ib = $("instrument-bar");
     if (ib) ib.classList.toggle("hidden", off);
-    if (!off) updateInstrumentBar();
+    const wsc = $("ws-controls");
+    if (wsc) wsc.classList.toggle("hidden", off);
+    if (!off) { updateInstrumentBar(); updateInfoRail(); updateTermStatus(); }
+    else {
+      const rail = $("info-rail");
+      if (rail) rail.classList.add("hidden");
+    }
     // The symbol/timeframe status readout is chart context too.
     $("status").classList.toggle("hidden", off);
   };
   new MutationObserver(syncChartToolbar)
     .observe($("charts"), { attributes: true, attributeFilter: ["class"] });
   syncChartToolbar();
+  setupWsControls();
+  pollMdHealth();
+  setInterval(pollMdHealth, 5000);
 
   // Reopen the chart as it was left: the shell section carries the active
   // indicators (with params) and chart type. First run = SMA, as before.

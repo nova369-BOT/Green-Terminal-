@@ -21,7 +21,7 @@ try {
 document.documentElement.setAttribute("data-theme",
   document.documentElement.classList.contains("dark") ? "dark" : "light");
 </script>
-<title>LSE Terminal</title>
+<title>GREEN TERMINAL</title>
 <link rel="stylesheet" href="./style.css">
 <link rel="stylesheet" href="./chart/chart.css">
 <script src="./vendor/lightweight-charts.4.2.0.js"></script>
@@ -44,8 +44,8 @@ document.documentElement.setAttribute("data-theme",
            rest of the header never uses. -->
       <button id="conn-bar" title="Manage API keys and data sources">
         <span id="conn-main">
-          <span id="conn-title">London Strategic Edge</span>
-          <span id="conn-sub">No data key</span>
+          <span id="conn-title">GREEN TERMINAL</span>
+          <span id="conn-sub">Market · Price &amp; Chart</span>
         </span>
         <span id="conn-caret">&#9662;</span>
       </button>
@@ -299,7 +299,17 @@ def my_ind(df, length=20):
       <span id="ib-tf" class="ib-tf" title="Timeframe"></span>
       <span id="ib-live" class="ib-live" title="Live feed">OFFLINE</span>
     </div>
+    <!-- Phase 3-UI: workspace actions + fullscreen ride with the chart
+         surface (mirrored by syncChartToolbar with the instrument bar). -->
+    <div id="ws-controls" class="hidden" aria-label="Workspace controls">
+      <button id="ws-full" class="ws-btn" title="Maximise the chart workspace">Fullscreen</button>
+      <button id="ws-save" class="ws-btn" title="Save instrument, timeframe, chart type, indicators">Save</button>
+      <button id="ws-load" class="ws-btn" title="Reload the last saved workspace">Load</button>
+      <button id="ws-reset" class="ws-btn" title="Reset workspace to defaults">Reset</button>
+    </div>
     <div id="ind-active"></div>
+    <div id="chart-stage">
+    <div id="chart-col">
     <div id="chart-wrap">
       <div id="legend"></div>
       <!-- The chart: the ported LSE engine. #chart is retained only as the
@@ -375,6 +385,43 @@ def my_ind(df, length=20):
         <div id="bt-equity"></div>
       </div>
     </div>
+    </div><!-- /#chart-col -->
+    <!-- Phase 3-UI right rail: dense OHLC / market / session / technical
+         facts. Every cell is filled from the active series or quote —
+         never a placeholder card, empty cells stay —. -->
+    <aside id="info-rail" class="hidden" aria-label="Market information">
+      <div class="ir-sect">
+        <div class="ir-head">OVERVIEW</div>
+        <div class="ir-row"><span>Open</span><b id="ir-open">—</b></div>
+        <div class="ir-row"><span>High</span><b id="ir-high">—</b></div>
+        <div class="ir-row"><span>Low</span><b id="ir-low">—</b></div>
+        <div class="ir-row"><span>Prev Close</span><b id="ir-prev">—</b></div>
+        <div class="ir-row"><span>Volume</span><b id="ir-vol">—</b></div>
+      </div>
+      <div class="ir-sect">
+        <div class="ir-head">MARKET</div>
+        <div class="ir-row"><span>Bid</span><b id="ir-bid">—</b></div>
+        <div class="ir-row"><span>Ask</span><b id="ir-ask">—</b></div>
+        <div class="ir-row"><span>Spread</span><b id="ir-spread">—</b></div>
+        <div class="ir-row"><span>Last</span><b id="ir-last">—</b></div>
+      </div>
+      <div class="ir-sect">
+        <div class="ir-head">SESSION</div>
+        <div class="ir-row"><span>Status</span><b id="ir-ses">—</b></div>
+        <div class="ir-row"><span>Session High</span><b id="ir-shigh">—</b></div>
+        <div class="ir-row"><span>Session Low</span><b id="ir-slow">—</b></div>
+        <div class="ir-row"><span>Timeframe</span><b id="ir-tf">—</b></div>
+      </div>
+      <div class="ir-sect">
+        <div class="ir-head">TECHNICAL</div>
+        <div class="ir-row"><span>SMA 20</span><b id="ir-sma20">—</b></div>
+        <div class="ir-row"><span>EMA 20</span><b id="ir-ema20">—</b></div>
+        <div class="ir-row"><span>VWAP</span><b id="ir-vwap">—</b></div>
+        <div class="ir-row"><span>RSI 14</span><b id="ir-rsi">—</b></div>
+        <div class="ir-row ir-ind"><span>Active</span><b id="ir-inds">—</b></div>
+      </div>
+    </aside>
+    </div><!-- /#chart-stage -->
   </section>
   <!-- The BACKTEST mode chooser page ("Choose how you want to test") was
        retired: the tab now lands straight in the
@@ -1239,8 +1286,16 @@ def my_ind(df, length=20):
     on your own account.</div>
   </aside>
 </main>
-<!-- The old #ai-panel Assistant slide-over is gone: the hosted assistant is
-     now the "LSE Assistant" provider inside the permanent right rail. -->
+<!-- Phase 3-UI bottom status strip -->
+<footer id="term-status" aria-label="Terminal status">
+  <span class="ts-cell"><span class="ts-k">DATA</span><span id="ts-data" class="ts-v">—</span></span>
+  <span class="ts-cell"><span class="ts-k">FEED</span><span id="ts-feed" class="ts-v">—</span></span>
+  <span class="ts-cell"><span class="ts-k">LATENCY</span><span id="ts-lat" class="ts-v">—</span></span>
+  <span class="ts-cell"><span class="ts-k">SESSION</span><span id="ts-ses" class="ts-v">—</span></span>
+  <span class="ts-cell"><span class="ts-k">SYMBOL</span><span id="ts-sym" class="ts-v">—</span></span>
+  <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
+  <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
+</footer>
 <script src="./app.js"></script>
 </body>
 </html>
