@@ -209,7 +209,7 @@ const ProCandlestickChart = ({
   const channelRef = useRef<any>(null);
   const onStatsRef = useRef(onStats);
   const backtestDataLoadedRef = useRef(false);
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoadRef = useRef(true);
 
   // Chart colors come from ChartSettingsContext, re-renders automatically
@@ -2059,8 +2059,8 @@ const ProCandlestickChart = ({
     }
     // Otherwise, read from ChartSettingsContext (was localStorage, now context-backed)
     if (savedChartSettings) {
-      const cs = savedChartSettings.candles || {};
-      const ch = savedChartSettings.chart || {};
+      const cs: any = savedChartSettings.candles || {};
+      const ch: any = savedChartSettings.chart || {};
       const savedBg = ch.backgroundColor || (isDark ? '#000000' : '#ffffff');
       // Derive text color from actual background, same logic as customColors path above
       const savedBgIsLight = isLightBackground(savedBg);

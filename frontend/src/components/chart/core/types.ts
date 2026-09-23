@@ -20,8 +20,15 @@ export interface Candle {
   volume?: number;
 }
 
-// Supported chart visualization types
-export type ChartType = 'candlestick' | 'line' | 'area' | 'renko';
+// Supported chart visualization types (Phase 2 primary engine).
+// Every value must have a real ProChart draw branch — never label-only.
+export type ChartType =
+  | 'candlestick'  // filled bodies
+  | 'bars'         // OHLC bars (open-left, close-right ticks)
+  | 'line'
+  | 'area'
+  | 'heikinAshi'   // transformed OHLC (engine/transforms)
+  | 'renko';
 
 // Ratio of gap between candles relative to candle width.
 // A value of 0.2 means the gap is 20% of the candle body width, so total

@@ -9,7 +9,7 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Bell, Settings, Keyboard, CandlestickChart, LineChart, AreaChart } from "lucide-react";
+import { Bell, Settings, Keyboard, CandlestickChart, LineChart, AreaChart, BarChart3 } from "lucide-react";
 import { UnifiedLayoutButton } from "@/components/chart/MultiTimeframeLayoutSelector";
 import type { ChartType } from "@/components/chart/ChartTypeSelector";
 import type { LayoutType } from "@/components/chart/MultiTimeframeLayoutSelector";
@@ -95,8 +95,11 @@ export default function ChartControlsPanel({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" side="right" className="bg-card border-border min-w-[140px]">
                     <DropdownMenuItem onClick={() => onChartTypeChange('candlestick')} className={`flex items-center gap-2 cursor-pointer ${chartType === 'candlestick' ? 'bg-foreground/10 text-foreground font-medium' : ''}`}><CandlestickChart className="h-4 w-4" /> Candles</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onChartTypeChange('bars')} className={`flex items-center gap-2 cursor-pointer ${chartType === 'bars' ? 'bg-foreground/10 text-foreground font-medium' : ''}`}><BarChart3 className="h-4 w-4" /> OHLC</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => onChartTypeChange('line')} className={`flex items-center gap-2 cursor-pointer ${chartType === 'line' ? 'bg-foreground/10 text-foreground font-medium' : ''}`}><LineChart className="h-4 w-4" /> Line</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => onChartTypeChange('area')} className={`flex items-center gap-2 cursor-pointer ${chartType === 'area' ? 'bg-foreground/10 text-foreground font-medium' : ''}`}><AreaChart className="h-4 w-4" /> Area</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onChartTypeChange('heikinAshi')} className={`flex items-center gap-2 cursor-pointer ${chartType === 'heikinAshi' ? 'bg-foreground/10 text-foreground font-medium' : ''}`}><CandlestickChart className="h-4 w-4" /> Heikin Ashi</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onChartTypeChange('renko')} className={`flex items-center gap-2 cursor-pointer ${chartType === 'renko' ? 'bg-foreground/10 text-foreground font-medium' : ''}`}><BarChart3 className="h-4 w-4" /> Renko</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TooltipTrigger>

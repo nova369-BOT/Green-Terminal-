@@ -44,6 +44,7 @@ import type { Drawing } from './ChartDrawingOverlay';
 // Core chart types, constants, and default colors extracted to core/types.ts
 // to avoid duplication and enable sharing across chart components
 import { type Candle, type ChartType, type ProChartProps, getDefaultColors, CANDLE_GAP_RATIO } from './core/types';
+import { transformSeries } from '@/engine/transforms';
 import { renderGenericSubplots, renderPhase2Overlays, renderSubplotSelectionDots, type SubplotRenderContext } from "./renderers/subplotRenderer";
 import { renderOptionsPdfHeatmap, renderOrderBookHeatmap, renderL2DepthOverlay, type HeatmapRenderContext } from "./renderers/heatmapRenderer";
 import { renderPositionLines, renderSelectedPositionSLTP, type PositionRenderContext } from "./renderers/positionRenderer";
@@ -340,12 +341,12 @@ const ProChart: React.FC<ProChartProps> = ({
   const [pulsePhase, setPulsePhase] = useState(0);
   const [livePriceOpacity, setLivePriceOpacity] = useState(1);
   const wheelRAFRef = useRef<number | null>(null);
-  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const macZoomAccumulatorRef = useRef(0); // Accumulate Mac trackpad zoom deltas
-  const macZoomResetRef = useRef<NodeJS.Timeout | null>(null);
+  const macZoomResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Long-press crosshair state for mobile (TradingView-style)
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isCrosshairMode, setIsCrosshairMode] = useState(false);
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const lastTapTimeRef = useRef<number>(0); // For double-tap detection
@@ -390,7 +391,7 @@ const ProChart: React.FC<ProChartProps> = ({
   // Refs for smooth Y-axis panning/scaling (avoid React re-renders during interaction)
   const priceScaleRef = useRef(1.0);
   const priceOffsetRef = useRef(0);
-  const yAxisDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const yAxisDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // CRITICAL: Store the EXACT price range used during chart rendering
   // The converter MUST use this same range to prevent drawings from drifting during scroll
@@ -474,7 +475,7 @@ const ProChart: React.FC<ProChartProps> = ({
 
   // Track if hovering over indicator settings buttons (to preserve crosshair)
   const isHoveringSettingsRef = useRef(false);
-  const mouseLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mouseLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // TradingView-style hover toolbar: which indicator label row is hovered
   const [hoveredIndicatorKey, setHoveredIndicatorKey] = useState<string | null>(null);
@@ -1788,7 +1789,33 @@ const ProChart: React.FC<ProChartProps> = ({
     const candleBodyWidth = Math.max(currentCandleWidth * 0.7, 3);
     const wickWidth = Math.max(1, candleBodyWidth * 0.15);
 
-    if (chartType === 'candlestick') {
+    // Phase 2: OHLC bars — real open/high/low/close ticks (not a label swap).
+    if (chartType === 'bars') {
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const isBullish = candle.close >= candle.open;
+        const col = isBullish ? colors.bullish : colors.bearish;
+        const openY = mainPriceToY(candle.open);
+        const closeY = mainPriceToY(candle.close);
+        const highY = mainPriceToY(candle.high);
+        const lowY = mainPriceToY(candle.low);
+        const arm = Math.max(candleBodyWidth * 0.55, 3);
+        ctx.strokeStyle = isBullish ? colors.bullishWick : colors.bearishWick;
+        ctx.lineWidth = Math.max(1, wickWidth);
+        ctx.beginPath();
+        ctx.moveTo(x, highY);
+        ctx.lineTo(x, lowY);
+        ctx.stroke();
+        ctx.strokeStyle = col;
+        ctx.lineWidth = Math.max(1, wickWidth * 1.25);
+        ctx.beginPath();
+        ctx.moveTo(x - arm, openY);
+        ctx.lineTo(x, openY);
+        ctx.moveTo(x, closeY);
+        ctx.lineTo(x + arm, closeY);
+        ctx.stroke();
+      });
+    } else if (chartType === 'candlestick') {
       // Draw candlesticks
       visible.candles.forEach((candle, i) => {
         const x = indexToX(visible.startIndex + i, visible.startIndex);
@@ -1816,6 +1843,32 @@ const ProChart: React.FC<ProChartProps> = ({
         ctx.fillStyle = isBullish ? colors.bullish : colors.bearish;
         ctx.fillRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
 
+        ctx.strokeStyle = isBullish ? colors.bullishBorder : colors.bearishBorder;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
+      });
+    } else if (chartType === 'heikinAshi') {
+      // Heikin Ashi bodies use the same candle geometry; series was transformed
+      // upstream via transformSeries so OHLC is already HA.
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const isBullish = candle.close >= candle.open;
+        const openY = mainPriceToY(candle.open);
+        const closeY = mainPriceToY(candle.close);
+        const highY = mainPriceToY(candle.high);
+        const lowY = mainPriceToY(candle.low);
+        ctx.strokeStyle = isBullish ? colors.bullishWick : colors.bearishWick;
+        ctx.lineWidth = wickWidth;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, highY);
+        ctx.lineTo(x, lowY);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        ctx.fillStyle = isBullish ? colors.bullish : colors.bearish;
+        ctx.fillRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
         ctx.strokeStyle = isBullish ? colors.bullishBorder : colors.bearishBorder;
         ctx.lineWidth = 1;
         ctx.strokeRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
@@ -7592,7 +7645,7 @@ const ProChart: React.FC<ProChartProps> = ({
 
   // Throttle live price redraws to avoid performance issues with drawing overlays
   const lastLivePriceRedrawRef = useRef<number>(0);
-  const livePriceRedrawTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const livePriceRedrawTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (livePrice === null || livePrice === undefined) return;

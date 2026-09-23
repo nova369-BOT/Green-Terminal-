@@ -150,7 +150,7 @@ export function useLiveCandleFromTicks({
 
   // THROTTLE: Prevent React from being overwhelmed during high tick volume
   // We process ALL ticks for OHLC calculation, but throttle UI state updates
-  const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const throttleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCandleUpdateRef = useRef<LiveCandle | null>(null);
   const THROTTLE_MS = 50; // Max 20 UI updates per second
 

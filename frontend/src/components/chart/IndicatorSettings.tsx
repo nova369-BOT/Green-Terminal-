@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, X } from "lucide-react";
 
-export type MAType = 'SMA' | 'EMA' | 'SMMA';
+export type MAType = 'SMA' | 'EMA' | 'SMMA' | 'WMA';
 
 export interface MAConfig {
   type: MAType;
@@ -485,6 +485,7 @@ export default function IndicatorSettings({
                       <SelectItem value="SMA">SMA</SelectItem>
                       <SelectItem value="EMA">EMA</SelectItem>
                       <SelectItem value="SMMA">SMMA</SelectItem>
+                      <SelectItem value="WMA">WMA</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input

@@ -1,0 +1,32 @@
+# Render blueprint — GREEN TERMINAL (Phase 2 chart engine) on LSE
+#
+# Deploy THIS branch (not main — main has no render.yaml):
+#   https://render.com/deploy?repo=https://github.com/nova369-BOT/Green-Terminal-/tree/arena/01a0caa0-green-terminal
+#
+# Why no PYTHON_VERSION pin: pinning 3.11.2 made Render's python-env.sh fail
+# with "Python-3.11.2/bin/python3.11: No such file or directory". Let Render
+# pick its current default.
+#
+# Why LSE_TERMINAL_REMOTE (not HOSTED):
+#   HOSTED=1 403s workspace / backtests / broker / key entry.
+#   REMOTE alone (or Render's RENDER=true) only skips the loopback Host guard
+#   so the public hostname can load the app with full single-tenant features.
+services:
+  - type: web
+    name: green-terminal
+    runtime: python
+    region: oregon
+    branch: arena/01a0caa0-green-terminal
+    plan: free
+    autoDeploy: true
+    rootDir: .
+    buildCommand: pip install -U pip && pip install -e .
+    startCommand: exec lset --host 0.0.0.0 --port "$PORT" --no-browser
+    healthCheckPath: /api/health
+    envVars:
+      - key: LSE_TERMINAL_REMOTE
+        value: "1"
+      - key: LSE_TERMINAL_CONFIG_DIR
+        value: "/tmp/lse-terminal"
+      - key: PYTHONUNBUFFERED
+        value: "1"

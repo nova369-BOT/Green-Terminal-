@@ -626,7 +626,7 @@ function OptionsPDFPanel({ symbol }: { symbol?: string }) {
 
     const optionSymbol = getOptionSymbol(symbol);
 
-    const { data: pdfData, isLoading } = useQuery({
+    const { data: pdfData, isLoading } = useQuery<any | null>({
         queryKey: ['options-pdf', optionSymbol],
         queryFn: async () => {
             if (!optionSymbol) return null;

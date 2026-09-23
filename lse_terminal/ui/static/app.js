@@ -2,8 +2,10 @@
    types, OHLC legend. Vanilla JS on purpose; the richer React workspace
    replaces this later, speaking to exactly the same /api endpoints. */
 
-const TF_SECONDS = { "1s": 1, "30s": 30,
-                     "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+// Full Phase-2 ladder (seconds). Providers only offer labels they can serve;
+// this map is the merge/bucket authority for live ticks on any advertised TF.
+const TF_SECONDS = { "1s": 1, "5s": 5, "15s": 15, "30s": 30,
+                     "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
                      "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
 // A tick chart appends one bar per trade; big liquid pairs print ~24/s, so
 // without a cap a day-open session would grow the array into millions of
@@ -56,6 +58,103 @@ const API_PREFIX = APP_BASE === "/" ? "" : APP_BASE.replace(/\/$/, "");
 
 const $ = (id) => document.getElementById(id);
 const status = (msg) => { $("status").textContent = msg; };
+
+/* ---------- Phase 2: instrument header (Market → Price & Chart) ----------
+   Values come only from state.prices / state.quotes / state.candleData /
+   provider capability. Missing fields render "—", never a fabricated number. */
+function updateInstrumentBar() {
+  const bar = $("instrument-bar");
+  if (!bar) return;
+  const charts = $("charts");
+  const onCharts = charts && !charts.classList.contains("hidden");
+  // Only while the Price & Chart section is the active surface.
+  if (!onCharts || !state.symbol) { bar.classList.add("hidden"); return; }
+  bar.classList.remove("hidden");
+
+  const sym = state.symbol;
+  const inst = (state.instruments || []).find((i) => i.symbol === sym);
+  $("ib-symbol").textContent = sym;
+  $("ib-name").textContent = (inst && inst.name) || "";
+  $("ib-provider").textContent = state.provider || "";
+  $("ib-tf").textContent = state.timeframe || "";
+
+  const last = state.candleData && state.candleData.length
+    ? state.candleData[state.candleData.length - 1] : null;
+  const price = state.prices[sym] != null ? state.prices[sym]
+    : (last ? last.close : null);
+  const priceEl = $("ib-price");
+  if (price != null && isFinite(price)) {
+    const prev = priceEl.__prev;
+    priceEl.textContent = fmt(price);
+    priceEl.classList.remove("up", "down");
+    if (prev != null && price !== prev) priceEl.classList.add(price > prev ? "up" : "down");
+    priceEl.__prev = price;
+  } else {
+    priceEl.textContent = "—";
+    priceEl.classList.remove("up", "down");
+  }
+
+  // Change vs previous closed bar (or first bar if none) — real series only.
+  const chEl = $("ib-change");
+  if (last && state.candleData.length >= 2) {
+    const ref = state.candleData[state.candleData.length - 2].close;
+    const d = price != null ? price - ref : last.close - ref;
+    const pct = ref ? (d / ref) * 100 : null;
+    const sign = d > 0 ? "+" : "";
+    chEl.textContent = `${sign}${fmt(d)} (${sign}${pct != null ? pct.toFixed(2) : "—"}%)`;
+    chEl.classList.remove("up", "down");
+    if (d > 0) chEl.classList.add("up");
+    else if (d < 0) chEl.classList.add("down");
+  } else {
+    chEl.textContent = "—";
+    chEl.classList.remove("up", "down");
+  }
+
+  const q = state.quotes[sym];
+  $("ib-bid").textContent = q && q.bid != null ? fmt(q.bid) : "—";
+  $("ib-ask").textContent = q && q.ask != null ? fmt(q.ask) : "—";
+  $("ib-spread").textContent = (q && q.ask > q.bid)
+    ? fmtSpread(q.ask - q.bid) : "—";
+  // Bar volume from the active candle (providers that omit volume show —).
+  const vol = last && last.volume != null && isFinite(last.volume)
+    ? last.volume : null;
+  $("ib-volume").textContent = vol != null
+    ? (vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(2) + "K" : String(Math.round(vol)))
+    : "—";
+
+  // Session: market-hours check when the chart bundle exposes it; otherwise
+  // derive from quote freshness (unknown → "—", not a fake OPEN).
+  const ses = $("ib-session");
+  ses.classList.remove("open", "closed");
+  let sesText = "—";
+  try {
+    if (window.LSEChart && typeof window.LSEChart.sessionOpen === "function") {
+      const open = window.LSEChart.sessionOpen(sym);
+      if (open === true) { sesText = "OPEN"; ses.classList.add("open"); }
+      else if (open === false) { sesText = "CLOSED"; ses.classList.add("closed"); }
+    }
+  } catch (e) { /* keep — */ }
+  if (sesText === "—" && q && Date.now() - (q.ts || 0) < 15000) {
+    sesText = "LIVE QUOTE"; ses.classList.add("open");
+  }
+  ses.textContent = sesText;
+
+  const live = $("ib-live");
+  const wsUp = state.ws && state.ws.readyState === 1;
+  live.textContent = wsUp ? "LIVE" : "NO STREAM";
+  live.classList.toggle("on", !!wsUp);
+  live.classList.toggle("off", !wsUp);
+}
+
+// Keep the header in step with shell navigation and data pushes.
+function refreshInstrumentBarSoon() {
+  if (refreshInstrumentBarSoon._t) return;
+  refreshInstrumentBarSoon._t = setTimeout(() => {
+    refreshInstrumentBarSoon._t = null;
+    updateInstrumentBar();
+  }, 50);
+}
+
 const fmt = (p) => p >= 1000 ? p.toFixed(1) : p >= 10 ? p.toFixed(2) : p.toFixed(4);
 // Spread readout under each watchlist price: FX rows in
 // pips ("spread: 0.1 pips"), everything else in price units, because a pip
@@ -171,6 +270,8 @@ function saveShellState() {
     fetch("/api/workspace/shell", {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        symbol: state.symbol,
+        timeframe: state.timeframe,
         activeIndicators: state.activeIndicators,
         favoriteIndicators: state.favoriteIndicators,
         chartType: state.chartType,
@@ -192,6 +293,7 @@ function saveShellState() {
 // price chart.
 
 function pushToChart() {
+  updateInstrumentBar();
   if (!window.LSEChart || !state.candleData) return;
   const payload = {
     provider: state.provider,
@@ -281,9 +383,8 @@ async function loadChart() {
   state.engineIndicators = data.indicators || {};
   pushToChart();
   state.lastBar = state.candleData[state.candleData.length - 1] || null;
-  // No symbol/timeframe readout in the chrome: the window title stays plain
-  // "LSE Terminal" and the topline status only carries transient loading and
-  // error messages (classic pro-terminal quiet top bar).
+  updateInstrumentBar();
+  // Topline status still carries transient loading / error messages only.
   status("");
 }
 
@@ -407,7 +508,8 @@ function onTick(t) {
     const sc = cell.parentElement.querySelector(".wspread");
     if (sc && q) sc.textContent = spreadText(t.symbol, q);
   }
-  if (t.symbol !== state.symbol) return;
+  if (t.symbol !== state.symbol) { return; }
+  refreshInstrumentBarSoon();
   if (state.timeframe === "tick") {
     // No lastBar guard here: a quiet symbol can open with an EMPTY tick
     // history (nothing in the replay window), and the tape must still
@@ -2317,7 +2419,19 @@ async function runSwitchProvider(name) {
   renderTimeframes();
   await loadInstruments();
   loadLogos();
-  if (state.instruments.length) state.symbol = state.instruments[0].symbol;
+  if (state.instruments.length) {
+    // Workspace restore: reopen the saved instrument when this source has it;
+    // otherwise fall back to the catalog's first row.
+    const pending = state.pendingShellSymbol;
+    const restored = pending && state.instruments.some((i) => i.symbol === pending);
+    state.symbol = restored ? pending : state.instruments[0].symbol;
+    if (restored) {
+      state.pendingShellSymbol = null;
+      const input = $("symbol");
+      if (input) input.value = state.symbol;
+    }
+  }
+  renderTimeframes();
   renderWatchlist();
   await loadChart();
   connectStream();
@@ -2466,6 +2580,22 @@ function setupLayouts() {
   // "Chart template" right-click menu); this bridge is that menu's data
   // source, so the store and apply path stay.
   window.__lseShell = {
+    // Phase 2 infinite scrollback: the chart bundle pages older bars and
+    // asks the shell to own the prepended rows (single source of truth).
+    prependCandles: (older) => {
+      if (!Array.isArray(older) || !older.length) return false;
+      // Shell stores epoch SECONDS; convert ms → sec to match loadChart.
+      const rows = older.map((c) => ({
+        time: c.time >= 1e12 ? Math.floor(c.time / 1000) : c.time,
+        open: c.open, high: c.high, low: c.low, close: c.close,
+        volume: c.volume,
+      }));
+      const first = state.candleData[0];
+      if (first && rows.length && rows[rows.length - 1].time >= first.time) return false;
+      state.candleData = rows.concat(state.candleData);
+      pushToChart();
+      return true;
+    },
     layouts: () => layoutsZone.rows.map((r) => ({ id: r.id, name: r.name })),
     applyLayout: (id) => {
       const row = layoutsZone.rows.find((r) => r.id === id);
@@ -11861,6 +11991,7 @@ function setupRail() {
   const setActive = (id) => {
     for (const b of document.querySelectorAll(".rail-btn")) b.classList.remove("active");
     $(id).classList.add("active");
+    refreshInstrumentBarSoon();
   };
   // The native title follows the active tab:
   // MARKETS restores the charted pair, other tabs name themselves, and
@@ -11877,6 +12008,7 @@ function setupRail() {
   const setSidebar = (show) => $("side").classList.toggle("hidden", !show);
   $("rail-markets").onclick = () => {
     setActive("rail-markets");
+    refreshInstrumentBarSoon();
     setTitle();
     setSidebar(true);
     // Sub-bar renders before the no-key early return below so the OPTIONS
@@ -14942,6 +15074,10 @@ async function boot() {
     const off = $("charts").classList.contains("hidden");
     $("controls").classList.toggle("hidden", off);
     $("ind-active").classList.toggle("hidden", off);
+    // Instrument header rides with the chart surface only.
+    const ib = $("instrument-bar");
+    if (ib) ib.classList.toggle("hidden", off);
+    if (!off) updateInstrumentBar();
     // The symbol/timeframe status readout is chart context too.
     $("status").classList.toggle("hidden", off);
   };
@@ -14966,6 +15102,15 @@ async function boot() {
   if (shell && shell.chartType) {
     state.chartType = shell.chartType;
     $("chart-type").value = shell.chartType;
+  }
+  // Phase 2 workspace: reopen the charted instrument + timeframe as left.
+  // Symbol apply happens after providers load (see boot restore below);
+  // stash until then so a half-ready boot cannot fetch with a null provider.
+  if (shell && typeof shell.symbol === "string" && shell.symbol) {
+    state.pendingShellSymbol = shell.symbol;
+  }
+  if (shell && typeof shell.timeframe === "string" && shell.timeframe) {
+    state.timeframe = shell.timeframe;
   }
   // Starred instruments per source. Only string lists survive the load: a
   // hand-edited file cannot break the sidebar.

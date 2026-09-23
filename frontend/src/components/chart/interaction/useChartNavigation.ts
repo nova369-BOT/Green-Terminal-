@@ -100,7 +100,7 @@ export interface ChartNavigationParams {
   yAxisScaleStartRef: React.MutableRefObject<{ y: number; scale: number; offset: number }>;
   priceScaleRef: React.MutableRefObject<number>;
   priceOffsetRef: React.MutableRefObject<number>;
-  yAxisDebounceRef: React.MutableRefObject<NodeJS.Timeout | null>;
+  yAxisDebounceRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
 }
 
 // ─── Return type ───────────────────────────────────────────────────────

@@ -101,9 +101,11 @@ document.documentElement.setAttribute("data-theme",
   <nav id="timeframes"></nav>
   <select id="chart-type" title="Chart type">
     <option value="candles">Candles</option>
-    <option value="bars">Bars</option>
+    <option value="bars">OHLC</option>
     <option value="line">Line</option>
     <option value="area">Area</option>
+    <option value="heikinAshi">Heikin Ashi</option>
+    <option value="renko">Renko</option>
   </select>
   <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
   <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
@@ -278,6 +280,25 @@ def my_ind(df, length=20):
     <div id="watchlist"></div>
   </aside>
   <section id="charts">
+    <!-- Phase 2 instrument header: real values from the data layer only
+         (quotes, candles, provider status). No hardcoded prices. -->
+    <div id="instrument-bar" class="hidden" aria-label="Instrument summary">
+      <span id="ib-symbol" class="ib-sym">—</span>
+      <span id="ib-name" class="ib-name"></span>
+      <span id="ib-provider" class="ib-meta" title="Data source"></span>
+      <span id="ib-price" class="ib-price">—</span>
+      <span id="ib-change" class="ib-change"></span>
+      <span class="ib-sep"></span>
+      <span class="ib-k">BID</span><span id="ib-bid" class="ib-v">—</span>
+      <span class="ib-k">ASK</span><span id="ib-ask" class="ib-v">—</span>
+      <span class="ib-k">SPR</span><span id="ib-spread" class="ib-v">—</span>
+      <span class="ib-sep"></span>
+      <span class="ib-k">VOL</span><span id="ib-volume" class="ib-v">—</span>
+      <span class="ib-sep"></span>
+      <span id="ib-session" class="ib-session" title="Session status">—</span>
+      <span id="ib-tf" class="ib-tf" title="Timeframe"></span>
+      <span id="ib-live" class="ib-live" title="Live feed">OFFLINE</span>
+    </div>
     <div id="ind-active"></div>
     <div id="chart-wrap">
       <div id="legend"></div>

@@ -310,7 +310,7 @@ const ChartDrawingOverlayComponent = ({
 
   // Touch drawing state - for tap-hold-drag behavior
   const [touchDrawing, setTouchDrawing] = useState<{ startPoint: PixelPoint; currentPoint: PixelPoint } | null>(null);
-  const touchHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartPointRef = useRef<PixelPoint | null>(null);
 
   // Track container size for clipping

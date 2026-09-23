@@ -5,8 +5,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CandlestickChart, LineChart, AreaChart } from "lucide-react";
-export type ChartType = 'candlestick' | 'line' | 'area';
+import { CandlestickChart, LineChart, AreaChart, BarChart3 } from "lucide-react";
+import type { ChartType } from '@/components/chart/core/types';
+// Re-export for existing consumers of this module.
+export type { ChartType } from '@/components/chart/core/types';
 interface ChartTypeSelectorProps {
   selectedType: ChartType;
   onTypeChange: (type: ChartType) => void;
@@ -14,8 +16,11 @@ interface ChartTypeSelectorProps {
 }
 const chartTypes: { type: ChartType; label: string; icon: React.ReactNode }[] = [
   { type: 'candlestick', label: 'Candles', icon: <CandlestickChart className="h-4 w-4" /> },
+  { type: 'bars', label: 'OHLC Bars', icon: <BarChart3 className="h-4 w-4" /> },
   { type: 'line', label: 'Line', icon: <LineChart className="h-4 w-4" /> },
   { type: 'area', label: 'Area', icon: <AreaChart className="h-4 w-4" /> },
+  { type: 'heikinAshi', label: 'Heikin Ashi', icon: <CandlestickChart className="h-4 w-4" /> },
+  { type: 'renko', label: 'Renko', icon: <BarChart3 className="h-4 w-4" /> },
 ];
 export default function ChartTypeSelector({ selectedType, onTypeChange, className }: ChartTypeSelectorProps) {
   const currentType = chartTypes.find(t => t.type === selectedType) || chartTypes[0];

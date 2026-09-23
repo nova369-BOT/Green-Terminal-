@@ -228,7 +228,7 @@ const ProChart: React.FC<ProChartProps> = ({
   // Previous replay candle array (reference retained one generation): the
   // view anchor bar is re-found in the new array by timestamp, which stays
   // exact through prepends, evictions and partial-bucket rewrites.
-  const prevReplayCandlesRef = useRef<CandleData[] | null>(null);
+  const prevReplayCandlesRef = useRef<Candle[] | null>(null);
   // Tracks the last-seen prependShift value. When the parent increments prependShift
   // (after loadMoreHistory prepends candles), we shift viewState.startIndex by the delta
   // so the user's visible view stays on the same candles (no visual jump).
@@ -252,12 +252,12 @@ const ProChart: React.FC<ProChartProps> = ({
   const [pulsePhase, setPulsePhase] = useState(0);
   const [livePriceOpacity, setLivePriceOpacity] = useState(1);
   const wheelRAFRef = useRef<number | null>(null);
-  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const macZoomAccumulatorRef = useRef(0); // Accumulate Mac trackpad zoom deltas
-  const macZoomResetRef = useRef<NodeJS.Timeout | null>(null);
+  const macZoomResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Long-press crosshair state for mobile (TradingView-style)
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isCrosshairMode, setIsCrosshairMode] = useState(false);
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const lastTapTimeRef = useRef<number>(0); // For double-tap detection
@@ -302,7 +302,7 @@ const ProChart: React.FC<ProChartProps> = ({
   // Refs for smooth Y-axis panning/scaling (avoid React re-renders during interaction)
   const priceScaleRef = useRef(1.0);
   const priceOffsetRef = useRef(0);
-  const yAxisDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const yAxisDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // CRITICAL: Store the EXACT price range used during chart rendering
   // The converter MUST use this same range to prevent drawings from drifting during scroll
@@ -384,7 +384,7 @@ const ProChart: React.FC<ProChartProps> = ({
 
   // Track if hovering over indicator settings buttons (to preserve crosshair)
   const isHoveringSettingsRef = useRef(false);
-  const mouseLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mouseLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // TradingView-style hover toolbar: which indicator label row is hovered
   const [hoveredIndicatorKey, setHoveredIndicatorKey] = useState<string | null>(null);
@@ -7178,7 +7178,7 @@ const ProChart: React.FC<ProChartProps> = ({
 
   // Throttle live price redraws to avoid performance issues with drawing overlays
   const lastLivePriceRedrawRef = useRef<number>(0);
-  const livePriceRedrawTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const livePriceRedrawTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (livePrice === null || livePrice === undefined) return;

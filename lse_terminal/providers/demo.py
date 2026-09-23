@@ -22,8 +22,10 @@ _TF_SECONDS = {
     # "tick" is a per-second walk here: demo trades print about once a
     # second, so on synthetic data the tape and 1s bars share a step; the
     # walks still differ (the seed hashes the timeframe label).
-    "tick": 1, "1s": 1, "30s": 30,
-    "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+    # Phase-2 ladder entries (5s/15s/3m) are real bars on this synthetic
+    # source; live LSE still only advertises the TFs its gate can serve.
+    "tick": 1, "1s": 1, "5s": 5, "15s": 15, "30s": 30,
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
     "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800,
 }
 

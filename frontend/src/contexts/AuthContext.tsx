@@ -24,6 +24,8 @@ export interface AuthValue {
   user: LocalUser | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  /** Local-only stand-in: resolves without network (no accounts offline). */
+  signInWithGoogle: () => Promise<void>;
 }
 
 // A single frozen object so identity is stable across renders. Several ported
@@ -41,6 +43,7 @@ const VALUE: AuthValue = Object.freeze({
   // No-op: there is no session to end. Components that render a sign-out
   // control still call this, so it must resolve rather than throw.
   signOut: async () => {},
+  signInWithGoogle: async () => {},
 });
 
 export function useAuth(): AuthValue {

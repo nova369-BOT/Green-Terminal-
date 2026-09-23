@@ -28,6 +28,7 @@ import { ChartDrawingOverlay, type Drawing, type DrawingTool } from '@/component
 import DrawingToolsPanel from '@/components/chart/sidebar/DrawingToolsPanel';
 import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from '@/components/chart/IndicatorSettings';
 import { getDefaultColors, type Candle, type ChartType } from '@/components/chart/core/types';
+import { transformSeries } from '@/engine/transforms';
 import { MemoryRouter } from 'react-router-dom';
 import { ChartSettingsProvider, useChartSettings, useHasSavedAppearance } from '@/contexts/ChartSettingsContext';
 import { AppearancePanel, ChartSettingsPanel } from '@/components/chart/InlineChartSettings';
@@ -412,6 +413,66 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const chartTimezone = chartSettings?.data?.timezone || 'local';
   const timeframeMs = TF_MS[timeframe] ?? 3600000;
   const livePrice = candles.length ? candles[candles.length - 1].close : null;
+  // Display-only series transform (Heikin Ashi / Renko). Source candles stay
+  // intact for indicators that need true OHLC; drawings map in price/time on
+  // the transformed geometry for these modes.
+  const displayCandles = useMemo(
+    () => transformSeries(candles, chartType),
+    [candles, chartType]
+  );
+
+  // ── Infinite history scrollback (Phase 2 §15) ──────────────────────────
+  // Parent (shell) owns the candle array. When ProChart nears the left edge
+  // it calls onLoadMore; we page older bars via /api/candles?end=<oldest>
+  // and lift prependShift so the view does not jump.
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [prependShift, setPrependShift] = useState(0);
+  const loadMoreHistory = useCallback(async () => {
+    if (isLoadingMore || !provider || !symbol || !candles.length) return;
+    const oldest = candles[0];
+    // Epoch seconds for the API (providers speak seconds).
+    const endSec = Math.floor(oldest.time / 1000);
+    const endIso = new Date(oldest.time - 1).toISOString();
+    setIsLoadingMore(true);
+    try {
+      const url =
+        `/api/candles?provider=${encodeURIComponent(provider)}` +
+        `&symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}` +
+        `&limit=5000&end=${encodeURIComponent(endIso)}`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const rows: any[] = data.candles || [];
+      if (!rows.length) return;
+      // Drop the row at `end` boundary duplicates already in the array.
+      const known = new Set(candles.map((c) => c.time));
+      const older: Candle[] = rows
+        .map(([ts, o, h, l, c, v]) => ({
+          time: ts < 1e12 ? ts * 1000 : ts,
+          open: o, high: h, low: l, close: c,
+          volume: v != null ? v : undefined,
+        }))
+        .filter((c: Candle) => c.time < oldest.time && !known.has(c.time))
+        .sort((a: Candle, b: Candle) => a.time - b.time);
+      if (!older.length) return;
+      // Lift prependShift first so ProChart can adjust startIndex, then
+      // push the new array identity into the shell via the update path.
+      setPrependShift((n) => n + older.length);
+      const merged: Candle[] = older.concat(candles);
+      // Update shell state + React props together.
+      if ((window as any).__lseShell?.prependCandles) {
+        (window as any).__lseShell.prependCandles(older);
+      }
+      // Also update local props so the chart re-renders immediately even if
+      // the shell bridge is not present (tests / direct mount).
+      props = { ...props, candles: merged };
+      render();
+    } catch {
+      // Network failure: ProChart keeps the current window; user can scroll again.
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, provider, symbol, timeframe, candles]);
 
   // Bar-close countdown for the axis price badge: blank while the
   // instrument's market is closed, else the remaining time in compact
@@ -538,7 +599,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           />
         ) : (<>
         <ProChart
-          candles={candles}
+          candles={displayCandles}
           symbol={symbol}
           timeframe={timeframe}
           chartType={chartType}
@@ -589,6 +650,9 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           showBidAskSpread={!!quote}
           brokerBid={quote?.bid ?? null}
           brokerAsk={quote?.ask ?? null}
+          onLoadMore={loadMoreHistory}
+          isLoadingMore={isLoadingMore}
+          prependShift={prependShift}
         />
         <ChartDrawingOverlay
           activeTool={activeTool}
@@ -608,7 +672,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           currentSymbol={symbol}
           timeframeMs={timeframeMs}
           currentPrice={livePrice ?? undefined}
-          candles={candles}
+          candles={displayCandles}
         />
         </>)}
       </div>
@@ -1089,10 +1153,14 @@ function render() {
 // Normalise here so the shell's existing <select> keeps working unchanged.
 const CHART_TYPE_ALIASES: Record<string, ChartType> = {
   candles: 'candlestick',
-  bars: 'candlestick',
   candlestick: 'candlestick',
+  bars: 'bars',            // OHLC bars are a real engine mode (not alias → candles)
+  ohlc: 'bars',
   line: 'line',
   area: 'area',
+  heikinAshi: 'heikinAshi',
+  heikin: 'heikinAshi',
+  ha: 'heikinAshi',
   renko: 'renko',
 };
 
@@ -1169,6 +1237,11 @@ const LSEChart = {
   // an `{enabled:true}` with no parameters is not a valid config.
   indicatorDefaults(): Record<string, any> {
     return JSON.parse(JSON.stringify(DEFAULT_INDICATOR_CONFIG));
+  },
+  /** Session open/closed for the instrument header (null → shell shows —). */
+  sessionOpen(symbol: string): boolean | null {
+    if (!symbol) return null;
+    try { return isMarketOpenForPair(symbol); } catch { return null; }
   },
 };
 

@@ -74,6 +74,16 @@ async function writeSection<T>(section: Section, value: T): Promise<T> {
 let idSeq = 0;
 const newId = () => `local-${Date.now().toString(36)}-${(idSeq++).toString(36)}`;
 
+/** Row shape returned by smartSearch (manual-backtest symbol picker). */
+export interface SmartSearchResult {
+  symbol: string;
+  display_name?: string;
+  category?: string | null;
+  popularity_rank?: number | null;
+  popular_dropdown?: boolean;
+  search_boosted?: boolean;
+}
+
 export const api = {
   // ── chart settings (single record) ───────────────────────────────────────
   async getChartSettings() {
@@ -188,9 +198,16 @@ export const api = {
   // ── candle history ───────────────────────────────────────────────────────
   async getCandlesRange(
     tableName: string,
-    options: { limit?: number; order?: 'asc' | 'desc' } = {}
+    options: {
+      limit?: number; order?: 'asc' | 'desc';
+      // Accepted for upstream API parity; the local engine ignores them.
+      select?: string; offset?: number;
+    } = {}
   ) {
-    return fetchLocalCandles(tableName, options);
+    return fetchLocalCandles(tableName, {
+      limit: options.limit,
+      order: options.order,
+    });
   },
 
   // The manual-backtest chart (ported BTCandlestickChart) speaks the full

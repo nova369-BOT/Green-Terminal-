@@ -107,7 +107,7 @@ const CandlestickChart = ({
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState<string>("");
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onStatsRef = useRef(onStats);
 
   // Use the symbol table map hook for correct table name resolution

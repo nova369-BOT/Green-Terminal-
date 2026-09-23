@@ -461,7 +461,11 @@ class _LocalOnlyGuard:
             return False
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] not in ("http", "websocket") or self._allowed(scope):
+        # Platform health probes must never be blocked by the loopback rule
+        # (Render/other PaaS hit /api/health with a public Host header).
+        path = scope.get("path", "")
+        if scope["type"] not in ("http", "websocket") or path in (
+                "/api/health", "/health", "/healthz") or self._allowed(scope):
             await self.app(scope, receive, send)
             return
         if scope["type"] == "websocket":
@@ -588,6 +592,13 @@ def create_app() -> FastAPI:
     # shared by every visitor instead of owned by one user. The UI hides the
     # corresponding buttons via /api/config.
     hosted = os.environ.get("LSE_TERMINAL_HOSTED") == "1"
+    # Public single-tenant deploy (Render etc.): the public hostname is
+    # legitimate, so the loopback Host/Origin guard is skipped — WITHOUT
+    # flipping full hosted mode (which would 403 backtests, workspace, …).
+    # Render sets RENDER=true; LSE_TERMINAL_REMOTE=1 forces the same.
+    on_render = (os.environ.get("RENDER", "").lower() in ("1", "true", "yes")
+                 or os.environ.get("LSE_TERMINAL_REMOTE") == "1")
+    remote_public = hosted or on_render
 
     async def deny_hosted_ws(websocket) -> bool:
         """True when the socket was refused because this is the hosted
@@ -614,12 +625,14 @@ def create_app() -> FastAPI:
                      "from GitHub to use this")
 
     app = FastAPI(title="LSE Terminal", version=__version__)
-    if not hosted:
+    if not remote_public:
         app.add_middleware(_LocalOnlyGuard)
-    else:
+    elif hosted:
         # Public embed: no login by design, so a per-client
         # rate budget is what stops anyone hammering data, sim or uploads.
         app.add_middleware(_HostedRateLimit)
+    # On Render (remote, not hosted): no loopback guard, no shared-tenant
+    # rate limit — single-user preview with full local features.
 
     @app.middleware("http")
     async def no_stale_ui(request, call_next):
