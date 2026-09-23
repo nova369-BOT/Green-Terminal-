@@ -815,6 +815,53 @@ def create_app() -> FastAPI:
         return {"ok": True, "version": __version__, "ui_version": ui_version,
                 "dev": os.environ.get("LSE_TERMINAL_DEV") == "1"}
 
+    @app.get("/api/edgedepth/status")
+    def edgedepth_status(timeout: float = 0.35):
+        """Honest EdgeDepth gateway reachability probe.
+
+        The community edgedepth-gateway is a separate MIT Go service
+        (default ws://127.0.0.1:8080/ws) bridging Binance public streams
+        into the EdgeDepth WSPayload wire. This endpoint only answers
+        whether that optional feed is accepting TCP connections — it never
+        fabricates candles/quotes and never claims LIVE for a dead socket.
+
+        Config: EDGEDEPTH_HOST / EDGEDEPTH_PORT (or EDGEDEPTH_WS).
+        No credential is required by the community gateway.
+        """
+        import socket
+        from urllib.parse import urlparse
+        ws = os.environ.get("EDGEDEPTH_WS", "")
+        if ws:
+            u = urlparse(ws)
+            host = u.hostname or "127.0.0.1"
+            port = u.port or (443 if u.scheme == "wss" else 80)
+        else:
+            host = os.environ.get("EDGEDEPTH_HOST", "127.0.0.1")
+            port = int(os.environ.get("EDGEDEPTH_PORT", "8080"))
+        endpoint = f"ws://{host}:{port}/ws" if not ws else ws
+        reachable = False
+        err = None
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        try:
+            reachable = s.connect_ex((host, port)) == 0
+        except OSError as e:
+            err = str(e)
+        finally:
+            s.close()
+        return {
+            "name": "edgedepth-gateway",
+            "title": "EdgeDepth Gateway",
+            "endpoint": endpoint,
+            "reachable": reachable,
+            "state": "CONNECTED" if reachable else "OFFLINE",
+            "error": err,
+            "note": ("Optional L2/order-flow feed (Binance public via community "
+                     "gateway). Not required for LSE price charts. No data is "
+                     "served from this endpoint — status only."),
+            "streams": [1, 2, 3, 4, 5, 8, 17, 26, 29],
+        }
+
     @app.get("/api/providers")
     def providers():
         # LSE-shipped data connections are gated by the remote directory

@@ -4051,3 +4051,44 @@ body { padding-bottom: 22px; }
 #watchlist .wchg.up { color: var(--up); }
 #watchlist .wchg.down { color: var(--down); }
 #watchlist .wspread { font-size: 9px; opacity: 0.75; }
+
+
+/* Phase-3 correction: honest WAITING FOR MARKET DATA overlay (no demo fallback). */
+#data-waiting {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--bg, #0b0f0c) 92%, transparent);
+  text-align: center;
+  padding: 24px;
+  pointer-events: auto;
+}
+#data-waiting.hidden { display: none !important; }
+#data-waiting .dw-badge {
+  font: 10px/1 var(--mono, ui-monospace, monospace);
+  letter-spacing: 0.18em;
+  color: var(--dim, #7a8a80);
+  border: 1px solid var(--edge, #243028);
+  padding: 4px 10px;
+  border-radius: 2px;
+}
+#data-waiting .dw-title {
+  font: 600 15px/1.3 var(--sans, system-ui, sans-serif);
+  color: var(--text, #d7e2db);
+  letter-spacing: 0.04em;
+}
+#data-waiting .dw-detail {
+  max-width: 520px;
+  font: 12px/1.5 var(--sans, system-ui, sans-serif);
+  color: var(--dim, #9aaba2);
+}
+#data-waiting .dw-hint {
+  font: 10px/1.4 var(--mono, ui-monospace, monospace);
+  color: var(--dim, #7a8a80);
+  opacity: 0.85;
+}

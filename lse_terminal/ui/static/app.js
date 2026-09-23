@@ -288,8 +288,26 @@ function updateTermStatus() {
     el.classList.remove("on", "warn", "off");
     if (cls) el.classList.add(cls);
   };
-  const prov = state.provider || "—";
-  set("ts-data", prov.toUpperCase());
+  // Honest DATA label: live source title, else WAITING / OFFLINE — never DEMO.
+  let dataLabel = "OFFLINE", dataCls = "off";
+  if (state.dataWaiting) {
+    dataLabel = "WAITING"; dataCls = "warn";
+  } else if (state.provider && state.provider !== "demo" && isLiveSource(state.provider)) {
+    const meta = (state.providers || []).find((x) => x.name === state.provider);
+    dataLabel = (meta && meta.title) || state.provider.toUpperCase();
+    dataCls = state.lseConfigured || state.provider !== "lse" ? "on" : "warn";
+  } else if (state.provider === "lse" && state.lseConfigured) {
+    dataLabel = "LSE"; dataCls = "on";
+  } else if (state.provider) {
+    dataLabel = state.provider.toUpperCase(); dataCls = "warn";
+  }
+  set("ts-data", dataLabel, dataCls);
+  // EdgeDepth gateway cell: real reachability from /api/edgedepth/status only.
+  if (state.edgeGateway) {
+    const eg = state.edgeGateway;
+    const label = eg.reachable ? "EDGEDEPTH LIVE" : "EDGEDEPTH OFFLINE";
+    set("ts-edge", label, eg.reachable ? "on" : "off");
+  }
   set("ts-sym", state.symbol || null);
   set("ts-tf", state.timeframe || null);
 
@@ -347,6 +365,45 @@ async function pollMdHealth() {
       state.mdLatencyMs = null;
     }
   } catch (e) { /* health unavailable */ }
+}
+
+/* Phase-3 correction: honest empty state on Price & Chart.
+   enterDataWaiting shows WAITING FOR MARKET DATA / DATA CONNECTION ERROR
+   over the chart stage; exitDataWaiting clears it when a live source lands.
+   No synthetic candles, no DEMO BTC/GOLD auto-open. */
+function enterDataWaiting(title, detail) {
+  state.dataWaiting = true;
+  const ov = $("data-waiting");
+  if (ov) {
+    ov.classList.remove("hidden");
+    const t = $("dw-title");
+    const d = $("dw-detail");
+    if (t) t.textContent = title || "WAITING FOR MARKET DATA";
+    if (d) d.textContent = detail || "";
+  }
+  // Clear any prior instrument so the header cannot show a stale symbol.
+  state.symbol = null;
+  state.candleData = [];
+  state.lastBar = null;
+  renderWatchlist();
+  updateInstrumentBar();
+  updateTermStatus();
+}
+function exitDataWaiting() {
+  if (!state.dataWaiting) return;
+  state.dataWaiting = false;
+  const ov = $("data-waiting");
+  if (ov) ov.classList.add("hidden");
+}
+// Probe EdgeDepth gateway reachability (server-side TCP/HTTP check).
+// Never invents data — only reports whether the optional L2 feed is up.
+async function pollEdgeGateway() {
+  try {
+    const res = await fetch("/api/edgedepth/status");
+    if (!res.ok) return;
+    state.edgeGateway = await res.json();
+    updateTermStatus();
+  } catch (e) { /* status unavailable */ }
 }
 
 /* Workspace controls: Save / Load / Reset on the existing shell store
@@ -607,7 +664,14 @@ function updateWindowTitle() {
 }
 
 async function loadChart() {
-  if (!state.provider || !state.symbol) return;
+  if (!state.provider || !state.symbol) {
+    // Keyless / no instrument: stay in the honest waiting state.
+    if (!state.provider || state.dataWaiting) {
+      enterDataWaiting("WAITING FOR MARKET DATA",
+        "Connect a live data source (LSE API key) to load real candles.");
+    }
+    return;
+  }
   // Sequence the loads: rapid symbol/timeframe switches can finish out of
   // order, and a slow older response landing last would paint the previous
   // instrument's candles under the new title. Only the newest load may win.
@@ -1077,6 +1141,12 @@ function renderWatchlist() {
   renderConnBar();
   const el = $("watchlist");
   el.innerHTML = "";
+  // Keyless / waiting: no synthetic rows. Honest empty state only.
+  if (state.dataWaiting || (!state.provider && !state.instruments.length)) {
+    el.innerHTML = '<div class="md-empty">No live source connected.<br>' +
+      'Add an LSE API key to load instruments.</div>';
+    return;
+  }
   if (state.provider === "userdata") {
     // The user's data always shows as the managed library tree: add,
     // folders, rename, delete, drag; clicking a dataset charts it.
@@ -2740,6 +2810,8 @@ function switchProvider(name) {
 
 async function runSwitchProvider(name) {
   state.provider = name;
+  // A real source switch always leaves the waiting empty-state.
+  if (typeof exitDataWaiting === "function") exitDataWaiting();
   state.prices = {};
   state.logos = {};
   loadPriceCache(); // last session's board paints instantly, dimmed as stale
@@ -12362,23 +12434,25 @@ function setupRail() {
     $("research").classList.add("hidden");
     $("guide").classList.add("hidden");
     closeBacktestPages();
-    // MARKETS hosts live sources: LSE, the user's own vendors, or the
-    // bundled demo feed. Phase 3-UI: the Price & Chart workspace must open
-    // immediately — without an LSE key we land on the demo provider (honest
-    // DEMO source, synthetic walk) instead of a connect wall that hid the
-    // entire chart. The connect form stays one click away via the conn bar.
+    // MARKETS hosts LIVE sources only (LSE + the user's own vendors).
+    // NO demo fallback: without a key we open the chart surface in an honest
+    // WAITING FOR MARKET DATA state (Phase-3 correction). Synthetic DEMO
+    // never auto-opens on the production Price & Chart path.
     if (!state.lseConfigured && !isLiveSource(state.provider)) {
       renderConnBar();
       $("lse-connect").classList.add("hidden");
       $("charts").classList.remove("hidden");
-      const wantDemo = state.provider !== "demo" && state.provider !== "userdata";
-      if (wantDemo || !state.provider) switchProvider("demo");
-      else renderWatchlist();
+      enterDataWaiting(
+        "WAITING FOR MARKET DATA",
+        "No live data source connected. Add your free LSE API key to stream " +
+        "real market data. EdgeDepth gateway (for depth/order-flow) is a " +
+        "separate optional feed — see the status strip.");
       updateInstrumentBar();
       return;
     }
     $("lse-connect").classList.add("hidden");
     $("charts").classList.remove("hidden");
+    exitDataWaiting();
     if (!isLiveSource(state.provider)) switchProvider("lse");
     else renderWatchlist();
   };
@@ -15368,6 +15442,10 @@ async function boot() {
   state.providers = providers;
   state.indicatorSpecs = indicatorSpecs;
   state.lseConfigured = !!config.lse_configured;
+  state.dataWaiting = false;
+  state.edgeGateway = null;
+  pollEdgeGateway();
+  setInterval(pollEdgeGateway, 15000);
   // Hosted terminals have no local broker hub (a connection is a
   // subprocess on the user's own machine), so the picker hides the
   // broker section there rather than listing rows that cannot connect.
@@ -15427,11 +15505,17 @@ async function boot() {
 
   // Reopen the chart as it was left: the shell section carries the active
   // indicators (with params) and chart type. First run = SMA, as before.
+  // Phase-3 correction: a shell symbol from the old demo auto-open path
+  // (DEMO:*) is ignored unless the demo provider is explicitly active —
+  // it must not resurrect synthetic BTC/GOLD on a keyless boot.
   let shell = null;
   try {
     const body = await fetch("/api/workspace/shell").then((r) => r.ok ? r.json() : null);
     shell = body && body.value;
   } catch (e) { /* defaults below */ }
+  if (shell && typeof shell.symbol === "string" && /^DEMO:/i.test(shell.symbol)) {
+    shell = { ...shell, symbol: "" };
+  }
   state.activeIndicators = (shell && Array.isArray(shell.activeIndicators)
     ? shell.activeIndicators : [{ name: "sma" }])
     .filter((i) => i && state.indicatorSpecs.some((s) => s.name === i.name));

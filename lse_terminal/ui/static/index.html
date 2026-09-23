@@ -317,6 +317,14 @@ def my_ind(df, length=20):
            equity curve; it draws no price data. -->
       <div id="chart-pro"></div>
       <div id="chart" class="hidden"></div>
+      <!-- Phase-3 correction: honest empty state — NO demo BTC/GOLD fallback.
+           Shown when no live source is connected (LSE key required). -->
+      <div id="data-waiting" class="hidden" role="status" aria-live="polite">
+        <div class="dw-badge">DATA</div>
+        <div id="dw-title" class="dw-title">WAITING FOR MARKET DATA</div>
+        <div id="dw-detail" class="dw-detail">No live data source connected.</div>
+        <div class="dw-hint">Add your free LSE API key · EdgeDepth gateway is a separate optional feed</div>
+      </div>
     </div>
     <div id="panes"></div>
     <!-- Account dock: MT-style strip under the chart.
@@ -1289,6 +1297,7 @@ def my_ind(df, length=20):
 <!-- Phase 3-UI bottom status strip -->
 <footer id="term-status" aria-label="Terminal status">
   <span class="ts-cell"><span class="ts-k">DATA</span><span id="ts-data" class="ts-v">—</span></span>
+  <span class="ts-cell"><span class="ts-k">GATEWAY</span><span id="ts-edge" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">FEED</span><span id="ts-feed" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">LATENCY</span><span id="ts-lat" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">SESSION</span><span id="ts-ses" class="ts-v">—</span></span>

@@ -87,19 +87,28 @@ def test_rate_limit_candles_429(client: TestClient):
     # Sliding window: fire until 429 (or give up after a high ceiling so a
     # mis-wired limiter fails loudly rather than hanging).
     limited = None
-    for i in range(200):
-        r = client.get(
-            "/api/candles",
-            params={"provider": "demo", "symbol": "DEMO:BTC", "timeframe": "1h", "limit": 5},
-        )
-        if r.status_code == 429:
-            limited = i + 1
-            break
-        assert r.status_code == 200
-    assert limited is not None, "per-provider rate limit never triggered in 200 calls"
-    # Rate-limit response shape
-    detail = r.json().get("detail", "")
-    assert "rate limited" in detail
+    try:
+        for i in range(200):
+            r = client.get(
+                "/api/candles",
+                params={"provider": "demo", "symbol": "DEMO:BTC", "timeframe": "1h", "limit": 5},
+            )
+            if r.status_code == 429:
+                limited = i + 1
+                break
+            assert r.status_code == 200
+        assert limited is not None, "per-provider rate limit never triggered in 200 calls"
+        # Rate-limit response shape
+        detail = r.json().get("detail", "")
+        assert "rate limited" in detail
+    finally:
+        # Shared module-scoped app: leave the demo limiter clean so later
+        # tests (price board, etc.) are not 429'd by this exhaustion/cooldown.
+        md = client.app.state.market_data
+        lim = md.rate_limits.for_provider("demo")
+        with lim._lock:
+            lim._times.clear()
+            lim._block_until = 0.0
 
 
 def test_ws_protocol_hello_status_subscribe(client: TestClient):
@@ -207,9 +216,17 @@ def test_instruments_via_market_data(client: TestClient):
 def test_demo_price_board_shape(client: TestClient):
     """Demo board rows carry price/bid/ask/change for the watchlist — real
     walk values, not UI-side fabrications."""
-    r = client.get("/api/prices", params={"provider": "demo",
-                                         "symbols": "DEMO:GOLD,DEMO:BTC"})
-    assert r.status_code == 200, r.text
+    import time as _time
+    r = None
+    for _attempt in range(5):
+        r = client.get("/api/prices", params={"provider": "demo",
+                                             "symbols": "DEMO:GOLD,DEMO:BTC"})
+        if r.status_code == 200:
+            break
+        # Sliding-window limiter can still be warm from the 429 test on a
+        # fast suite; wait out the 1s window instead of failing the shape.
+        _time.sleep(0.3)
+    assert r is not None and r.status_code == 200, r.text if r else "no response"
     rows = r.json()
     assert {x["symbol"] for x in rows} == {"DEMO:GOLD", "DEMO:BTC"}
     for row in rows:
@@ -229,3 +246,41 @@ def test_shell_phase3_ui_markers():
         "chart-type", "ind-open",
     ):
         assert needle in html, f"missing {needle}"
+
+
+def test_no_demo_auto_open_on_price_chart():
+    """Phase-3 correction: production Price & Chart must not auto-open DEMO."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    app = (root / "lse_terminal/ui/static/app.js").read_text()
+    # The keyless MARKETS path must never switchProvider("demo").
+    assert 'switchProvider("demo")' not in app
+    # Honest waiting state exists.
+    assert "function enterDataWaiting" in app
+    assert "WAITING FOR MARKET DATA" in app
+    # Shell restore must not resurrect DEMO:* symbols.
+    assert "/^DEMO:/i" in app
+
+
+def test_edgedepth_status_endpoint(client: TestClient):
+    """EdgeDepth gateway status is honest reachability only — no fake data."""
+    r = client.get("/api/edgedepth/status")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["name"] == "edgedepth-gateway"
+    assert body["state"] in {"CONNECTED", "OFFLINE"}
+    assert body["reachable"] is (body["state"] == "CONNECTED")
+    assert "streams" in body and 3 in body["streams"]  # orderbook stream id
+    # Never invents candles/quotes from this endpoint.
+    assert "candles" not in body and "price" not in body
+
+
+def test_shell_waiting_markers():
+    """Price & Chart ships the no-demo waiting overlay + gateway status cell."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1]
+            / "lse_terminal/ui/static/index.html").read_text()
+    assert "data-waiting" in html
+    assert "dw-title" in html
+    assert "WAITING FOR MARKET DATA" in html
+    assert "ts-edge" in html
