@@ -535,7 +535,10 @@ add_executable(c_based_trader_client
 target_compile_definitions(c_based_trader_client PRIVATE "ImDrawIdx=unsigned int")
 
 # Standalone production depth regression uses the same pinned wire/runtime.
+# This vendored tree omits tests/ — only define EXCLUDE_FROM_ALL regression
+# targets when their sources are present (full upstream checkouts).
 if(EMSCRIPTEN)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/pack_seek_test.cpp")
     add_executable(pack_seek_regression EXCLUDE_FROM_ALL
         tests/wasm/pack_seek_test.cpp src/replayer/pack_replay_engine.cpp
         src/core/message_parser.cpp src/core/orderbook_manager.cpp
@@ -544,6 +547,8 @@ if(EMSCRIPTEN)
     target_compile_options(pack_seek_regression PRIVATE -O1)
     target_link_options(pack_seek_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
     set_target_properties(pack_seek_regression PROPERTIES SUFFIX ".js")
+    endif()
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/realtime_mesh_test.cpp")
     add_executable(realtime_mesh_regression EXCLUDE_FROM_ALL
         tests/wasm/realtime_mesh_test.cpp ${IMGUI_DIR}/imgui.cpp
         ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp)
@@ -551,6 +556,9 @@ if(EMSCRIPTEN)
     target_compile_options(realtime_mesh_regression PRIVATE -O1)
     target_link_options(realtime_mesh_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
     set_target_properties(realtime_mesh_regression PROPERTIES SUFFIX ".js")
+    endif()
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/realtime_history_test.cpp"
+       AND EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/realtime_archive_test.cpp")
     add_executable(realtime_depth_regression EXCLUDE_FROM_ALL
         tests/wasm/realtime_history_test.cpp tests/wasm/realtime_archive_test.cpp
         src/core/realtime_archive.cpp src/core/orderbook_manager.cpp
@@ -564,6 +572,7 @@ if(EMSCRIPTEN)
     target_link_options(realtime_depth_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
     target_link_options(realtime_depth_regression PRIVATE "--pre-js=${CMAKE_SOURCE_DIR}/tests/wasm/realtime_archive_bridge_fixture.js")
     set_target_properties(realtime_depth_regression PROPERTIES SUFFIX ".js")
+    endif()
 endif()
 
 # Ensure protobuf files are generated before compiling
