@@ -130,3 +130,30 @@ jobs:
           path: staged/edgedepth/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Commit artifacts into GT static/edgedepth
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DEST=lse_terminal/ui/static/edgedepth
+          mkdir -p "$DEST"
+          cp -f staged/edgedepth/index.html "$DEST/"
+          cp -f staged/edgedepth/index.js "$DEST/"
+          cp -f staged/edgedepth/index.wasm "$DEST/"
+          cp -f staged/edgedepth/index.data "$DEST/"
+          # Keep the static fallback config alongside runtime glue
+          ls -la "$DEST"
+          test -f "$DEST/index.html"
+          test -f "$DEST/index.js"
+          test -f "$DEST/index.wasm"
+          test -f "$DEST/index.data"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add "$DEST/index.html" "$DEST/index.js" "$DEST/index.wasm" "$DEST/index.data"
+          if git diff --cached --quiet; then
+            echo 'static/edgedepth already up to date'
+          else
+            git commit -m "ci: install EdgeDepth WASM artifacts into static/edgedepth [skip ci]"
+            git push origin HEAD:arena/01a0caa0-green-terminal
+          fi
