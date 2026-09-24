@@ -1,0 +1,46 @@
+# Green Terminal — full stack in one container (app + managed EdgeDepth gateway).
+#
+# Preview after `docker compose up --build`:
+#   App / Order Flow UI : http://127.0.0.1:7787/
+#   Gateway WebSocket   : ws://127.0.0.1:18791/ws   (browser reaches this via
+#                         the published port; config_js already emits 127.0.0.1)
+#
+# The prebuilt bin/edgedepth-gateway is linux/amd64 — platform is pinned so
+# Apple Silicon / ARM hosts use emulation instead of failing exec format.
+
+services:
+  green-terminal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: green-terminal:local
+    container_name: green-terminal
+    platform: linux/amd64
+    ports:
+      # Green Terminal UI (Price & Chart, Order Flow shell)
+      - "7787:7787"
+      # EdgeDepth gateway — MUST be published: the WASM client in the browser
+      # opens ws://127.0.0.1:18791/ws on the host, not inside the container.
+      - "18791:18791"
+    environment:
+      EDGEDEPTH_PORT: "18791"
+      # Status/healthz from inside the container (gateway binds :18791).
+      EDGEDEPTH_HOST: "127.0.0.1"
+      # Optional absolute override for the browser (rarely needed for local Docker):
+      # EDGEDEPTH_WS: "ws://127.0.0.1:18791/ws"
+      LSE_TERMINAL_CONFIG_DIR: "/tmp/lse-terminal"
+      LSE_TERMINAL_REMOTE: "1"
+      PYTHONUNBUFFERED: "1"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7787/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    # Persist workspace/config across restarts (optional).
+    volumes:
+      - gt-config:/tmp/lse-terminal
+
+volumes:
+  gt-config:
