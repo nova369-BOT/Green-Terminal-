@@ -1,0 +1,79 @@
+name: Build EdgeDepth WASM artifacts
+
+on:
+  push:
+    branches:
+      - arena/01a0caa0-green-terminal
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten 4.0.15
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.15
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify emcc
+        run: |
+          emcc --version
+          which emcmake emmake
+
+      - name: Install protoc 21.12
+        run: |
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protoc-21.12-linux-x86_64.zip"
+          sudo unzip -qo /tmp/protoc.zip -d /usr/local
+          protoc --version
+
+      - name: Build c_based_trader_client
+        working-directory: third_party/edgedepth-terminal
+        run: |
+          mkdir -p build
+          cd build
+          emcmake cmake -DCMAKE_BUILD_TYPE=Release ..
+          emmake make -j"$(nproc)" c_based_trader_client
+
+      - name: Assert four artifacts
+        working-directory: third_party/edgedepth-terminal/build
+        run: |
+          ls -la
+          test -f index.html
+          test -f index.js
+          test -f index.wasm
+          test -f index.data
+
+      - name: Inject edgedepth-config.js before Emscripten glue
+        working-directory: third_party/edgedepth-terminal/build
+        run: |
+          sed -i 's|<head>|<head>\n<script src="edgedepth-config.js"></script>|' index.html
+          grep -q 'edgedepth-config.js' index.html
+
+      - name: Stage artifacts for GT static dir
+        run: |
+          mkdir -p staged/edgedepth
+          cp third_party/edgedepth-terminal/build/index.html staged/edgedepth/
+          cp third_party/edgedepth-terminal/build/index.js staged/edgedepth/
+          cp third_party/edgedepth-terminal/build/index.wasm staged/edgedepth/
+          cp third_party/edgedepth-terminal/build/index.data staged/edgedepth/
+          ls -la staged/edgedepth/
+
+      - name: Upload artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: edgedepth-wasm
+          path: staged/edgedepth/
+          if-no-files-found: error
+          retention-days: 14
