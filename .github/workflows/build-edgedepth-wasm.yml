@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -57,6 +57,47 @@ jobs:
             /tmp/make.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Annotate failure from logs
+        if: failure()
+        run: |
+          {
+            echo '### Build failed — cmake tail'
+            echo '```'
+            tail -n 40 /tmp/cmake.log 2>/dev/null || true
+            echo '```'
+            echo '### make tail'
+            echo '```'
+            tail -n 80 /tmp/make.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Also emit compact annotations (visible via API)
+          if [ -f /tmp/cmake.log ]; then
+            tail -n 5 /tmp/cmake.log | sed 's/^/::error cmake::/' || true
+          fi
+          if [ -f /tmp/make.log ]; then
+            # Surface first error lines
+            grep -E 'error:|Error |FAILED|fatal' /tmp/make.log | head -20 | sed 's/^/::error make::/' || \
+              tail -n 20 /tmp/make.log | sed 's/^/::error make::/' || true
+          fi
+
+      - name: Commit logs back to branch on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ci-logs
+          cp -f /tmp/cmake.log ci-logs/ 2>/dev/null || true
+          cp -f /tmp/make.log ci-logs/ 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ci-logs || true
+          if git diff --cached --quiet; then
+            echo 'no logs to commit'
+          else
+            git commit -m "ci-logs: EdgeDepth WASM build failure logs [skip ci]"
+            git push origin HEAD:arena/01a0caa0-green-terminal || true
+          fi
 
       - name: Assert four artifacts
         working-directory: third_party/edgedepth-terminal/build
