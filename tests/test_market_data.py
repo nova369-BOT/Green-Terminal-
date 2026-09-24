@@ -304,17 +304,24 @@ def test_shell_waiting_markers():
 
 
 def test_edgedepth_artifacts_endpoint(client: TestClient):
-    """Real EdgeDepth build outputs are reported honestly (never faked)."""
+    """Real EdgeDepth build outputs are present (CI-built, committed)."""
     r = client.get("/api/edgedepth/artifacts")
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["source"] == "third_party/edgedepth-terminal"
     assert "present" in body and "ready" in body
-    # coi-serviceworker ships with the integration; wasm may be unbuilt.
     assert body["present"].get("coi-serviceworker.js") is True
-    assert body["ready"] is (body["present"].get("index.js")
-                             and body["present"].get("index.wasm")
-                             and body["present"].get("index.data"))
+    # All four runtime artifacts ship with the integration.
+    for key in ("index.html", "index.js", "index.wasm", "index.data"):
+        assert body["present"].get(key) is True, f"missing {key}: {body['present']}"
+    assert body["ready"] is True
+    # Served endpoints must return real bytes (wasm magic).
+    idx = client.get("/edgedepth/index.html")
+    assert idx.status_code == 200
+    assert "edgedepth-config.js" in idx.text
+    wasm = client.get("/edgedepth/index.wasm")
+    assert wasm.status_code == 200
+    assert wasm.content[:4] == b"\x00asm"
 
 
 def test_orderflow_workspace_markers():
