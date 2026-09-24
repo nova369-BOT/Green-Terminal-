@@ -108,11 +108,19 @@ jobs:
           test -f index.wasm
           test -f index.data
 
-      - name: Inject edgedepth-config.js before Emscripten glue
+      - name: Inject edgedepth-config.js + fix asset paths for GT mount
         working-directory: third_party/edgedepth-terminal/build
         run: |
           sed -i 's|<head>|<head>\n<script src="edgedepth-config.js"></script>|' index.html
           grep -q 'edgedepth-config.js' index.html
+          # Emscripten shell defaults to root-relative assets; GT mounts under /edgedepth/.
+          sed -i 's|locateFile:function(e){return"/"+e}|locateFile:function(e){return"/edgedepth/"+e}|' index.html
+          sed -i "s|locateFile: function(path) {|locateFile: function(path) {|" index.html
+          # Also handle pretty-printed shell variants
+          sed -i "s|return '/' + path;|return '/edgedepth/' + path;|" index.html
+          grep -q '/edgedepth/' index.html
+          echo 'locateFile fixed:'
+          grep -o 'locateFile[^,]*' index.html | head -5
 
       - name: Stage artifacts for GT static dir
         run: |

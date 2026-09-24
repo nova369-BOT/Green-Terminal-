@@ -61,7 +61,8 @@
 
     var Module = {
         locateFile: function(path) {
-            return '/' + path;
+            // Assets ship under GT's /edgedepth/ mount, not the site root.
+            return '/edgedepth/' + path;
         },
         preRun: [],
         postRun: [],
