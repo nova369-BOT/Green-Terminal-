@@ -1,8 +1,9 @@
 # EdgeDepth Gateway
 
-A small Go binary that bridges Binance's public USD-M futures streams into the
+A small Go binary that bridges public futures streams into the
 [EdgeDepth Terminal](https://github.com/edgedepthhq/edgedepth-terminal) wire
-format, on localhost.
+format, on localhost. Two venues are served: `binancef` (Binance USD-M
+futures) and `hl` (Hyperliquid perpetuals).
 
 The terminal is a client. It speaks protobuf over WebSocket and connects to
 whatever feed you point it at. This is a feed you can run yourself, with one
@@ -111,6 +112,8 @@ Every flag has an environment variable equivalent.
 | `-trade-stream` | `BINANCE_TRADE_STREAM` | `aggTrade` | `aggTrade` or `trade` |
 | `-binance-rest` | `BINANCE_REST` | Binance | override REST base URL |
 | `-binance-ws` | `BINANCE_WS` | Binance | override stream base URL |
+| `-hl-rest` | `HL_REST` | Hyperliquid | override REST base URL |
+| `-hl-ws` | `HL_WS` | Hyperliquid | override WebSocket URL |
 
 **Current Binance routing:** trades, mark price, liquidation and ticker streams
 use `/market/stream`; depth uses a separate `/public/stream` connection. The

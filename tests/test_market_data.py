@@ -342,3 +342,19 @@ def test_orderflow_workspace_markers():
     assert (root / "third_party/edgedepth-terminal/src/core/heatmap_manager.cpp").is_file()
     assert (root / "third_party/edgedepth-terminal/protos/messages.proto").is_file()
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
+
+
+def test_gateway_serves_binance_and_hyperliquid():
+    """Gateway registry + HL adapter ship; Order Flow boots hl/BTC (reachable
+    where Binance is blocked, with the in-terminal venue toggle for Binance)."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    main = (root / "third_party/edgedepth-gateway/cmd/edgedepth-gateway/main.go").read_text()
+    assert "hyperliquid.New(log)" in main
+    assert "binance.New(log)" in main
+    hl = root / "third_party/edgedepth-gateway/internal/hyperliquid"
+    for name in ("adapter.go", "feed.go", "rest.go", "stream.go", "ticker.go"):
+        assert (hl / name).is_file(), f"missing hyperliquid/{name}"
+    assert '"hl"' in (hl / "adapter.go").read_text()
+    app = (root / "lse_terminal/ui/static/app.js").read_text()
+    assert "/edgedepth/index.html?exchange=hl&symbol=BTC" in app

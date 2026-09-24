@@ -163,5 +163,14 @@ jobs:
             echo 'static/edgedepth already up to date'
           else
             git commit -m "ci: install EdgeDepth WASM artifacts into static/edgedepth [skip ci]"
-            git push origin HEAD:arena/01a0caa0-green-terminal
+            # The gateway workflow may push to this branch at the same time;
+            # rebase and retry so the two commit-backs do not clobber each other.
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin arena/01a0caa0-green-terminal || git rebase --abort || true
+              if git push origin HEAD:arena/01a0caa0-green-terminal; then
+                echo "pushed on attempt $i"
+                break
+              fi
+              sleep 10
+            done
           fi

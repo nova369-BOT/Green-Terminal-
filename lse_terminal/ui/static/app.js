@@ -10623,8 +10623,10 @@ async function refreshOrderFlowStatus() {
   const fr = $("of-frame");
   if (fr && ready && !fr.getAttribute("src")) {
     // Real EdgeDepth client inside Green Terminal (same origin /edgedepth).
-    const sym = (state.symbol || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    fr.src = "/edgedepth/index.html" + (sym ? ("?symbol=" + sym) : "");
+    // Boots Hyperliquid BTC: HL is reachable from networks where Binance is
+    // blocked, and the gateway serves both venues. The venue toggle inside
+    // the terminal switches to Binance without leaving Green Terminal.
+    fr.src = "/edgedepth/index.html?exchange=hl&symbol=BTC";
     ofState.ready = true;
   }
   if (fr && !ready) fr.removeAttribute("src");

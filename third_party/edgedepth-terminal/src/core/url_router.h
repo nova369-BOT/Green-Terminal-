@@ -154,6 +154,31 @@ inline std::string parse_exchange_query(const std::string& search) {
     return "";
 }
 
+// Extract a case-PRESERVED ?symbol=<sym> value from a query string (e.g.
+// "?exchange=hl&symbol=BTC"); returns "" when absent. Case is preserved here
+// because Hyperliquid coins are uppercase end-to-end; the caller lowercases
+// only for binancef, mirroring parse_route.
+inline std::string parse_symbol_query(const std::string& search) {
+    using size_type = std::string::size_type;
+    static const std::string key = "symbol";
+
+    size_type pos = 0;
+    while (pos < search.size()) {
+        if (search[pos] == '?' || search[pos] == '&') { ++pos; continue; }
+
+        const size_type amp = search.find('&', pos);
+        const size_type end = (amp == std::string::npos) ? search.size() : amp;
+        const size_type eq  = search.find('=', pos);
+
+        if (eq != std::string::npos && eq < end &&
+            search.compare(pos, eq - pos, key) == 0) {
+            return search.substr(eq + 1, end - eq - 1);
+        }
+        pos = end + 1;
+    }
+    return "";
+}
+
 // parse_route reads the symbol from /terminal/<symbol> and the venue from an
 // optional ?exchange=<ex> query. binancef symbols are canonical lowercase; the
 // symbol case is PRESERVED for other venues (Hyperliquid coins are uppercase

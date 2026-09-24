@@ -1775,8 +1775,21 @@ int main(int, char**) {
     const bool embedded = EducationBoot::instance().is_embedded();
 
     g_initial_route = parse_route(url_get_current_path(), url_get_current_search());
+    // ?symbol= deep link (case-preserved for non-binancef venues, whose coins
+    // are uppercase end-to-end). Lets an embedder boot hl/BTC directly.
+    {
+        const std::string qsym = parse_symbol_query(url_get_current_search());
+        if (!qsym.empty()) {
+            g_initial_route.symbol = qsym;
+            if (g_initial_route.exchange == "binancef") {
+                std::transform(g_initial_route.symbol.begin(), g_initial_route.symbol.end(),
+                               g_initial_route.symbol.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            }
+        }
+    }
     if (g_initial_route.symbol.empty()) {
-        g_initial_route.symbol = "btcusdt";
+        g_initial_route.symbol = (g_initial_route.exchange == "hl") ? "BTC" : "btcusdt";
     }
     // Studio mode: the picker already chose the symbol (carried in the studio
     // global, read by EducationBoot::detect). Use it as the initial route so the

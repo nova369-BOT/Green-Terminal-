@@ -1,0 +1,96 @@
+name: Build EdgeDepth gateway binary
+
+on:
+  push:
+    branches:
+      - arena/01a0caa0-green-terminal
+    paths:
+      - third_party/edgedepth-gateway/**
+      - bin/edgedepth-gateway
+      - .github/workflows/build-edgedepth-gateway.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: gofmt + vet + test
+        working-directory: third_party/edgedepth-gateway
+        run: |
+          set -o pipefail
+          gofmt -w .
+          go vet ./... 2>&1 | tee /tmp/gw-vet.log
+          go test ./... 2>&1 | tee /tmp/gw-test.log
+
+      - name: Commit logs back to branch on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ci-logs
+          cp -f /tmp/gw-vet.log /tmp/gw-test.log ci-logs/ 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ci-logs || true
+          if git diff --cached --quiet; then
+            echo 'no logs to commit'
+          else
+            git commit -m "ci-logs: EdgeDepth gateway build failure logs [skip ci]"
+            git push origin HEAD:arena/01a0caa0-green-terminal || true
+          fi
+
+      - name: Build linux/amd64 gateway
+        working-directory: third_party/edgedepth-gateway
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../../bin/edgedepth-gateway ./cmd/edgedepth-gateway
+          ls -la ../../bin/edgedepth-gateway
+          file ../../bin/edgedepth-gateway || true
+
+      - name: Upload gateway binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: edgedepth-gateway-linux-amd64
+          path: bin/edgedepth-gateway
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit binary back to branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add bin/edgedepth-gateway third_party/edgedepth-gateway
+          if git diff --cached --quiet; then
+            echo 'gateway binary already up to date'
+            exit 0
+          fi
+          git commit -m "ci: rebuild EdgeDepth gateway binary [skip ci]"
+          # The WASM workflow may push to this branch at the same time; rebase
+          # and retry so the two commit-backs do not clobber each other.
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin arena/01a0caa0-green-terminal || git rebase --abort || true
+            if git push origin HEAD:arena/01a0caa0-green-terminal; then
+              echo "pushed on attempt $i"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'push failed after retries' >&2
+          exit 1

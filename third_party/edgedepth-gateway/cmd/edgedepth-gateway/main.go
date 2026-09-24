@@ -1,11 +1,14 @@
-// Command edgedepth-gateway bridges Binance's public futures streams into the
-// EdgeDepth terminal wire format on localhost.
+// Command edgedepth-gateway bridges public futures streams into the EdgeDepth
+// terminal wire format on localhost. Two venues are served:
+//
+//	binancef     Binance USD-M futures (wss://fstream.binance.com)
+//	hl           Hyperliquid perpetuals (wss://api.hyperliquid.xyz/ws)
 //
 // Point the terminal at it:
 //
 //	https://app.edgedepth.com/terminal/btcusdt?ws=ws://localhost:8080/ws
 //
-// No API key, no account. Binance's public market data needs neither.
+// No API key, no account. Both venues' public market data needs neither.
 package main
 
 import (
@@ -23,6 +26,7 @@ import (
 
 	"github.com/edgedepthhq/edgedepth-gateway/internal/binance"
 	"github.com/edgedepthhq/edgedepth-gateway/internal/hub"
+	"github.com/edgedepthhq/edgedepth-gateway/internal/hyperliquid"
 )
 
 func main() {
@@ -32,6 +36,8 @@ func main() {
 		logLvl  = flag.String("log", envOr("EDGEDEPTH_LOG", "info"), "log level: debug, info, warn, error")
 		restURL = flag.String("binance-rest", envOr("BINANCE_REST", ""), "override Binance REST base URL")
 		wsURL   = flag.String("binance-ws", envOr("BINANCE_WS", ""), "override Binance stream base URL")
+		hlREST  = flag.String("hl-rest", envOr("HL_REST", ""), "override Hyperliquid REST base URL")
+		hlWS    = flag.String("hl-ws", envOr("HL_WS", ""), "override Hyperliquid WebSocket URL")
 		tradeSt = flag.String("trade-stream", envOr("BINANCE_TRADE_STREAM", "aggTrade"),
 			"Binance trade stream: aggTrade (aggregated per taker order) or trade (raw per fill). "+
 				"Switch to trade if the tape stays empty while the orderbook updates.")
@@ -54,6 +60,12 @@ func main() {
 	if *wsURL != "" {
 		binance.WSBase = strings.TrimSuffix(*wsURL, "/")
 	}
+	if *hlREST != "" {
+		hyperliquid.RESTBase = strings.TrimSuffix(*hlREST, "/")
+	}
+	if *hlWS != "" {
+		hyperliquid.WSBase = *hlWS
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(),
 		syscall.SIGINT, syscall.SIGTERM)
@@ -61,7 +73,7 @@ func main() {
 
 	// The venue registry. Adding an exchange is one adapter package plus one
 	// entry here; see CONTRIBUTING.md.
-	h := hub.New(log, binance.New(log))
+	h := hub.New(log, binance.New(log), hyperliquid.New(log))
 
 	// The symbol whitelist is a nicety, not a requirement: without it the
 	// gateway still runs and the venue rejects bad symbols itself.
