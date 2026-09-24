@@ -826,50 +826,65 @@ def create_app() -> FastAPI:
 
     @app.get("/api/edgedepth/status")
     def edgedepth_status(timeout: float = 0.35):
-        """Honest EdgeDepth gateway reachability probe.
+        """Honest EdgeDepth gateway status under Green Terminal ownership.
 
-        The community edgedepth-gateway is a separate MIT Go service
-        (default ws://127.0.0.1:8080/ws) bridging Binance public streams
-        into the EdgeDepth WSPayload wire. This endpoint only answers
-        whether that optional feed is accepting TCP connections — it never
-        fabricates candles/quotes and never claims LIVE for a dead socket.
+        The MIT edgedepth-gateway is an *internal* GT service (not a second
+        app the user launches). Lifecycle — find binary, spawn, healthz,
+        reconnect, shutdown — lives in engine.edgedepth_gateway. This route
+        only reports measured state; it never fabricates candles/quotes and
+        never claims LIVE for a dead socket.
 
-        Config: EDGEDEPTH_HOST / EDGEDEPTH_PORT (or EDGEDEPTH_WS).
+        Config: EDGEDEPTH_HOST / EDGEDEPTH_PORT / EDGEDEPTH_WS / EDGEDEPTH_GATEWAY.
         No credential is required by the community gateway.
         """
-        import socket
-        from urllib.parse import urlparse
-        ws = os.environ.get("EDGEDEPTH_WS", "")
-        if ws:
-            u = urlparse(ws)
+        from lse_terminal.engine.edgedepth_gateway import get_supervisor
+        body = get_supervisor().status()
+        # Optional TCP refine for external/adopted listeners (timeout arg
+        # kept for API stability). managed fields come from the supervisor.
+        if timeout and not body.get("reachable"):
+            import socket
+            from urllib.parse import urlparse
+            u = urlparse(body.get("endpoint") or "ws://127.0.0.1:8080/ws")
             host = u.hostname or "127.0.0.1"
-            port = u.port or (443 if u.scheme == "wss" else 80)
-        else:
-            host = os.environ.get("EDGEDEPTH_HOST", "127.0.0.1")
-            port = int(os.environ.get("EDGEDEPTH_PORT", "8080"))
-        endpoint = f"ws://{host}:{port}/ws" if not ws else ws
-        reachable = False
-        err = None
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(timeout)
+            port = u.port or 80
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(timeout)
+            try:
+                if s.connect_ex((host, port)) == 0:
+                    body["reachable"] = True
+                    body["state"] = "CONNECTED"
+            except OSError as e:
+                body["error"] = str(e)
+            finally:
+                s.close()
+        return body
+
+    @app.get("/edgedepth/edgedepth-config.js")
+    def edgedepth_config_js():
+        """Dynamic runtime config: browser WS URL points at the managed
+        gateway (same process tree as `lset`), not a hand-started app."""
+        from lse_terminal.engine.edgedepth_gateway import config_js
+        return Response(config_js(), media_type="application/javascript")
+
+    @app.on_event("startup")
+    def _edgedepth_gateway_startup():
+        # Internal service: initialize + connect attempt. Never raises —
+        # missing binary is reported honestly via /api/edgedepth/status.
+        if os.environ.get("LSE_TERMINAL_SKIP_EDGEDEPTH_GATEWAY") == "1":
+            return
         try:
-            reachable = s.connect_ex((host, port)) == 0
-        except OSError as e:
-            err = str(e)
-        finally:
-            s.close()
-        return {
-            "name": "edgedepth-gateway",
-            "title": "EdgeDepth Gateway",
-            "endpoint": endpoint,
-            "reachable": reachable,
-            "state": "CONNECTED" if reachable else "OFFLINE",
-            "error": err,
-            "note": ("Optional L2/order-flow feed (Binance public via community "
-                     "gateway). Not required for LSE price charts. No data is "
-                     "served from this endpoint — status only."),
-            "streams": [1, 2, 3, 4, 5, 8, 17, 26, 29],
-        }
+            from lse_terminal.engine.edgedepth_gateway import get_supervisor
+            get_supervisor().ensure()
+        except Exception:
+            pass
+
+    @app.on_event("shutdown")
+    def _edgedepth_gateway_shutdown():
+        try:
+            from lse_terminal.engine.edgedepth_gateway import get_supervisor
+            get_supervisor().stop()
+        except Exception:
+            pass
 
     @app.get("/api/providers")
     def providers():

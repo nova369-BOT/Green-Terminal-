@@ -271,8 +271,25 @@ def test_edgedepth_status_endpoint(client: TestClient):
     assert body["state"] in {"CONNECTED", "OFFLINE"}
     assert body["reachable"] is (body["state"] == "CONNECTED")
     assert "streams" in body and 3 in body["streams"]  # orderbook stream id
+    # GT-owned lifecycle facts (never fabricated).
+    assert "managed" in body and "binary_found" in body
+    assert "endpoint" in body and body["endpoint"].startswith("ws://")
     # Never invents candles/quotes from this endpoint.
     assert "candles" not in body and "price" not in body
+
+
+def test_edgedepth_config_js_dynamic(client: TestClient):
+    """Browser WS config is served by GT (points at the managed gateway)."""
+    r = client.get("/edgedepth/edgedepth-config.js")
+    assert r.status_code == 200, r.text
+    assert "__EDGEDEPTH_WS_URL__" in r.text
+    assert "ws://" in r.text
+    # One product: no instruction to open a second EdgeDepth app.
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1]
+            / "lse_terminal/ui/static/index.html").read_text()
+    assert "Open EdgeDepth full" not in html
+    assert 'id="of-fullscreen"' in html
 
 
 def test_shell_waiting_markers():

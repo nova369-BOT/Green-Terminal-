@@ -10610,24 +10610,35 @@ async function refreshOrderFlowStatus() {
   if (banner) {
     if (!ready) {
       banner.classList.remove("hidden");
-      $("of-banner-title").textContent = "EDGEDEPTH RUNTIME NOT LOADED";
+      $("of-banner-title").textContent = "ORDER FLOW RUNTIME NOT LOADED";
       $("of-banner-detail").textContent =
         "Order Flow hosts the official EdgeDepth WASM build (DOM, heatmap, " +
         "tape, footprint). Missing: " + missing.join(", ") +
-        ". Build third_party/edgedepth-terminal (see edgedepth/README.md). " +
-        "No simulated depth is substituted.";
+        ". Green Terminal loads the built runtime when present; no " +
+        "simulated depth is substituted.";
     } else {
       banner.classList.add("hidden");
     }
   }
   const fr = $("of-frame");
   if (fr && ready && !fr.getAttribute("src")) {
-    // Real EdgeDepth client; symbol via query if router expects it.
+    // Real EdgeDepth client inside Green Terminal (same origin /edgedepth).
     const sym = (state.symbol || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    fr.src = "/edgedepth/shell.html" + (sym ? ("?symbol=" + sym) : "");
+    fr.src = "/edgedepth/index.html" + (sym ? ("?symbol=" + sym) : "");
     ofState.ready = true;
   }
   if (fr && !ready) fr.removeAttribute("src");
+  // One-product chrome: Expand toggles fullscreen on the stage (no second tab).
+  const fsBtn = $("of-fullscreen");
+  if (fsBtn && !fsBtn.dataset.bound) {
+    fsBtn.dataset.bound = "1";
+    fsBtn.addEventListener("click", () => {
+      const stage = $("of-stage");
+      if (!stage) return;
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (stage.requestFullscreen) stage.requestFullscreen();
+    });
+  }
 }
 
 function showOrderFlowPage() {
