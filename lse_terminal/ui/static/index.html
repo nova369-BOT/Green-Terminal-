@@ -101,6 +101,10 @@ document.documentElement.setAttribute("data-theme",
        as the dock). app.js renderFlyout() fills it; empty + hidden until
        a section is clicked. -->
   <div id="flyout" class="hidden" role="menu" aria-label="Section views"></div>
+  <!-- GT Lasso capture layer (positioned over the chart while armed) and
+       the dossier card. Both hidden unless a lasso is in progress/done. -->
+  <div id="lasso-layer" class="hidden" aria-hidden="true"><svg id="lasso-svg"></svg></div>
+  <div id="lasso-card" class="hidden" role="status" aria-label="Zone dossier"></div>
   <div id="controls">
   <!-- No data-source dropdown: the active rail tab decides the source.
        MARKETS is live LSE data (API key), BACKTEST / MY DATA are the
@@ -117,6 +121,10 @@ document.documentElement.setAttribute("data-theme",
     <option value="renko">Renko</option>
   </select>
   <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
+  <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for
+       an instant dossier of the real candles inside. Same ids the boot path
+       binds; the layer + card live at body level below. -->
+  <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
   <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
        prefixes read as decoration, not chrome.
        The &#402; on Indicators stays: it is the recognised

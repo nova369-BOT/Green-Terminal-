@@ -9715,6 +9715,282 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") hideFlyout();
 });
 
+/* ── GT Lasso ──────────────────────────────────────────────────────────────
+   Hold L (or arm one shot via #lasso-open) and circle any chart zone: the
+   dossier reports ONLY the real loaded candles inside (state.candleData).
+   Mapping is self-calibrating: rendered candle elements carry data-index
+   into the candle array, and the pixel<->price scale is least-squares fit
+   from the rendered rects and VERIFIED before use. If the fit fails the
+   lasso aborts honestly instead of guessing. */
+const lasso = { armed: false, once: false, drawing: false, pts: [], rect: null };
+function lassoChartHost() {
+  const h = $("chart-pro");
+  return (h && !h.classList.contains("hidden") && h.offsetParent) ? h : null;
+}
+function lassoShowLayer() {
+  const host = lassoChartHost();
+  const layer = $("lasso-layer");
+  if (!host || !layer) return false;
+  const r = host.getBoundingClientRect();
+  if (r.width < 60 || r.height < 60) return false;
+  lasso.rect = r;
+  layer.style.left = r.left + "px"; layer.style.top = r.top + "px";
+  layer.style.width = r.width + "px"; layer.style.height = r.height + "px";
+  layer.classList.remove("hidden");
+  layer.classList.add("armed");
+  lassoClearDraw();
+  return true;
+}
+function lassoHideLayer() {
+  const layer = $("lasso-layer");
+  if (layer) { layer.classList.add("hidden"); layer.classList.remove("armed"); }
+  lasso.armed = false; lasso.drawing = false; lasso.pts = [];
+  const b = $("lasso-open");
+  if (b) b.classList.remove("active");
+}
+function lassoArm(once) {
+  lassoHideCard();
+  if (!lassoShowLayer()) return;
+  lasso.armed = true; lasso.once = !!once;
+  const b = $("lasso-open");
+  if (b) b.classList.toggle("active", !!once);
+}
+function lassoDisarm() {
+  lasso.once = false;
+  lassoHideLayer();
+}
+function lassoClearDraw() {
+  const svg = $("lasso-svg");
+  if (svg) svg.innerHTML = "";
+}
+function lassoDraw() {
+  const svg = $("lasso-svg");
+  if (!svg || lasso.pts.length < 2 || !lasso.rect) return;
+  const r = lasso.rect;
+  const pts = lasso.pts.map(([x, y]) =>
+    `${(x - r.left).toFixed(1)},${(y - r.top).toFixed(1)}`).join(" ");
+  svg.innerHTML = `<polygon class="lz-fill" points="${pts}"/><polyline class="lz-line" points="${pts}"/>`;
+}
+function lassoBBox() {
+  const xs = lasso.pts.map(p => p[0]), ys = lasso.pts.map(p => p[1]);
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+}
+/* Rendered candles -> data: data-index addresses state.candleData. */
+function lassoReadCandles() {
+  const host = lassoChartHost();
+  const out = [];
+  if (!host || !Array.isArray(state.candleData) || !state.candleData.length) return out;
+  const hr = host.getBoundingClientRect();
+  for (const el of host.querySelectorAll("[data-index]")) {
+    const i = parseInt(el.getAttribute("data-index"), 10);
+    if (!Number.isFinite(i) || i < 0 || i >= state.candleData.length) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    if (r.right < hr.left || r.left > hr.right || r.bottom < hr.top || r.top > hr.bottom) continue;
+    out.push({ i, c: state.candleData[i], top: r.top, bottom: r.bottom, cx: (r.left + r.right) / 2 });
+  }
+  return out;
+}
+/* Fit y = a*price + b from rendered rects. Element semantics are unknown
+   (wick vs body box), so both mappings are tried and only a verified fit
+   is kept. */
+function lassoFitScale(items) {
+  const cand = items.filter(o => o.c && isFinite(o.c.high) && isFinite(o.c.low) && o.c.high > o.c.low);
+  if (cand.length < 4) return null;
+  const stride = Math.max(1, Math.floor(cand.length / 60));
+  const sample = cand.filter((_, k) => k % stride === 0);
+  const fit = (pairs) => {
+    const n = pairs.length;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (const [x, y] of pairs) { sx += x; sy += y; sxx += x * x; sxy += x * y; }
+    const den = n * sxx - sx * sx;
+    if (!den) return null;
+    const a = (n * sxy - sx * sy) / den, b = (sy - a * sx) / n;
+    const mean = sy / n;
+    let sse = 0, sst = 0;
+    for (const [x, y] of pairs) {
+      const e = y - (a * x + b);
+      sse += e * e; sst += (y - mean) * (y - mean);
+    }
+    return { a, b, r2: sst ? 1 - sse / sst : 0 };
+  };
+  const wick = [], body = [];
+  for (const o of sample) {
+    wick.push([o.c.high, o.top], [o.c.low, o.bottom]);
+    body.push([Math.max(o.c.open, o.c.close), o.top], [Math.min(o.c.open, o.c.close), o.bottom]);
+  }
+  const fw = fit(wick), fb = fit(body);
+  const best = (fw && fb) ? (fw.r2 >= fb.r2 ? fw : fb) : (fw || fb);
+  if (!best || best.r2 < 0.97 || !(best.a < 0)) return null; // price rises upward
+  return best;
+}
+function lassoSession(h) {
+  if (h < 7) return "Asia"; if (h < 12) return "London";
+  if (h < 16) return "Overlap"; if (h < 21) return "New York"; return "Late";
+}
+function lassoFmtTime(t) {
+  const ms = t < 1e12 ? t * 1000 : t;
+  const d = new Date(ms);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+function lassoAnalyze(box) {
+  const items = lassoReadCandles();
+  if (items.length < 3) return { err: "Couldn't read candles on this view." };
+  const scale = lassoFitScale(items);
+  if (!scale) return { err: "Couldn't calibrate this chart — lasso unavailable here." };
+  const yToP = (y) => (y - scale.b) / scale.a;
+  const sel = items.filter(o => o.cx >= box.x0 && o.cx <= box.x1).sort((p, q) => p.i - q.i);
+  if (sel.length < 3) return { err: "Circle a wider zone (fewer than 3 candles inside)." };
+  const bandHi = Math.max(yToP(box.y0), yToP(box.y1));
+  const bandLo = Math.min(yToP(box.y0), yToP(box.y1));
+  // Sweeps: a dominant wick piercing the local extreme with the close back
+  // inside the range.
+  let up = 0, dn = 0;
+  for (let k = 0; k < sel.length; k++) {
+    const o = sel[k].c, body = Math.abs(o.close - o.open), rng = o.high - o.low;
+    if (!rng) continue;
+    const uw = o.high - Math.max(o.open, o.close), lw = Math.min(o.open, o.close) - o.low;
+    let lo = Infinity, hi = -Infinity;
+    for (let j = Math.max(0, k - 5); j < Math.min(sel.length, k + 6); j++) {
+      if (j === k) continue;
+      lo = Math.min(lo, sel[j].c.low); hi = Math.max(hi, sel[j].c.high);
+    }
+    if (uw > 2 * body && uw > 0.2 * rng && o.high > hi && o.close < o.high - 0.25 * rng) up++;
+    if (lw > 2 * body && lw > 0.2 * rng && o.low < lo && o.close > o.low + 0.25 * rng) dn++;
+  }
+  // Round-level touches inside the band.
+  const span = bandHi - bandLo;
+  const step = 10 ** Math.floor(Math.log10(span / 3));
+  const touches = [];
+  for (let lv = Math.ceil(bandLo / step) * step; lv <= bandHi; lv += step) {
+    let n = 0;
+    for (const s of sel) {
+      if (Math.abs(s.c.high - lv) < step * 0.12 || Math.abs(s.c.low - lv) < step * 0.12) n++;
+    }
+    if (n >= 2) touches.push([lv, n]);
+  }
+  touches.sort((a, b) => b[1] - a[1]);
+  // Owning session by majority (UTC hours of the enclosed candles).
+  const sess = {};
+  for (const s of sel) {
+    const ms = s.c.time < 1e12 ? s.c.time * 1000 : s.c.time;
+    const h = new Date(ms).getUTCHours();
+    if (!isNaN(h)) { const k = lassoSession(h); sess[k] = (sess[k] || 0) + 1; }
+  }
+  const top = Object.entries(sess).sort((a, b) => b[1] - a[1])[0];
+  const hi = Math.max(...sel.map(s => s.c.high)), lo = Math.min(...sel.map(s => s.c.low));
+  const dec = Math.max(0, -Math.floor(Math.log10(step)) + 1);
+  return {
+    n: sel.length,
+    span: lassoFmtTime(sel[0].c.time) + " → " + lassoFmtTime(sel[sel.length - 1].c.time),
+    sweeps: (up + dn) ? `${up + dn} (${up}↑ ${dn}↓)` : "None",
+    level: touches.length ? `${touches[0][0].toFixed(dec)} ×${touches[0][1]}` : "—",
+    range: `${(hi - lo).toFixed(dec)} (${(((hi - lo) / lo) * 100).toFixed(2)}%)`,
+    session: top ? `≈ ${top[0]}` : "—",
+  };
+}
+function lassoHideCard() {
+  const c = $("lasso-card");
+  if (c) { c.classList.add("hidden"); c.innerHTML = ""; }
+}
+function lassoShowCard(box, res) {
+  const c = $("lasso-card");
+  if (!c) return;
+  c.innerHTML = "";
+  const t = document.createElement("div");
+  t.className = "lz-t";
+  t.textContent = "ZONE DOSSIER";
+  const x = document.createElement("button");
+  x.className = "lz-x"; x.textContent = "×"; x.title = "Close";
+  x.onclick = (e) => { e.stopPropagation(); lassoHideCard(); lassoClearDraw(); };
+  t.appendChild(x);
+  c.appendChild(t);
+  if (res.err) {
+    const n = document.createElement("div");
+    n.className = "lz-note"; n.textContent = res.err;
+    c.appendChild(n);
+  } else {
+    const rows = [["Candles", res.n], ["Span", res.span], ["Sweeps", res.sweeps],
+      ["Top touch", res.level], ["Range", res.range], ["Session", res.session]];
+    for (const [k, v] of rows) {
+      const r = document.createElement("div");
+      r.className = "lz-r";
+      const a = document.createElement("span"); a.textContent = k;
+      const b = document.createElement("b"); b.textContent = v;
+      r.appendChild(a); r.appendChild(b);
+      c.appendChild(r);
+    }
+  }
+  c.classList.remove("hidden");
+  const w = c.offsetWidth || 236, h = c.offsetHeight || 200;
+  let left = box.x1 + 12;
+  if (left + w > window.innerWidth - 8) left = box.x0 - w - 12;
+  const top = Math.min(Math.max(8, box.y0), window.innerHeight - h - 30);
+  c.style.left = Math.max(8, left) + "px";
+  c.style.top = top + "px";
+}
+function lassoFinish() {
+  const box = lassoBBox();
+  const w = box.x1 - box.x0, h = box.y1 - box.y0;
+  if (w < 12 || h < 12 || lasso.pts.length < 4) { lassoHideLayer(); lassoClearDraw(); return; }
+  const res = lassoAnalyze(box);
+  lassoHideLayer();
+  lassoShowCard(box, res);
+}
+function lassoInField(el) {
+  return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" || el.isContentEditable);
+}
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "l" || e.key === "L") && !e.repeat && !lassoInField(e.target) && !lasso.armed) {
+    if (!lassoChartHost()) return;
+    lassoArm(false);
+  }
+  if (e.key === "Escape") { lassoHideCard(); lassoClearDraw(); }
+});
+document.addEventListener("keyup", (e) => {
+  if ((e.key === "l" || e.key === "L") && lasso.armed && !lasso.once) {
+    if (lasso.drawing) { lasso.drawing = false; lassoFinish(); }
+    else lassoDisarm();
+  }
+});
+document.addEventListener("pointerdown", (e) => {
+  const c = $("lasso-card");
+  if (c && !c.classList.contains("hidden") && !c.contains(e.target)) {
+    lassoHideCard(); lassoClearDraw();
+  }
+}, true);
+(function lassoBind() {
+  const layer = $("lasso-layer");
+  if (!layer || layer.dataset.wired) return;
+  layer.dataset.wired = "1";
+  layer.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !lasso.armed) return;
+    e.preventDefault();
+    lasso.drawing = true; lasso.pts = [[e.clientX, e.clientY]];
+    try { layer.setPointerCapture(e.pointerId); } catch (_) { /* mouse already tracked */ }
+  });
+  layer.addEventListener("pointermove", (e) => {
+    if (!lasso.drawing) return;
+    const last = lasso.pts[lasso.pts.length - 1];
+    if (Math.hypot(e.clientX - last[0], e.clientY - last[1]) < 3) return;
+    lasso.pts.push([e.clientX, e.clientY]);
+    lassoDraw();
+  });
+  layer.addEventListener("pointerup", () => {
+    if (!lasso.drawing) return;
+    lasso.drawing = false;
+    lassoFinish();
+    if (lasso.once) lassoDisarm();
+  });
+  const b = $("lasso-open");
+  if (b) b.onclick = () => {
+    if (lasso.armed && lasso.once) { lassoDisarm(); return; }
+    lassoArm(true);
+  };
+})();
+
 /* WORKSPACE > DATA VISUALISATION: a React island (chart builder for arbitrary
    tabular data). Lives under the workspace rail tab but swaps the IDE out for
    its own section, so it replicates the rail handler's hide-everything sweep
