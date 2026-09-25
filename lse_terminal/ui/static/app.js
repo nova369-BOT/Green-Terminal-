@@ -10647,7 +10647,10 @@ function showOrderFlowPage() {
   subrailMark("sub-mk-flow");
   document.title = "Order Flow · GREEN TERMINAL";
   // Same chrome rules as PRICE & CHART (sidebar stays for symbol sync).
-  setSidebar(true);
+  // NOTE: setSidebar() lives inside setupRail() and is NOT in scope here —
+  // calling it threw and aborted the page swap (ORDER FLOW highlighted but
+  // the chart stayed put). Toggle the class directly like showOptionsPage.
+  $("side").classList.remove("hidden");
   $("optpage").classList.add("hidden");
   $("scrpage").classList.add("hidden");
   $("news").classList.add("hidden");
