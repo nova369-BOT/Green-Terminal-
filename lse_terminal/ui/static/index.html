@@ -97,6 +97,11 @@ document.documentElement.setAttribute("data-theme",
     <nav id="subrail" class="hidden"></nav>
     <button id="dock-handle" type="button" aria-label="Show section views"></button>
   </div>
+  <!-- Section flyout: clicking a side-rail section pops this glass menu
+       beside the button with that section's sub-views (same SUBRAIL data
+       as the dock). app.js renderFlyout() fills it; empty + hidden until
+       a section is clicked. -->
+  <div id="flyout" class="hidden" role="menu" aria-label="Section views"></div>
   <div id="controls">
   <!-- No data-source dropdown: the active rail tab decides the source.
        MARKETS is live LSE data (API key), BACKTEST / MY DATA are the

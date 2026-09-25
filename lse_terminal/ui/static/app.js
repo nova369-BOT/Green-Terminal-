@@ -9600,6 +9600,61 @@ function subrailMark(activeId) {
   aiPanelRefreshEmpty(); // the hero states the section it sees
 }
 
+/* Section flyout: clicking a side-rail section pops a glass menu beside
+   the button with that section's sub-views — same SUBRAIL registry the
+   dock uses, same go() handlers. Additive only: the rail buttons keep
+   their own onclick (default view opens as before); this listener just
+   offers the chooser on top. The bottom dock stays for quick access. */
+const FLYOUT_SECTIONS = {
+  "rail-markets": "markets", "rail-backtest": "backtest", "rail-econ": "econ",
+  "rail-workspace": "workspace", "rail-research": "research",
+};
+function hideFlyout() {
+  const fly = $("flyout");
+  if (fly) fly.classList.add("hidden");
+}
+function renderFlyout(section, anchorBtn) {
+  const items = SUBRAIL[section];
+  const fly = $("flyout");
+  if (!items || !items.length || !fly) { hideFlyout(); return; }
+  const activeId = document.querySelector("#subrail .subrail-btn.active");
+  const active = activeId ? activeId.id : null;
+  fly.innerHTML = "";
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "flyout-row" + (it.id === active ? " active" : "")
+      + (it.go ? "" : " soon");
+    b.textContent = it.label;
+    if (it.go) {
+      b.onclick = () => { hideFlyout(); it.go(); };
+      if (it.desc) b.title = it.desc;
+    } else {
+      b.title = "Coming soon";
+    }
+    fly.appendChild(b);
+  }
+  fly.classList.remove("hidden");
+  const r = anchorBtn.getBoundingClientRect();
+  const top = Math.max(8, Math.min(r.top, window.innerHeight - fly.offsetHeight - 30));
+  fly.style.top = top + "px";
+}
+document.addEventListener("click", (ev) => {
+  const t = ev.target;
+  const rb = t && t.closest ? t.closest("#rail .rail-btn") : null;
+  if (rb && FLYOUT_SECTIONS[rb.id]) {
+    // The button's own handler runs first (opens the default view); the
+    // chooser appears right after, same tick pattern as the ai-click sync.
+    const section = FLYOUT_SECTIONS[rb.id];
+    setTimeout(() => renderFlyout(section, rb), 0);
+    return;
+  }
+  if (!t || !t.closest || !t.closest("#flyout")) hideFlyout();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") hideFlyout();
+});
+
 /* WORKSPACE > DATA VISUALISATION: a React island (chart builder for arbitrary
    tabular data). Lives under the workspace rail tab but swaps the IDE out for
    its own section, so it replicates the rail handler's hide-everything sweep

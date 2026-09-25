@@ -1880,6 +1880,31 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 .subrail-btn.soon { opacity: .5; cursor: default; }
 .subrail-btn.soon:hover { color: var(--dim); }
 
+/* Section flyout (filled by renderFlyout): a glass menu beside the side
+   rail listing the clicked section's sub-views. Same registry as the
+   dock; the dock stays for quick access. */
+#flyout {
+  position: fixed; left: 70px; z-index: 44; min-width: 220px;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--edge); border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .55);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+#flyout.hidden { display: none !important; }
+.flyout-row {
+  background: none; border: none; border-left: 2px solid transparent;
+  border-radius: 3px; color: var(--dim); text-align: left; cursor: pointer;
+  font-size: 11px; font-weight: 600; letter-spacing: .1em; padding: 8px 12px;
+}
+.flyout-row:hover { color: var(--text); background: var(--hover); }
+.flyout-row.active {
+  color: var(--text); background: var(--active);
+  border-left-color: var(--accent-bar);
+}
+.flyout-row.soon { opacity: .5; cursor: default; }
+.flyout-row.soon:hover { color: var(--dim); background: none; }
+
 /* History-only watchlist rows: a quiet label where the price would sit, so
    an archive dataset never reads as a broken quote. */
 .wrow .whist {
