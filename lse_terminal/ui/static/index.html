@@ -118,6 +118,7 @@ document.documentElement.setAttribute("data-theme",
     <option value="renko">Renko</option>
   </select>
   <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
+  <button id="ax-open" type="button" title="Readings from the bars on this chart">Analysis</button>
   <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
        prefixes read as decoration, not chrome.
        The &#402; on Indicators stays: it is the recognised
@@ -870,13 +871,14 @@ def my_ind(df, length=20):
   <!-- RESEARCH: reading surfaces under ONE section
        id so every existing hide-everything sweep needs exactly one entry.
        ARTICLES is a vanilla feed of the live papers table (arXiv q-fin +
-       NBER/BIS/Fed/ECB); QUANT MODELS is a React island (LSEQuantModels).
-       Do not add repurposed filler content as a terminal surface. -->
+       NBER/BIS/Fed/ECB). ANALYSIS is a shell desk (analysis.js) that counts
+       readings from bars already loaded. Do not remount LSEQuantModels here:
+       that island is the old parameter toy. Do not add filler content. -->
   <section id="research" class="hidden">
     <div id="rs-articles">
       <!-- Filters live in a LEFT sidebar: LATEST on
            top, then the source and quant-theory groups, same idiom as the
-           QUANT MODELS model picker. Rendered by rsRenderSide(). -->
+           analysis tool list. Rendered by rsRenderSide(). -->
       <aside id="rs-side"></aside>
       <div id="rs-main">
         <div id="rs-articles-head">
@@ -1360,6 +1362,7 @@ def my_ind(df, length=20):
   <span class="ts-cell ts-opt"><span class="ts-k">SESSION</span><span id="ts-ses" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">SYMBOL</span><span id="ts-sym" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
+  <button id="shot-btn" type="button" title="Save a picture" aria-label="Save a picture"><svg viewBox="0 0 18 18" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.2 6.2h2.2l1.1-1.7h6.9l1.1 1.7h2.3a1 1 0 0 1 1 1v6.6a1 1 0 0 1-1 1H2.2a1 1 0 0 1-1-1V7.2a1 1 0 0 1 1-1z"/><circle cx="9" cy="10.1" r="2.15"/></svg></button>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
 <div id="cmdk" class="hidden" role="dialog" aria-modal="true" aria-label="Commands">
@@ -1373,6 +1376,8 @@ def my_ind(df, length=20):
     </div>
   </div>
 </div>
+<script src="./analysis.js"></script>
 <script src="./app.js"></script>
+<script src="./analysis-ui.js"></script>
 </body>
 </html>

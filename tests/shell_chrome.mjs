@@ -42,4 +42,20 @@ assert.doesNotMatch(css, /font-size:\s*8px;\s*letter-spacing:\s*\.08em/);
 const main = read("desktop/main.js");
 assert.match(main, /Green Terminal\|LSE Terminal/);
 
+assert.match(css, /#shot-btn/);
+assert.match(css, /#ax \{/);
+const shot = html.match(/<button id="shot-btn"[\s\S]*?<\/button>/);
+assert.ok(shot, "camera control missing");
+const shotInner = shot[0].replace(/^<button[^>]*>/, "").replace(/<\/button>$/, "");
+assert.match(shotInner, /^<svg/);
+assert.doesNotMatch(shotInner, />[^<]*[A-Za-z]/);
+assert.match(html, /id="ax-open"/);
+assert.match(html, /src="\.\/analysis\.js"/);
+assert.doesNotMatch(app, /LSEQuantModels\.mount/);
+assert.match(app, /typeof axOpen === "function"/);
+const guide = read("lse_terminal/ui/static/guide.md");
+assert.match(guide, /\*\*ANALYSIS\.\*\*/);
+assert.doesNotMatch(guide, /Twenty interactive models/);
+assert.doesNotMatch(guide, /diffusion simulator/);
+
 console.log("shell chrome contract ok");

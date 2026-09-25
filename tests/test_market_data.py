@@ -317,6 +317,10 @@ def test_shell_command_palette_and_product_voice():
     assert "separate optional feed" not in app
     assert 'PRODUCT_NAME = "Green Terminal"' in app
     assert "function setupCommandPalette" in app
+    assert 'id="shot-btn"' in html
+    assert 'id="ax-open"' in html
+    assert "LSEQuantModels.mount" not in app
+    assert "function axOpen" in (root / "lse_terminal/ui/static/analysis-ui.js").read_text()
 
 
 def test_edgedepth_artifacts_endpoint(client: TestClient):

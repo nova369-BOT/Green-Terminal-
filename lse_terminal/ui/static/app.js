@@ -733,6 +733,7 @@ async function loadChart() {
   updateInstrumentBar();
   // Topline status still carries transient loading / error messages only.
   status("");
+  if (typeof axOnChart === "function") axOnChart();
 }
 
 /* ---------- live stream + price board poll ---------- */
@@ -4555,7 +4556,7 @@ function setupAiPanel(hosted) {
       }) },
 
     { id: "research", label: "Research",
-      what: "the papers feed, the in-app paper reader and quant models",
+      what: "the papers feed, the in-app paper reader and the analysis desk",
       more: ["read_research_paper on the paper's link for its FULL text",
              "GET /api/research/feed"],
       // The paper is reported even when the reader is hidden (it is what
@@ -4566,13 +4567,13 @@ function setupAiPanel(hosted) {
         const rd = $("rs-reader");
         const readerOpen = !!(rd && rd.offsetParent !== null);
         const it = rsState.readerItem;
-        // The inner view matters: without it the QUANT MODELS page was
+        // The inner view matters: without it the analysis desk was
         // described as "a library of papers" in simulation,
         // because papers_loaded was the only signal in the region.
         const vis = (id) => { const el = $(id); return !!(el && el.offsetParent !== null); };
         return {
           view: readerOpen ? "paper reader"
-            : vis("rs-models") ? "quant models (interactive model visualisations, NOT the papers feed)"
+            : vis("rs-models") ? "analysis desk (readings counted from loaded bars, NOT a simulated model, NOT the papers feed)"
             : vis("rs-articles") ? "articles feed" : null,
           papers_loaded: (rsState.items || []).length,
           source_filter: rsState.srcFilter,
@@ -4584,9 +4585,10 @@ function setupAiPanel(hosted) {
                         category: it.category || null,
                         link: it.link || null,
                         open_in_reader: readerOpen } : null,
-          // Which interactive model visualisation is open (published by
-          // the QuantModels island).
-          quant_models: (window.__lseAiIslands || {}).quant_models || null,
+          // The analysis desk, when that view is the one on screen. Counts
+          // only; there is no simulated model behind it.
+          analysis_tool: (typeof axState !== "undefined" && vis("rs-models")) ? axState.tool : null,
+          analysis_bars: (typeof axState !== "undefined" && vis("rs-models")) ? (axState.bars || []).length : null,
         };
       } },
 
@@ -9621,10 +9623,10 @@ const SUBRAIL = {
         "submissions plus NBER, BIS, Fed and ECB working papers, refreshed " +
         "server-side.",
       go: () => openResearch("articles") },
-    { id: "sub-rs-models", label: "QUANT MODELS",
-      desc: "Interactive visualisations of the standard quant models: " +
-        "Monte Carlo, Black-Scholes, Heston, GARCH, Kalman filter, LSTM " +
-        "and more, with live parameters.",
+    { id: "sub-rs-models", label: "ANALYSIS",
+      desc: "Readings counted from the bars already loaded: whether a stop " +
+        "survives, what waiting costs, which breaks failed, how runs end. " +
+        "Nothing on the page is simulated.",
       go: () => openResearch("models") },
   ],
 };
@@ -10382,12 +10384,11 @@ function gdSpy() {
   gdMark(cur);
 }
 
-/* ---------- RESEARCH: articles feed + quant models ----------
-   One section (#research), two inner views, mirroring the ECONOMIC pattern:
-   the rail button's own handler is the single chrome-reset point,
-   rsShowView swaps the inner surface, the LSEQuantModels island mounts on
-   demand. (A third "knowledge archive" view was deleted;
-   see the index.html section comment before adding content views.) */
+/* ---------- RESEARCH: articles feed + analysis desk ----------
+   One section (#research), two inner views. The rail button is the chrome
+   reset; rsShowView swaps the inner surface. ANALYSIS is drawn by
+   analysis-ui.js from bars already loaded. Do not mount LSEQuantModels
+   here — that island is the retired parameter toy. */
 const rsState = { items: [], srcFilter: "ALL", catFilter: "ALL", q: "", hosted: null,
                   wired: false, readerUrl: null, readerSeq: 0 };
 
@@ -10455,12 +10456,11 @@ function rsShowView(view) {
   subrailMark("sub-rs-" + view);
   $("rs-articles").classList.toggle("hidden", view !== "articles");
   $("rs-models").classList.toggle("hidden", view !== "models");
-  setDocTitle(view === "models" ? "Quant Models" : "Research");
+  setDocTitle(view === "models" ? "Analysis" : "Research");
   if (view === "articles") {
     rsLoadWire();
   } else if (view === "models") {
-    if (window.LSEQuantModels) window.LSEQuantModels.mount($("rs-models-root"));
-    else $("rs-models-root").textContent = "Chart bundle failed to load.";
+    if (typeof axOpen === "function") axOpen();
   }
 }
 
@@ -12795,7 +12795,7 @@ function setupRail() {
     if ($("ai-rail").classList.contains("collapsed")) $("air-expand").click();
     openWorkspace();
   };
-  // RESEARCH: reading surfaces (latest-papers wire, quant models).
+  // RESEARCH: reading surfaces (latest-papers wire, analysis desk).
   // Full-page content, no watchlist; works hosted too (local wire file,
   // no key).
   $("rail-research").onclick = () => {
@@ -18407,7 +18407,7 @@ function setupCommandPalette() {
     "sub-ws-dataviz": "Data Visualisation",
     "sub-ws-notebooks": "Notebook",
     "sub-rs-articles": "Research Articles",
-    "sub-rs-models": "Quant Models",
+    "sub-rs-models": "Analysis",
   };
   const EXTRA = {
     "sub-mk-flow": "order flow depth book heatmap tape footprint",
@@ -18415,7 +18415,7 @@ function setupCommandPalette() {
     "sub-bt-manual": "replay bar by bar hand trade",
     "sub-bt-py": "strategy python ide editor",
     "sub-ws-ide": "code editor terminal",
-    "sub-rs-models": "garch kalman monte carlo black scholes",
+    "sub-rs-models": "analysis breath wound quiet hours break ledger room",
   };
   const GROUP = {
     markets: "Markets", backtest: "Backtest", econ: "Economic",
@@ -18465,6 +18465,7 @@ function setupCommandPalette() {
             if (s && s.offsetParent !== null) { s.focus(); s.select(); }
           }, 0);
         } },
+      { group: "Chart", label: "Save a picture", keys: "screenshot picture camera save image", run: () => { if (typeof captureView === "function") captureView(); } },
       { group: "Chart", label: "Toggle fullscreen", keys: "fullscreen expand maximise maximize", run: click("ws-full") },
       { group: "Chart", label: "Save workspace", keys: "save layout", run: click("ws-save") },
       { group: "Chart", label: "Load workspace", keys: "load restore", run: click("ws-load") },
