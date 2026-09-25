@@ -175,16 +175,11 @@ nav#timeframes button:disabled { opacity: .35; cursor: default; }
    with it, so the cluster collapsed leftward next to the rail there. When
    status is hidden the margin moves to the first visible cluster member:
    MY DATA normally, or the toggle when hosted mode hides the MY DATA tab. */
-/* UPDATE sits in that cluster too and is hidden most of the time, so the
-   fallback walks the whole chain: MY DATA, then UPDATE, then the GitHub
-   link (never hidden, so the chain needs no step past it). */
-/* TERMINAL WALKTHROUGH (#rail-guide) joined the cluster as its first
-   member and is never hidden, so it is the one fallback needed; the
-   older MY DATA / UPDATE / toggle chain stays for a build without it. */
-#status.hidden + #rail-guide { margin-left: auto; }
-#status.hidden + #rail-data:not(.hidden) { margin-left: auto; }
-#status.hidden + #rail-data.hidden + #update-btn:not(.hidden) { margin-left: auto; }
-#status.hidden + #rail-data.hidden + #update-btn.hidden + #github-btn { margin-left: auto; }
+/* When #status hides, the surviving top-right member (UPDATE while it is
+   on screen, else the theme toggle) takes the free space. MY DATA and the
+   walkthrough live in the rail-bottom settings cluster now. */
+#status.hidden + #update-btn:not(.hidden) { margin-left: auto; }
+#status.hidden + #update-btn.hidden + #theme-toggle { margin-left: auto; }
 /* Light/Dark switch: same quiet chrome as the section tabs. The label is a
    sun/moon emoji, which needs a couple px more than the 11.5px text
    label did to stay legible. */
@@ -193,20 +188,7 @@ nav#timeframes button:disabled { opacity: .35; cursor: default; }
   letter-spacing: .06em; padding: 3px 6px;
 }
 #theme-toggle:hover { color: var(--text); }
-/* GitHub link: mark + GITHUB word in the exact .rail-btn dress (the icon
-   alone reads as nothing in a text-labeled cluster and gets missed).
-   Metrics copied from .rail-btn rather than taking the class, so the rail
-   handlers and hosted sweeps in app.js never see it. Neutral zinc only,
-   same dim-to-text hover as every sibling. */
-#github-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: none; border: none; border-bottom: 2px solid transparent;
-  color: var(--dim); font-size: 11.5px; font-weight: 600;
-  letter-spacing: .09em; padding: 4px 12px 5px 12px;
-  text-decoration: none;
-}
-#github-btn:hover { color: var(--text); background: var(--hover); }
-#github-btn svg { display: block; }
+/* (GitHub link removed: the top-right cluster is UPDATE + theme toggle.) */
 /* Updates: only ever on screen when a newer release exists, so it carries
    the text colour rather than the dim one. The dot marks work waiting, not
    an accent the rest of the header never uses. */
@@ -1829,6 +1811,17 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 #rail .rail-btn.active {
   color: var(--text); background: var(--active);
   box-shadow: inset 2px 0 0 var(--accent-bar);
+}
+/* Rail-bottom settings cluster: pinned to the strip's foot under a
+   hairline + micro caption. The buttons are the same #rail-data /
+   #rail-guide elements, so all bindings survive the move. */
+#rail .rail-bottom {
+  margin-top: auto; display: flex; flex-direction: column; width: 100%;
+}
+#rail .rail-sep { height: 1px; background: var(--edge); margin: 6px 10px; }
+#rail .rail-cap {
+  color: var(--dim); opacity: .7; font-size: 7.5px; font-weight: 700;
+  letter-spacing: .14em; text-align: center; padding: 2px 0 4px;
 }
 
 /* Floating view dock: the active section's sub-views in a glass pill that
