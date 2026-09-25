@@ -147,6 +147,13 @@ document.documentElement.setAttribute("data-theme",
   <span id="sl-slot"></span>
   <button id="tpl-open" title="Save this chart setup, or apply a saved one">Templates</button>
   <button id="cs-open" title="Colours, candles, background, axis">Chart layout</button>
+  <!-- Workspace actions ride the command bar's right group (same ids the
+       boot path binds; the old #ws-controls strip is gone). -->
+  <span class="ws-sep" aria-hidden="true"></span>
+  <button id="ws-full" class="ws-btn" title="Maximise the chart workspace">Fullscreen</button>
+  <button id="ws-save" class="ws-btn" title="Save instrument, timeframe, chart type, indicators">Save</button>
+  <button id="ws-load" class="ws-btn" title="Reload the last saved workspace">Load</button>
+  <button id="ws-reset" class="ws-btn" title="Reset workspace to defaults">Reset</button>
   </div>
 </header>
 <!-- Indicator browser: replaces the old add-dropdown. A searchable list of
@@ -308,14 +315,7 @@ def my_ind(df, length=20):
       <span id="ib-tf" class="ib-tf" title="Timeframe"></span>
       <span id="ib-live" class="ib-live" title="Live feed">OFFLINE</span>
     </div>
-    <!-- Phase 3-UI: workspace actions + fullscreen ride with the chart
-         surface (mirrored by syncChartToolbar with the instrument bar). -->
-    <div id="ws-controls" class="hidden" aria-label="Workspace controls">
-      <button id="ws-full" class="ws-btn" title="Maximise the chart workspace">Fullscreen</button>
-      <button id="ws-save" class="ws-btn" title="Save instrument, timeframe, chart type, indicators">Save</button>
-      <button id="ws-load" class="ws-btn" title="Reload the last saved workspace">Load</button>
-      <button id="ws-reset" class="ws-btn" title="Reset workspace to defaults">Reset</button>
-    </div>
+    <!-- (Workspace actions now ride the #controls command bar, same ids.) -->
     <div id="ind-active"></div>
     <div id="chart-stage">
     <div id="chart-col">

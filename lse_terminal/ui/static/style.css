@@ -106,9 +106,18 @@ header {
      Still strictly neutral; the depth is banding, not color. */
   background: var(--bg2); border-bottom: 1px solid var(--edge);
 }
+/* Command bar: one slim row — search, segmented timeframes, chart tools
+   left; layout/templates/workspace group right under a brass hairline. */
 #controls {
   display: flex; align-items: center; gap: 4px;
-  padding: 4px 12px 5px 12px; flex-wrap: wrap;
+  padding: 4px 12px; flex-wrap: nowrap; overflow-x: auto;
+  background: var(--panel); border-bottom: 1px solid var(--accent-bar);
+  scrollbar-width: none;
+}
+#controls::-webkit-scrollbar { display: none; }
+#controls .ws-sep {
+  width: 1px; height: 16px; background: var(--edge); flex: none;
+  margin: 0 4px;
 }
 select, input, button {
   background: var(--bg); color: var(--text);
@@ -162,9 +171,10 @@ input#symbol:focus { outline: none; border-color: var(--dim); }
   padding: 4px 7px;
 }
 #controls select:hover { color: var(--text); }
-nav#timeframes { display: flex; gap: 1px; margin-right: 8px; }
+nav#timeframes { display: flex; gap: 1px; margin-right: 8px; flex: none; }
 nav#timeframes button { border-radius: 2px; padding: 3px 7px; color: var(--dim); border-color: transparent; font-variant-numeric: tabular-nums; }
-nav#timeframes button.active { color: var(--text); background: var(--edge); }
+nav#timeframes button.active { color: #0a0f0c; background: var(--accent-bar); }
+nav#timeframes button:hover { color: var(--text); }
 /* Finer than the imported file holds: shown so the ladder stays readable,
    but not clickable, since the engine cannot serve those bars. */
 nav#timeframes button:disabled { opacity: .35; cursor: default; }
@@ -4061,9 +4071,12 @@ html:not(.dark) #gd-side {
 /* Fullscreen: chart workspace takes the whole viewport, chrome stays. */
 body.ws-fullscreen #side,
 body.ws-fullscreen #ai-rail,
-body.ws-fullscreen #controls,
 body.ws-fullscreen #dockzone,
 body.ws-fullscreen #acct-dock { display: none !important; }
+/* Fullscreen keeps the command bar's workspace group: the Exit hatch must
+   stay clickable (the strip used to live outside #controls). */
+body.ws-fullscreen #controls > :not(.ws-btn):not(.ws-sep) { display: none !important; }
+body.ws-fullscreen #controls { justify-content: flex-end; border-bottom: none; }
 body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 62px; z-index: 80; background: var(--bg); }
 body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
 body.ws-fullscreen #term-status { z-index: 90; }
