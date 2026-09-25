@@ -86,12 +86,17 @@ document.documentElement.setAttribute("data-theme",
     <a id="github-btn" href="https://github.com/londonstrategicedge/lse-terminal" target="_blank" rel="noopener" title="LSE Terminal on GitHub" aria-label="LSE Terminal on GitHub"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>GITHUB</span></a>
     <button id="theme-toggle" title="Switch between light and dark">&#9728;&#65039;</button>
   </div>
-  <!-- Pro-terminal secondary bar: the active section's sub-views,
-       centered under the rail. app.js renderSubrail() fills it per section
+  <!-- Floating view dock: the active section's sub-views in a glass pill
+       that hovers bottom-center and melts away while studying the chart.
+       app.js renderSubrail() fills #subrail per section exactly as before
        (MARKETS / BACKTEST / ECONOMIC / WORKSPACE each have a set; entries
        without a handler render as quiet Coming-soon placeholders). MY DATA
-       keeps it hidden entirely rather than showing an empty strip. -->
-  <nav id="subrail" class="hidden"></nav>
+       keeps it hidden entirely. The handle is a real button so touch and
+       keyboard users can open the dock via focus. -->
+  <div id="dockzone">
+    <nav id="subrail" class="hidden"></nav>
+    <button id="dock-handle" type="button" aria-label="Show section views"></button>
+  </div>
   <div id="controls">
   <!-- No data-source dropdown: the active rail tab decides the source.
        MARKETS is live LSE data (API key), BACKTEST / MY DATA are the

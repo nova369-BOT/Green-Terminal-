@@ -1815,24 +1815,50 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 .rail-btn:hover { color: var(--text); background: var(--hover); }
 .rail-btn.active { color: var(--text); border-bottom-color: var(--accent-bar); background: var(--active); }
 
-/* Pro-terminal secondary bar: the active section's sub-views, one step
-   smaller than the rail so the two rows read as parent/child, not as two
-   competing menus. Centered with generous air, spreading out from the
-   middle rather than sitting in the corners. Quiet text, not cells: an
-   earlier segmented-box pass read as tacky, so the only active marker is
-   a light line ABOVE the label. Neutral chrome only (no saturated
-   accents). */
+/* Floating view dock: the active section's sub-views in a glass pill that
+   hovers bottom-center and melts away while studying the chart. Pure CSS:
+   hovering or keyboard-focusing the zone expands the pill; leaving
+   collapses it back to the brass handle. renderSubrail() keeps owning
+   #subrail's .hidden + buttons untouched. */
+#dockzone {
+  position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%);
+  z-index: 40; display: flex; flex-direction: column; align-items: center;
+}
+/* A section with no sub-views (MY DATA) removes the zone entirely. */
+#dockzone:has(> #subrail.hidden) { display: none; }
+#dock-handle {
+  width: 44px; height: 5px; border-radius: 3px; padding: 0;
+  background: var(--accent-bar); border: none; cursor: pointer;
+  opacity: .85; transition: opacity .18s ease;
+}
+#dockzone:hover #dock-handle, #dockzone:focus-within #dock-handle { opacity: 0; }
 #subrail {
-  display: flex; justify-content: center; gap: 26px;
-  padding: 0 12px; border-bottom: 1px solid var(--edge);
+  display: flex; justify-content: center; gap: 4px;
+  margin: 0 0 8px; padding: 6px 8px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--edge); border-radius: 999px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  max-width: min(92vw, 860px); overflow-x: auto;
+  /* Collapsed by default; hover/focus melts it open. The close delay lets
+     the pointer travel from the handle into the pill without flicker. */
+  opacity: 0; transform: translateY(8px) scale(.97); pointer-events: none;
+  transition: opacity .18s ease .12s, transform .18s ease .12s;
+}
+#dockzone:hover #subrail, #dockzone:focus-within #subrail {
+  opacity: 1; transform: none; pointer-events: auto;
+  transition-delay: 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  #subrail, #dock-handle { transition: none; }
 }
 .subrail-btn {
-  background: none; border: none; border-top: 2px solid transparent;
-  border-radius: 0; color: var(--dim); font-size: 11px; font-weight: 600;
-  letter-spacing: .12em; padding: 4px 4px 7px;
+  background: none; border: 1px solid transparent; border-radius: 999px;
+  color: var(--dim); font-size: 11px; font-weight: 600; white-space: nowrap;
+  letter-spacing: .12em; padding: 6px 14px;
 }
-.subrail-btn:hover { color: var(--text); }
-.subrail-btn.active { color: var(--text); border-top-color: var(--accent-bar); }
+.subrail-btn:hover { color: var(--text); background: var(--hover); }
+.subrail-btn.active { color: #0a0f0c; background: var(--accent-bar); }
 /* Placeholder sub-views (not built yet, but the structure stays visible):
    quieter than live tabs, ordinary cursor, tooltip says Coming soon. */
 .subrail-btn.soon { opacity: .5; cursor: default; }
@@ -3967,7 +3993,7 @@ html:not(.dark) #gd-side {
 body.ws-fullscreen #side,
 body.ws-fullscreen #ai-rail,
 body.ws-fullscreen #controls,
-body.ws-fullscreen #subrail,
+body.ws-fullscreen #dockzone,
 body.ws-fullscreen #acct-dock { display: none !important; }
 body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 0; z-index: 80; background: var(--bg); }
 body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
@@ -4011,10 +4037,7 @@ body { padding-bottom: 22px; }
   box-shadow: inset 0 -2px 0 var(--up);
   color: var(--text);
 }
-#subrail .subrail-btn.active {
-  color: var(--up);
-  border-bottom-color: var(--up);
-}
+/* The floating dock owns the active sub-view pill (brass); no override here. */
 
 /* Watchlist % change column (Phase 3-UI density). */
 #watchlist .wpricecol { display: flex; flex-direction: column; align-items: flex-end; gap: 0; min-width: 72px; }
