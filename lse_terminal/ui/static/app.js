@@ -1384,7 +1384,9 @@ function renderConnBar() {
   const p = activeLiveProvider();
   const isLse = !p || p.name === "lse";
   const connected = isLse ? state.lseConfigured : true; // customs always carry a key
-  $("conn-title").textContent = (p && p.title) || "GREEN TERMINAL";
+  // Brand title is fixed: the provider name never replaces it (the data
+  // source is stated in PROFILE facts and the instrument bar instead).
+  $("conn-title").textContent = "GREEN TERMINAL";
   // "your LSE key" / "your own key" was saying what the title directly above
   // it already says (the title IS the provider whose key is in use), so the
   // line now states only the fact the title does not carry: whether the feed
