@@ -1921,11 +1921,11 @@ function setupInquiry() {
    chooser could be ready on the engine and invisible on screen. */
 function connScreenWatch() {
     clearTimeout(brokerPicker.watch);
-    if ($("conn-screen").classList.contains("hidden")) return;
+    if (!csCardLive()) return;
     const waiting = (brokerPicker.rows || []).some(
         (b) => b.auth_pending || b.needs_account);
     brokerPicker.watch = setTimeout(async () => {
-        if ($("conn-screen").classList.contains("hidden")) return;
+        if (!csCardLive()) return;
         // Listing brokers only READS. `connect` is what advances a pending
         // login ("has the user finished on the broker's page yet"), so a
         // screen that merely refreshed would wait forever: the engine had
@@ -1943,7 +1943,49 @@ function connScreenWatch() {
     }, waiting ? 2000 : 6000);
 }
 
+/* The connections card is one live instance shared by the overlay and
+   Profile: it counts as live when the overlay is open OR when it sits in
+   a visible Profile slot. */
+function csCardLive() {
+  if (!$("conn-screen").classList.contains("hidden")) return true;
+  const slot = $("pf-api-slot"), card = $("cs-card"), pf = $("profile");
+  return !!(slot && card && pf && slot.contains(card) &&
+    !pf.classList.contains("hidden"));
+}
+/* PROFILE facts: display name (localStorage only — the terminal has no
+   account system, so no name is ever invented) plus live terminal state. */
+function renderProfile() {
+  const nameEl = $("pf-name");
+  if (nameEl && !nameEl.dataset.wired) {
+    nameEl.dataset.wired = "1";
+    try { nameEl.value = localStorage.getItem("gt-profile-name") || ""; }
+    catch (e) { /* storage disabled */ }
+    nameEl.addEventListener("change", () => {
+      try { localStorage.setItem("gt-profile-name", nameEl.value.trim()); }
+      catch (e) { /* storage disabled */ }
+    });
+  }
+  const facts = $("pf-facts");
+  if (!facts) return;
+  const gw = state.edgeGateway;
+  const rows = [
+    ["ENV", state.hosted ? "Hosted" : "Local engine"],
+    ["DATA", state.lseConfigured ? "LSE key set" : "No LSE key"],
+    ["G-FLOW", !gw ? "—" : (gw.reachable ? "LIVE" : "OFFLINE")],
+  ];
+  facts.innerHTML = "";
+  for (const [k, v] of rows) {
+    const s = document.createElement("span");
+    s.textContent = k + " ";
+    const b = document.createElement("b");
+    b.textContent = v;
+    s.appendChild(b);
+    facts.appendChild(s);
+  }
+}
 async function openConnScreen() {
+  // Reclaim the card if Profile is hosting it (single live instance).
+  $("conn-screen").appendChild($("cs-card"));
   $("conn-screen").classList.remove("hidden");
   if (!connScreen.dismissWired) {
     connScreen.dismissWired = true;
@@ -1997,7 +2039,7 @@ async function refreshConnScreen() {
     })());
   }
   await Promise.all(jobs);
-  if (!$("conn-screen").classList.contains("hidden")) renderConnScreen();
+  if (csCardLive()) renderConnScreen();
   // Re-arm after every repaint: a decision that lands out of band (the user
   // finishing on the broker's page) has to reach the screen on its own.
   connScreenWatch();
@@ -9566,6 +9608,9 @@ const SUBRAIL = {
 };
 
 function renderSubrail(section, activeId) {
+  // Every section switch passes through here: Profile hides with the rest.
+  // openProfile shows #profile AFTER its renderSubrail(null) call.
+  $("profile").classList.add("hidden");
   const bar = $("subrail");
   const items = SUBRAIL[section];
   if (!items) {
@@ -9594,6 +9639,8 @@ function renderSubrail(section, activeId) {
    the chooser cards or from chat ("To strategy IDE"), not just from the
    bar itself. */
 function subrailMark(activeId) {
+  // Mode entries that bypass renderSubrail still leave Profile behind.
+  $("profile").classList.add("hidden");
   for (const b of document.querySelectorAll(".subrail-btn")) {
     b.classList.toggle("active", b.id === activeId);
   }
@@ -12635,6 +12682,39 @@ function setupRail() {
     $("mydata").classList.remove("hidden");
     if (state.provider !== "userdata") switchProvider("userdata");
     await refreshLibraryAll();
+  };
+  // PROFILE: identity header + the connections card hosted inline. Same
+  // sweep shape as MY DATA (no provider switch: Profile is not a source).
+  // Inlined here (not in top-level openProfile) because setActive/setTitle/
+  // setSidebar live in this boot scope only.
+  $("rail-profile").onclick = () => {
+    setActive("rail-profile");
+    document.title = "Profile · Green Terminal";
+    setSidebar(false);
+    renderSubrail(null);
+    $("optpage").classList.add("hidden");
+    $("scrpage").classList.add("hidden");
+    $("news").classList.add("hidden");
+    $("charts").classList.add("hidden");
+    $("backtest").classList.add("hidden");
+    $("mydata").classList.add("hidden");
+    $("econcal").classList.add("hidden");
+    $("dataviz").classList.add("hidden");
+    $("nbpage").classList.add("hidden");
+    $("mlpage").classList.add("hidden");
+    $("pyide").classList.add("hidden");
+    $("wsx").classList.add("hidden");
+    $("lse-connect").classList.add("hidden");
+    $("research").classList.add("hidden");
+    $("guide").classList.add("hidden");
+    $("orderflow").classList.add("hidden");
+    closeBacktestPages();
+    // Host the live connections card inline (openConnScreen moves it back).
+    $("pf-api-slot").appendChild($("cs-card"));
+    $("profile").classList.remove("hidden");
+    renderProfile();
+    renderConnScreen(true);
+    refreshConnScreen();
   };
   // ECONOMIC is a top-level section (its own rail tab), not a MY DATA card.
   // The calendar page is self-contained; onBack returns to MARKETS since a

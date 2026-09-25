@@ -22,6 +22,7 @@ document.documentElement.setAttribute("data-theme",
   document.documentElement.classList.contains("dark") ? "dark" : "light");
 </script>
 <title>GREEN TERMINAL</title>
+<link rel="icon" type="image/png" href="assets/gt-mark.png">
 <link rel="stylesheet" href="./style.css">
 <link rel="stylesheet" href="./chart/chart.css">
 <script src="./vendor/lightweight-charts.4.2.0.js"></script>
@@ -43,6 +44,7 @@ document.documentElement.setAttribute("data-theme",
            so the dot was saying the same thing twice in the one colour the
            rest of the header never uses. -->
       <button id="conn-bar" title="Manage API keys and data sources">
+        <img id="conn-mark" src="assets/gt-mark.png" alt="" width="26" height="26" aria-hidden="true">
         <span id="conn-main">
           <span id="conn-title">GREEN TERMINAL</span>
           <span id="conn-sub">Market · Price &amp; Chart</span>
@@ -52,6 +54,7 @@ document.documentElement.setAttribute("data-theme",
       <div id="conn-menu" class="hidden"></div>
     </div>
     <nav id="rail" aria-label="Sections">
+      <img id="rail-mark" src="assets/gt-mark.png" alt="Green Terminal" width="34" height="34">
       <button id="rail-markets" class="rail-btn active" title="Markets"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 2v14M4 5h0M2.5 6.5h3v5h-3zM9 2v14M7.5 4h3v6h-3zM14 2v14M12.5 8h3v5h-3z"/></svg><span>MARKETS</span></button>
       <button id="rail-backtest" class="rail-btn" title="Backtest"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 2h4M8 2v4.5L3.5 13a2 2 0 0 0 1.8 3h7.4a2 2 0 0 0 1.8-3L10 6.5V2"/><path d="M6 11h6"/></svg><span>BACKTEST</span></button>
       <button id="rail-econ" class="rail-btn" title="Economic"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="13" height="12" rx="1"/><path d="M2.5 7h13M6 2v3M12 2v3"/></svg><span>ECONOMIC</span></button>
@@ -64,6 +67,7 @@ document.documentElement.setAttribute("data-theme",
       <div class="rail-bottom">
         <div class="rail-sep" aria-hidden="true"></div>
         <div class="rail-cap" aria-hidden="true">SETTINGS</div>
+        <button id="rail-profile" class="rail-btn" title="My profile and API connections"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="9" cy="6" r="3.2"/><path d="M3 16c.6-3.2 3-5 6-5s5.4 1.8 6 5"/></svg><span>PROFILE</span></button>
         <button id="rail-data" class="rail-btn" title="My data"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><ellipse cx="9" cy="4.5" rx="6" ry="2.5"/><path d="M3 4.5v9c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-9"/><path d="M3 9c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5"/></svg><span>MY DATA</span></button>
         <button id="rail-guide" class="rail-btn" title="Terminal walkthrough"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="9" cy="9" r="6.5"/><path d="M9 8.2v3.3M9 5.6v.3"/></svg><span>GUIDE</span></button>
       </div>
@@ -1064,6 +1068,25 @@ def my_ind(df, length=20):
           <div id="ml-history" class="md-empty">No training runs yet.</div>
         </div>
       </div>
+    </div>
+  </section>
+  <!-- PROFILE: identity + API integration. The header carries the GT mark,
+       an editable display name (localStorage only; the terminal has no
+       account system, so no name is ever invented) and live terminal facts.
+       #pf-api-slot hosts the REAL connections card (#cs-card moves here
+       while Profile is open; openConnScreen moves it back), so API keys
+       and brokers are managed inline with zero logic duplication. -->
+  <section id="profile" class="hidden" aria-label="Profile and API connections">
+    <div id="pf-wrap">
+      <div id="pf-head">
+        <img id="pf-mark" src="assets/gt-mark.png" alt="Green Terminal" width="72" height="72">
+        <div id="pf-id">
+          <input id="pf-name" maxlength="40" placeholder="Your name" autocomplete="nickname" spellcheck="false" aria-label="Display name">
+          <div id="pf-facts"></div>
+        </div>
+      </div>
+      <div id="pf-api-title">API INTEGRATION</div>
+      <div id="pf-api-slot"></div>
     </div>
   </section>
   <section id="mydata" class="hidden">
