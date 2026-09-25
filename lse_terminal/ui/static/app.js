@@ -406,6 +406,47 @@ async function pollEdgeGateway() {
   } catch (e) { /* status unavailable */ }
 }
 
+/* Chart screenshot: composites the chart host's stacked canvases (main +
+   indicator panes layer this way) into one PNG download. Same-origin
+   canvases only; a tainted layer is skipped rather than failing all. */
+function screenshotChart() {
+  const host = $("chart-pro");
+  if (!host) { status("no chart"); return; }
+  const layers = Array.from(host.querySelectorAll("canvas"));
+  if (!layers.length) { status("nothing to capture"); return; }
+  try {
+    const r0 = host.getBoundingClientRect();
+    const lr = layers[0].getBoundingClientRect();
+    const scale = lr.width ? layers[0].width / lr.width : 1;
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, Math.round(r0.width * scale));
+    out.height = Math.max(1, Math.round(r0.height * scale));
+    const ctx = out.getContext("2d");
+    ctx.fillStyle = themeVar("--bg", "#05080a");
+    ctx.fillRect(0, 0, out.width, out.height);
+    for (const c of layers) {
+      const r = c.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      try {
+        ctx.drawImage(c, (r.left - r0.left) * scale, (r.top - r0.top) * scale,
+          r.width * scale, r.height * scale);
+      } catch (e) { /* tainted layer; skip */ }
+    }
+    const tag = [state.symbol, state.timeframe].filter(Boolean).join("-");
+    out.toBlob((blob) => {
+      if (!blob) { status("capture blocked"); return; }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `GT-${tag || "chart"}-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      status("screenshot saved");
+      setTimeout(() => status(""), 1500);
+    });
+  } catch (e) { status("capture failed"); }
+}
 /* Workspace controls: Save / Load / Reset on the existing shell store
    (/api/workspace/shell) — same fields the boot path already restores. */
 function setupWsControls() {
@@ -484,6 +525,8 @@ function setupWsControls() {
     status("workspace reset");
     setTimeout(() => status(""), 1500);
   };
+  const cam = $("cam-shot");
+  if (cam) cam.onclick = () => screenshotChart();
 }
 
 const fmt = (p) => p >= 1000 ? p.toFixed(1) : p >= 10 ? p.toFixed(2) : p.toFixed(4);

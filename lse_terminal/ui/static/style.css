@@ -4080,6 +4080,9 @@ body.ws-fullscreen #controls { justify-content: flex-end; border-bottom: none; p
 /* Exit pill: hidden normally; in shell fullscreen it replaces the text
    Fullscreen button as one brass pill in the command bar's right group. */
 #ws-exit { display: none; }
+/* Camera: icon-only capture button in the command bar's right group. */
+#cam-shot { display: inline-flex; align-items: center; justify-content: center; padding: 3px 7px; }
+#cam-shot svg { display: block; }
 body.ws-fullscreen #ws-exit {
   display: inline-block; background: var(--accent-bar); color: #0a0f0c;
   border-color: transparent; border-radius: 999px; padding: 4px 14px;
@@ -4092,6 +4095,37 @@ body.ws-fullscreen #ind-panel,
 body.ws-fullscreen #ind-cfg,
 body.ws-fullscreen #tpl-panel { z-index: 95; }
 body.ws-fullscreen [data-radix-popper-content-wrapper] { z-index: 95 !important; }
+/* Pro analysis toolbar: the bundle's drawing rail, tailored. Scoped under
+   #chart-pro (higher specificity than the bundle's own rules, so no
+   source edits to the minified build). */
+#chart-pro .drawing-tool-menu {
+  background: color-mix(in srgb, var(--panel) 88%, transparent) !important;
+  border: 1px solid var(--edge) !important;
+  border-radius: 10px !important;
+  padding: 6px !important;
+  gap: 2px !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45) !important;
+}
+#chart-pro .drawing-tool-menu button {
+  border-radius: 7px !important;
+  color: var(--dim) !important;
+  width: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+#chart-pro .drawing-tool-menu button:hover {
+  color: var(--text) !important;
+  background: var(--hover) !important;
+}
+#chart-pro .drawing-tool-menu button.active-tool {
+  color: #0a0f0c !important;
+  background: var(--accent-bar) !important;
+  box-shadow: 0 0 0 1px var(--accent-bar), 0 2px 12px rgba(176, 141, 87, .35) !important;
+}
 /* ── GT Lasso ────────────────────────────────────────────────────────────
    Capture layer pinned over the chart while armed (fixed: no ancestor
    positioning is disturbed); above the fullscreen overlay there. */
