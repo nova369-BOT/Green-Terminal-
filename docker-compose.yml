@@ -31,6 +31,8 @@ services:
       LSE_TERMINAL_CONFIG_DIR: "/tmp/lse-terminal"
       LSE_TERMINAL_REMOTE: "1"
       PYTHONUNBUFFERED: "1"
+      # Code is mounted read-only (see volumes): never write .pyc into it.
+      PYTHONDONTWRITEBYTECODE: "1"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7787/api/health"]
       interval: 15s
@@ -41,6 +43,12 @@ services:
     # Persist workspace/config across restarts (optional).
     volumes:
       - gt-config:/tmp/lse-terminal
+      # Live code mount (data saver): the container reads the app, gateway
+      # binary and WASM artifacts straight from this checkout, so `git pull`
+      # + `docker compose up` picks up updates with NO rebuild and NO
+      # downloads. Rebuild (`--build`) only when the Dockerfile or Python
+      # dependencies change.
+      - ./:/app:ro
 
 volumes:
   gt-config:
