@@ -888,22 +888,16 @@ namespace {
 
         const float cy = (Layout::TOPBAR_H - 30.0f) * 0.5f;
 
-        // ── brand - D mark + edgedepth wordmark + EARLY ACCESS pill, links to
-        //    the homepage. Mirrors the web AppHeader / design-system Brand lockup:
-        //    the mark reads at ~wordmark height, a 9px mark->word gap and a 12px
-        //    word->pill gap, and a hairline accent pill. ──
+        // ── brand - brass mark + Green Terminal wordmark + G-FLOW pill. ──
         const float mark_h = 12.0f;                            // streak-block height (~= wordmark)
         const float mark_w = 272.0f * mark_h / 104.0f;         // full mark render width (~31px)
         const float gap1 = 9.0f, gap2 = 12.0f;                 // mark->word, word->pill
         ImGui::PushFont(Fonts::ui_semibold());
-        const float word_w  = ImGui::CalcTextSize("edgedepth").x;
+        const float word_w  = ImGui::CalcTextSize("Green Terminal").x;
         const float word_fs = ImGui::GetFontSize();
         ImGui::PopFont();
-        // EARLY ACCESS pill - the web .beta badge is Inter (--font-sans) 600 at
-        // 10px with 0.06em tracking, a 1px --accent border and --accent-text
-        // ink. Fonts::label() is the terminal's Inter SemiBold micro-label face;
-        // the mono face it used before read as a different product.
-        static const char* const kBeta = "EARLY ACCESS";
+        // G-FLOW pill - Inter SemiBold micro-label face with 0.06em tracking.
+        static const char* const kBeta = "G-FLOW";
         ImGui::PushFont(Fonts::label());
         ImFont*      beta_font = ImGui::GetFont();
         const float  beta_fs   = ImGui::GetFontSize();
@@ -926,7 +920,7 @@ namespace {
         draw_brand_mark(dl, ImVec2(bp.x, mid - mark_h * 0.5f), mark_h);
 
         ImGui::PushFont(Fonts::ui_semibold());
-        dl->AddText(ImVec2(bp.x + mark_w + gap1, mid - word_fs * 0.5f), u32(Tokens::TX1), "edgedepth");
+        dl->AddText(ImVec2(bp.x + mark_w + gap1, mid - word_fs * 0.5f), u32(Tokens::TX1), "Green Terminal");
         ImGui::PopFont();
 
         const float beta_x = bp.x + mark_w + gap1 + word_w + gap2;

@@ -53,10 +53,10 @@ namespace Theme {
         uint32_t hex, tx; float soft, line;
         switch (a) {
             case Accent::Indigo: hex = 0x6d8bff; tx = 0x8ba3ff; soft = 0.15f; line = 0.55f; break;
-            case Accent::Amber:  hex = 0xf0b350; tx = 0xf6c76e; soft = 0.15f; line = 0.55f; break;
-            case Accent::Mono:   hex = 0xe7e9ed; tx = 0xffffff; soft = 0.13f; line = 0.45f; break;
-            case Accent::Teal:   // design default: accent #35c9c4, textTint #3fe0d0
-            default:             hex = 0x35c9c4; tx = 0x3fe0d0; soft = 0.14f; line = 0.55f; break;
+            case Accent::Amber:  hex = 0xd9a441; tx = 0xe8c87e; soft = 0.15f; line = 0.55f; break;
+            case Accent::Mono:   hex = 0xb08d57; tx = 0xf4f1e8; soft = 0.14f; line = 0.55f; break;
+            case Accent::Teal:   // GT default: brushed brass accent, ivory text
+            default:             hex = 0xb08d57; tx = 0xf4f1e8; soft = 0.14f; line = 0.55f; break;
         }
         Tokens::BRAND      = from_hex(hex);
         Tokens::BRAND_SOFT = from_hex(hex, soft);
@@ -72,9 +72,9 @@ namespace Theme {
             case CandleConvention::BlueWhite: up = 0x5ba9ff; down = 0xf2f2f2; break;
             case CandleConvention::Custom: up = g_custom_up; down = g_custom_down; break;
             case CandleConvention::Classic: up = 0x26d07a; down = 0xff4d5e; break;
-            case CandleConvention::Muted:   up = 0x41a583; down = 0xcf6173; line = 0.45f; break;
-            case CandleConvention::TealMag: // design tokens: up #2fd6ad / down #ee5c78
-            default:                        up = 0x2fd6ad; down = 0xee5c78; break;
+            case CandleConvention::Muted:   up = 0x5c8a68; down = 0xb05a6a; line = 0.45f; break;
+            case CandleConvention::TealMag: // GT tokens: racing green #1f9d55 / oxblood #a83246
+            default:                        up = 0x1f9d55; down = 0xa83246; break;
         }
         Tokens::UP        = from_hex(up);
         Tokens::DOWN      = from_hex(down);
@@ -117,7 +117,7 @@ namespace Theme {
         ImGui::TextUnformatted("Market colors");
         ImGui::SetNextItemWidth(-1);
         if (ImGui::Combo("##market_palette", &palette,
-            "Teal / rose\0Green / red\0Muted\0Blue / white\0Custom\0")) {
+            "Racing / oxblood\0Green / red\0Muted\0Blue / white\0Custom\0")) {
             set_candle_convention(CandleConvention(palette));
             changed = true;
         }
@@ -138,7 +138,7 @@ namespace Theme {
         ImGui::TextUnformatted("Interface accent");
         int a = int(accent());
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::Combo("##interface_accent", &a, "Teal\0Indigo\0Amber\0Neutral\0")) {
+        if (ImGui::Combo("##interface_accent", &a, "Brass\0Indigo\0Amber\0Brass soft\0")) {
             set_accent(Accent(a)); changed = true;
         }
         if (ImGui::Button("Reset appearance")) {
@@ -176,7 +176,7 @@ namespace Theme {
             s.Colors[ImPlotCol_AxisBgActive]  = BASE;
             s.Colors[ImPlotCol_AxisText]      = TX3;
             // crosshair - dashed look approximated by low-alpha solid
-            s.Colors[ImPlotCol_Crosshairs]    = from_hex(0x96a8b8, 0.35f);
+            s.Colors[ImPlotCol_Crosshairs]    = from_hex(0x9aa79d, 0.35f);
             s.Colors[ImPlotCol_Selection]     = BRAND;
             s.Colors[ImPlotCol_LegendBg]      = with_a(PANEL, 0.98f);
             s.Colors[ImPlotCol_LegendBorder]  = BD2;

@@ -325,14 +325,14 @@ def test_edgedepth_artifacts_endpoint(client: TestClient):
 
 
 def test_orderflow_workspace_markers():
-    """MARKET → ORDER FLOW section hosts the real EdgeDepth iframe."""
+    """MARKET → G-FLOW section hosts the real order-flow iframe."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     html = (root / "lse_terminal/ui/static/index.html").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
     assert 'id="orderflow"' in html
     assert 'id="of-frame"' in html
-    assert "EDGEDEPTH GATEWAY" in html
+    assert "GT DATA ENGINE" in html
     assert "showOrderFlowPage" in app
     assert "sub-mk-flow" in app
     # No lookalike DOM ladder in the shell (real engine lives in the iframe).

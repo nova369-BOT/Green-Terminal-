@@ -302,10 +302,10 @@ function updateTermStatus() {
     dataLabel = state.provider.toUpperCase(); dataCls = "warn";
   }
   set("ts-data", dataLabel, dataCls);
-  // EdgeDepth gateway cell: real reachability from /api/edgedepth/status only.
+  // Data-engine cell: real reachability from /api/edgedepth/status only.
   if (state.edgeGateway) {
     const eg = state.edgeGateway;
-    const label = eg.reachable ? "EDGEDEPTH LIVE" : "EDGEDEPTH OFFLINE";
+    const label = eg.reachable ? "ENGINE LIVE" : "ENGINE OFFLINE";
     set("ts-edge", label, eg.reachable ? "on" : "off");
   }
   set("ts-sym", state.symbol || null);
@@ -9483,7 +9483,7 @@ const SUBRAIL = {
   markets: [
     { id: "sub-mk-charts", label: "PRICE & CHARTS",
       go: () => $("rail-markets").click() },
-    { id: "sub-mk-flow", label: "ORDER FLOW",
+    { id: "sub-mk-flow", label: "G-FLOW",
       go: () => { $("rail-markets").click(); showOrderFlowPage(); } },
     { id: "sub-mk-options", label: "OPTIONS",
       go: () => { $("rail-markets").click(); showOptionsPage(); } },
@@ -10599,7 +10599,7 @@ async function refreshOrderFlowStatus() {
   };
   const ready = !!(art && art.ready);
   const gwOn = !!(gw && (gw.reachable || gw.state === "CONNECTED"));
-  set("of-source", "EDGEDEPTH GATEWAY", gwOn ? "on" : "warn");
+  set("of-source", "GT DATA ENGINE", gwOn ? "on" : "warn");
   set("of-gw", gwOn ? "LIVE" : ((gw && gw.state) || "OFFLINE"), gwOn ? "on" : "off");
   set("of-art", ready ? "RUNTIME READY" : "RUNTIME ARTIFACTS MISSING",
       ready ? "on" : "off");
@@ -10611,9 +10611,9 @@ async function refreshOrderFlowStatus() {
   if (banner) {
     if (!ready) {
       banner.classList.remove("hidden");
-      $("of-banner-title").textContent = "ORDER FLOW RUNTIME NOT LOADED";
+      $("of-banner-title").textContent = "G-FLOW RUNTIME NOT LOADED";
       $("of-banner-detail").textContent =
-        "Order Flow hosts the official EdgeDepth WASM build (DOM, heatmap, " +
+        "G-Flow hosts the order-flow engine (DOM, heatmap, " +
         "tape, footprint). Missing: " + missing.join(", ") +
         ". Green Terminal loads the built runtime when present; no " +
         "simulated depth is substituted.";
@@ -10645,7 +10645,7 @@ async function refreshOrderFlowStatus() {
 
 function showOrderFlowPage() {
   subrailMark("sub-mk-flow");
-  document.title = "Order Flow · GREEN TERMINAL";
+  document.title = "G-Flow · Green Terminal";
   // Same chrome rules as PRICE & CHART (sidebar stays for symbol sync).
   // NOTE: setSidebar() lives inside setupRail() and is NOT in scope here —
   // calling it threw and aborted the page swap (ORDER FLOW highlighted but

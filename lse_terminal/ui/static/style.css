@@ -4101,8 +4101,9 @@ body { padding-bottom: 22px; }
   flex: 1;
   min-width: 0;
   min-height: 0;
-  background: var(--bg);
+  background: #05080a;
 }
+/* G-FLOW chrome: racing green + brushed brass, seamless with the engine. */
 #orderflow.hidden { display: none !important; }
 #of-bar {
   display: flex;
@@ -4110,10 +4111,10 @@ body { padding-bottom: 22px; }
   gap: 10px;
   height: 30px;
   padding: 0 10px;
-  background: var(--panel, var(--bg));
-  border-bottom: 1px solid var(--edge);
+  background: #0a0f0c;
+  border-bottom: 1px solid #b08d57;
   font: 11px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
-  color: var(--dim);
+  color: #9aa79d;
   flex: none;
   white-space: nowrap;
   overflow: hidden;
@@ -4123,47 +4124,53 @@ body { padding-bottom: 22px; }
   letter-spacing: 0.12em;
   opacity: 0.7;
 }
-#of-bar .of-v { color: var(--text); }
-#of-bar .of-v.on { color: var(--up); }
-#of-bar .of-v.warn { color: var(--warn, #d9a441); }
-#of-bar .of-v.off { color: var(--dim); }
+#of-bar > .of-k:first-child {
+  color: #b08d57;
+  opacity: 1;
+  font-weight: 700;
+}
+#of-bar .of-v { color: #f4f1e8; }
+#of-bar .of-v.on { color: #34c77b; }
+#of-bar .of-v.warn { color: #b08d57; }
+#of-bar .of-v.off { color: #9aa79d; }
 #of-bar .of-sep {
   width: 1px;
   height: 14px;
-  background: var(--edge);
+  background: #2c3b32;
 }
 #of-bar .of-flex { flex: 1; }
 #of-bar .of-link {
-  color: var(--dim);
+  color: #9aa79d;
+  background: transparent;
   text-decoration: none;
-  border: 1px solid var(--edge);
+  border: 1px solid #2c3b32;
   padding: 3px 8px;
   border-radius: 2px;
 }
-#of-bar .of-link:hover { color: var(--text); border-color: var(--dim); }
+#of-bar .of-link:hover { color: #f4f1e8; border-color: #b08d57; }
 #of-banner {
   flex: none;
   padding: 14px 16px;
-  background: color-mix(in srgb, var(--panel, #111) 92%, #000);
-  border-bottom: 1px solid var(--edge);
+  background: #0a0f0c;
+  border-bottom: 1px solid #2c3b32;
 }
 #of-banner.hidden { display: none !important; }
 #of-banner .of-bt {
   font: 600 13px/1.3 var(--sans, system-ui, sans-serif);
-  color: var(--warn, #d9a441);
+  color: #b08d57;
   letter-spacing: 0.04em;
   margin-bottom: 6px;
 }
 #of-banner .of-bd {
   font: 11px/1.5 var(--mono, ui-monospace, monospace);
-  color: var(--dim);
+  color: #9aa79d;
   max-width: 960px;
 }
 #of-stage {
   flex: 1;
   min-height: 0;
   position: relative;
-  background: #0b0e13;
+  background: #05080a;
 }
 #of-frame {
   position: absolute;
@@ -4172,5 +4179,5 @@ body { padding-bottom: 22px; }
   height: 100%;
   border: 0;
   display: block;
-  background: #0b0e13;
+  background: #05080a;
 }
