@@ -641,13 +641,16 @@ def create_app() -> FastAPI:
         # desktop app). Cost of no-store on localhost is zero.
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
-        # Phase 4: EdgeDepth WASM needs cross-origin isolation (SharedArrayBuffer
-        # / pthreads). Only the EdgeDepth surface gets COOP/COEP so the rest of
-        # the shell is unaffected (audit Option B host rules).
+        # Whole-app cross-origin isolation. The EdgeDepth engine (WASM
+        # threads) needs SharedArrayBuffer inside its iframe, and the iframe
+        # only reaches crossOriginIsolated when the parent tree is isolated
+        # too — COOP/COEP on /edgedepth alone left it stuck at "Preparing"
+        # with a DataCloneError. credentialless (not require-corp) keeps
+        # cross-origin news/research thumbnails loading while still
+        # isolating; same-origin API/WS traffic is unaffected.
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
         path = request.url.path
-        if path.startswith("/edgedepth") or path.endswith((".wasm", ".data")):
-            response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-            response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
         if path.endswith(".wasm"):
             response.headers["Content-Type"] = "application/wasm"
         return response

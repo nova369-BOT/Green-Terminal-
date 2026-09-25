@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - arena/01a0caa0-green-terminal
+    paths:
+      - third_party/edgedepth-terminal/**
+      - .github/workflows/build-edgedepth-wasm.yml
   workflow_dispatch:
 
 permissions:
