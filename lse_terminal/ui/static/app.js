@@ -10580,10 +10580,11 @@ function showOptionsPage() {
 const ofState = { poll: 0, ready: false };
 
 function stopOrderFlowHost() {
+  // Only the status poll stops. The iframe STAYS mounted (hidden with its
+  // section): its WebSocket and book stay warm, so coming back to ORDER
+  // FLOW is instant instead of a full WASM reboot. (ofState.ready is
+  // write-only; nothing reads it.)
   if (ofState.poll) { clearInterval(ofState.poll); ofState.poll = 0; }
-  const fr = $("of-frame");
-  if (fr) fr.removeAttribute("src");
-  ofState.ready = false;
 }
 
 async function refreshOrderFlowStatus() {
@@ -10623,9 +10624,8 @@ async function refreshOrderFlowStatus() {
   const fr = $("of-frame");
   if (fr && ready && !fr.getAttribute("src")) {
     // Real EdgeDepth client inside Green Terminal (same origin /edgedepth).
-    // Boots Hyperliquid BTC: HL is reachable from networks where Binance is
-    // blocked, and the gateway serves both venues. The venue toggle inside
-    // the terminal switches to Binance without leaving Green Terminal.
+    // Boots Hyperliquid BTC (HL-only gateway for now; Binance is
+    // unregistered server-side until it is reachable again).
     fr.src = "/edgedepth/index.html?exchange=hl&symbol=BTC";
     ofState.ready = true;
   }

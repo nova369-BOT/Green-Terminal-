@@ -152,8 +152,11 @@ class EdgeDepthGatewaySupervisor:
                 [str(bin_path)],
                 cwd=str(_GW_SRC if _GW_SRC.is_dir() else _REPO),
                 env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                # Inherit container stdout/stderr so `docker compose logs`
+                # shows gateway lines (feeds starting, venue warnings).
+                # DEVNULL here made every data issue undebuggable.
+                stdout=None,
+                stderr=None,
                 stdin=subprocess.DEVNULL,
             )
         except OSError as e:
