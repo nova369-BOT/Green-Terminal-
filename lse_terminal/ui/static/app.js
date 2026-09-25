@@ -1785,13 +1785,11 @@ async function pickBroker(b) {
 }
 
 function setupConnBar() {
-  // The connection control opens the full-surface screen, not the little
-  // dropdown. The dropdown code (openConnMenu and friends) stays as the low
-  // level the screen is built on: it owns brokerRow/refreshBrokerRows, and the
-  // screen reuses its plumbing (saveLseKey, pickBroker, brokerDisconnect).
-  $("conn-bar").onclick = (e) => {
-    e.stopPropagation();
-    openConnScreen();
+  // The brand button opens PROFILE, where API keys and brokers live now.
+  // (The ticket's account row still opens the overlay directly, and the
+  // dropdown plumbing underneath stays shared — see the #conn-menu note.)
+  $("conn-bar").onclick = () => {
+    $("rail-profile").click();
   };
   $("cs-close").onclick = closeConnScreen;
   // Backdrop click closes; clicks on the card (typing a key) do not.

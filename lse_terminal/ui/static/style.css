@@ -285,7 +285,7 @@ aside#side.collapsed #side-fold { display: none; }
 }
 /* 9px rendered as an unreadable dot on a real display; 11px reads as
    the chevron it is. */
-#conn-caret { margin-left: auto; color: var(--dim); font-size: 12px; }
+/* (conn-caret removed with the dropdown: the brand button has no menu.) */
 #conn-menu {
   position: absolute; top: 100%; left: 0; z-index: 60; width: 300px;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 2px;

@@ -43,13 +43,16 @@ document.documentElement.setAttribute("data-theme",
            a terminal. The sub line already states the connection in words,
            so the dot was saying the same thing twice in the one colour the
            rest of the header never uses. -->
-      <button id="conn-bar" title="Manage API keys and data sources">
+      <!-- Brand button: GT mark + live status. Opens PROFILE (API keys and
+           brokers live there now). The #conn-menu dropdown stays in the DOM
+           dormant: its plumbing (saveLseKey, pickBroker, brokerDisconnect)
+           is shared by the connections card. -->
+      <button id="conn-bar" title="Open Profile">
         <img id="conn-mark" src="assets/gt-mark.png" alt="" width="26" height="26" aria-hidden="true">
         <span id="conn-main">
           <span id="conn-title">GREEN TERMINAL</span>
           <span id="conn-sub">Market · Price &amp; Chart</span>
         </span>
-        <span id="conn-caret">&#9662;</span>
       </button>
       <div id="conn-menu" class="hidden"></div>
     </div>
