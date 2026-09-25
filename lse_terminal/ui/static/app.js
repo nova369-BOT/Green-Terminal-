@@ -9990,7 +9990,7 @@ document.addEventListener("keydown", (e) => {
     if (!lassoChartHost()) return;
     lassoArm(false);
   }
-  if (e.key === "Escape") { lassoHideCard(); lassoClearDraw(); }
+  if (e.key === "Escape") { lassoDisarm(); lassoHideCard(); lassoClearDraw(); }
 });
 document.addEventListener("keyup", (e) => {
   if ((e.key === "l" || e.key === "L") && lasso.armed && !lasso.once) {
