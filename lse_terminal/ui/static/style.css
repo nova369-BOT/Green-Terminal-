@@ -4081,6 +4081,11 @@ body.ws-fullscreen #controls { justify-content: flex-end; border-bottom: none; p
    only the pills re-arm the mouse. */
 body.ws-fullscreen #controls .ws-btn,
 body.ws-fullscreen #controls #lasso-open { pointer-events: auto; }
+/* Fullscreen keeps half the strip: Exit + camera + Lasso only. Workspace
+   chores (Save/Load/Reset) hide until you exit. */
+body.ws-fullscreen #ws-save,
+body.ws-fullscreen #ws-load,
+body.ws-fullscreen #ws-reset { display: none !important; }
 /* Exit pill: hidden normally; in shell fullscreen it replaces the text
    Fullscreen button as one brass pill in the command bar's right group. */
 #ws-exit { display: none; }
