@@ -1800,12 +1800,16 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 .qt th { color: var(--title); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
 .qt-note { color: var(--dim); font-size: 11px; margin-top: 4px; }
 
-/* Pro-terminal horizontal section menu. The rail stretches the full
-   band height so each tab is a column of the band, not a floating label:
-   hover fills the column, the active tab keeps a filled column + the
-   accent underline flush against the band's bottom hairline (a classic
-   terminal read, in neutral zinc only). */
-#rail { display: flex; gap: 2px; align-self: stretch; }
+/* Side section rail: MARKETS / BACKTEST / ECONOMIC / WORKSPACE / RESEARCH
+   docked as an icon strip on the left edge (cTrader idiom). Fixed, so it
+   never disturbs the header flow it is nested in; the body padding below
+   keeps content clear of it. Top-right .rail-btns (guide / MY DATA) are
+   untouched by the #rail-scoped rules. */
+#rail {
+  position: fixed; left: 0; top: 0; bottom: 22px; width: 62px; z-index: 45;
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 0;
+  background: var(--panel); border-right: 1px solid var(--edge);
+}
 .rail-btn {
   display: flex; align-items: center;
   background: none; border: none; border-bottom: 2px solid transparent;
@@ -1814,6 +1818,18 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 }
 .rail-btn:hover { color: var(--text); background: var(--hover); }
 .rail-btn.active { color: var(--text); border-bottom-color: var(--accent-bar); background: var(--active); }
+/* Side cells: icon over a micro label; the active section keeps a brass
+   bar on the outer edge + a racing fill. */
+#rail .rail-btn {
+  flex-direction: column; justify-content: center; gap: 4px;
+  border-bottom: none; padding: 10px 2px; width: 100%;
+}
+#rail .rail-btn span { font-size: 8px; letter-spacing: .08em; }
+#rail .rail-btn svg { flex: none; }
+#rail .rail-btn.active {
+  color: var(--text); background: var(--active);
+  box-shadow: inset 2px 0 0 var(--accent-bar);
+}
 
 /* Floating view dock: the active section's sub-views in a glass pill that
    hovers bottom-center and melts away while studying the chart. Pure CSS:
@@ -3995,7 +4011,7 @@ body.ws-fullscreen #ai-rail,
 body.ws-fullscreen #controls,
 body.ws-fullscreen #dockzone,
 body.ws-fullscreen #acct-dock { display: none !important; }
-body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 0; z-index: 80; background: var(--bg); }
+body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 62px; z-index: 80; background: var(--bg); }
 body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
 body.ws-fullscreen #term-status { z-index: 90; }
 
@@ -4029,8 +4045,8 @@ body.ws-fullscreen #term-status { z-index: 90; }
 #term-status .ts-v.off { color: var(--dim); }
 #term-status .ts-right { margin-left: auto; }
 
-/* Give main room for the fixed status strip. */
-body { padding-bottom: 22px; }
+/* Give main room for the fixed status strip + the fixed side rail. */
+body { padding-bottom: 22px; padding-left: 62px; }
 
 /* GREEN TERMINAL accent on the active rail item (restrained green). */
 .rail-btn.active {
