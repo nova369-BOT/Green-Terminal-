@@ -1,8 +1,10 @@
-/* Neutral zinc chrome throughout; the chart is the only colorful thing.
-   Design language: TERMINAL, not SaaS. Dense rows,
-   12px base type, 2px corners, hairline borders, tabular/monospace numerals,
-   quiet flat toolbar buttons. Anything rounded, airy or card-like reads as
-   generic AI dashboard chrome and is deliberately avoided.
+/* Racing Green + Brushed Brass chrome throughout; market data carries the
+   color (grove green up / oxblood down). Design language: TERMINAL, not
+   SaaS. Dense rows, 12px base type, 2px corners, hairline borders,
+   tabular/monospace numerals, quiet flat toolbar buttons. Brass is
+   reserved for marks, active states and focus; it never fills surfaces.
+   Anything rounded, airy or card-like reads as generic AI dashboard
+   chrome and is deliberately avoided.
 
    THEMING: every color in this file goes through a variable. <html> carries
    class "dark" by default; removing it (the header Light/Dark toggle, saved
@@ -11,39 +13,31 @@
    tokens key off the same class; the calendar reads these same vars). Never
    hardcode a hex below the two palette blocks. */
 :root {
-  /* DARK (default): neutral charcoal, no deep blacks anywhere (supersedes
-     the old pixel-sampled #0d0d0d canvas). Every surface lifted
-     ~0x12-0x14 with the ladder relationships kept (bg < bg2 < panel <
-     hover < edge < active). STILL strictly neutral: an earlier
-     blue-charcoal pass was rejected; color lives only in market data
-     (teal up / red-pink down, matching Workspace sparklines). */
-  /* Page floor one step below the old #212121: the panels tile visibly on
-     top of it; depth comes from the floor/surface gap, still nowhere near
-     the banned deep blacks. */
-  --bg: #1c1c1c; --panel: #2a2a2a; --edge: #3a3a3a;
+  /* DARK (default): racing-green terminal. Floor #05080a, panels tile
+     visibly above it; depth comes from the floor/surface gap. Ink is warm
+     ivory, secondary text sage, up/down grove/oxblood, brass reserved for
+     brand marks, active rails and focus rings. */
+  --bg: #05080a; --panel: #0a0f0c; --edge: #1d2b23;
   /* Machined top edge for major surfaces; invisible in light theme. */
-  --hairline: rgba(255, 255, 255, .045);
-  /* --dim readability floor; neutral grey. */
-  --text: #e8e8e8; --dim: #b0b0b0; --up: #21b3a4; --down: #f0426c;
-  /* The brand mark's own two candles (public/lse-favicon.svg): a navy down
-     candle and a green up candle. The navy is #1a1a2e, which is invisible on
-     this near-black panel, so the dark theme keeps the brand green and draws
-     the other candle in the panel's ink. The logo's SHAPE is what identifies
-     it; a candle nobody can see identifies nothing. */
-  --logo-up: #2E7D32; --logo-down: #e8e8e8;
-  --bg2: #262626;          /* code wells, previews */
-  --hover: #343434;        /* card + row hover fills */
-  --active: #414141;       /* selected rows, active-surface grey */
-  --quote: #2e2e2e;        /* the user's chat turn */
-  --item: #2f2f2f;         /* keybar, list items */
-  --raise: #414141; --raise-h: #4c4c4c;   /* primary (Run/OK) buttons */
-  --line-strong: #555555;  /* focus borders, login card border */
-  --accent-bar: #d0d0d0;   /* active tab underline / selected row bar */
-  --title: #c0c0c0;        /* section + table headers, Workspace col-header grey */
-  --dash: #474747;         /* dashed drop-zone border */
-  --scroll: #3a3a3a; --scroll-h: #474747; /* neutral scrollbar thumbs */
-  --err: #f87171; --err-bg: #2c2325; --err-edge: #4a3236;
-  --ohlcv-bg: #1b4a42; --ohlcv-tx: #7fe0d2;
+  --hairline: rgba(244, 241, 232, .05);
+  /* --dim readability floor; sage grey-green. */
+  --text: #f4f1e8; --dim: #9aa79d; --up: #1f9d55; --down: #c04a5e;
+  /* Brand mark's two candles: grove green up, brushed brass down-candle.
+     Both stay visible on the racing panel; the SHAPE is what identifies it. */
+  --logo-up: #1f9d55; --logo-down: #b08d57;
+  --bg2: #0c1210;          /* code wells, previews */
+  --hover: #12201a;        /* card + row hover fills */
+  --active: #143024;       /* selected rows, racing-tinted active surface */
+  --quote: #0c1210;        /* the user's chat turn */
+  --item: #0d1311;         /* keybar, list items */
+  --raise: #013220; --raise-h: #024a30;   /* primary (Run/OK) buttons */
+  --line-strong: #b08d57;  /* focus borders, login card border */
+  --accent-bar: #b08d57;   /* active tab underline / selected row bar */
+  --title: #c9c2ae;        /* section + table headers, col-header warm grey */
+  --dash: #2c3b32;         /* dashed drop-zone border */
+  --scroll: #2c3b32; --scroll-h: #4a5f52; /* grove scrollbar thumbs */
+  --err: #e0657a; --err-bg: #1c0f12; --err-edge: #5c2430;
+  --ohlcv-bg: #0e3a2a; --ohlcv-tx: #7fd6a8;
   --shadow: rgba(0, 0, 0, .55);
   --overlay: rgba(0, 0, 0, .62);
   --legend-shadow: 0 1px 2px #000;
@@ -54,27 +48,27 @@
   --code-font: Consolas, "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, "Courier New", monospace;
 }
 html:not(.dark) {
-  /* LIGHT: same zinc discipline on paper-gray surfaces; up/down darkened two
-     steps so quote colors keep contrast on white. */
-  --bg: #f5f6f8; --panel: #ffffff; --edge: #e3e5e9;
+  /* LIGHT: ivory paper + grove surfaces with darkened brass accents so the
+     racing-green identity survives the toggle; up/down deepened for
+     contrast on white. */
+  --bg: #eef0ea; --panel: #f7f5ee; --edge: #d8d4c4;
   --hairline: rgba(255, 255, 255, 0);
-  /* --dim darkened (was #6d727a) for the same readability call in light. */
-  --text: #23262b; --dim: #43474e; --up: #0d8a7d; --down: #d22b57;
-  /* On light, both brand colours are exactly the logo's. */
-  --logo-up: #2E7D32; --logo-down: #1a1a2e;
-  --bg2: #f0f1f4;
-  --hover: #eef0f3;
-  --active: #e8eaee;
-  --quote: #f0f1f4;
-  --item: #eef0f3;
-  --raise: #e8eaee; --raise-h: #dcdfe4;
-  --line-strong: #c6cad1;
-  --accent-bar: #3f434b;
-  --title: #43474e;
-  --dash: #c9cdd3;
-  --scroll: #c9ccd2; --scroll-h: #b3b8bf;
-  --err: #c22540; --err-bg: #fdeef0; --err-edge: #f2c6ce;
-  --ohlcv-bg: #d9f2ee; --ohlcv-tx: #0b6e61;
+  --text: #14201b; --dim: #4c5a51; --up: #147a42; --down: #8f2940;
+  /* On light, the mark reads grove green + darkened brass. */
+  --logo-up: #013220; --logo-down: #8a6d3f;
+  --bg2: #e7eae0;
+  --hover: #e2e7dc;
+  --active: #d3ddcb;
+  --quote: #e7eae0;
+  --item: #e9ece2;
+  --raise: #dfe4d2; --raise-h: #cfd8bd;
+  --line-strong: #8a6d3f;
+  --accent-bar: #8a6d3f;
+  --title: #43514a;
+  --dash: #c4c9b4;
+  --scroll: #c4c9b4; --scroll-h: #a8b09a;
+  --err: #b01e3c; --err-bg: #f9e8ea; --err-edge: #e5b6bf;
+  --ohlcv-bg: #d9ecdd; --ohlcv-tx: #0b5c38;
   --shadow: rgba(20, 22, 26, .18);
   --overlay: rgba(40, 44, 52, .35);
   --legend-shadow: none;
@@ -465,18 +459,18 @@ aside#side.collapsed #side-fold { display: none; }
 #cs-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
 /* Later pass: no fill at all, the word alone on the panel's own black.
    Set like a machine label: the terminal's mono face, uppercase,
-   tracked, burnt orange. Text-only control. The first shade read too
+   tracked, brushed brass. Text-only control. The first shade read too
    dark and the frozen no-hover state read as dead, so the base steps up
    a notch and hover brightens further; still text-only, still no fill. */
 #cs-foot button {
-  background: transparent; border-color: transparent; color: #c9711d;
+  background: transparent; border-color: transparent; color: #b08d57;
   font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .14em;
   padding: 4px 6px;
 }
 /* Hover per theme: on black the word steps lighter; on white a lighter
-   amber would wash out, so it deepens instead. */
-html.dark #cs-foot button:hover { background: transparent; border-color: transparent; color: #efa558; }
-html:not(.dark) #cs-foot button:hover { background: transparent; border-color: transparent; color: #9a4f12; }
+   brass would wash out, so it deepens instead. */
+html.dark #cs-foot button:hover { background: transparent; border-color: transparent; color: #d9c08a; }
+html:not(.dark) #cs-foot button:hover { background: transparent; border-color: transparent; color: #8a6d3f; }
 
 /* Broker inquiry form (opened from the Inquire button). */
 #inq-modal {
@@ -527,8 +521,8 @@ html:not(.dark) #cs-foot button:hover { background: transparent; border-color: t
    base already sits on --raise-h, so "one step further" has no token left.
    Dark steps lighter, light steps darker; same direction as every other
    hover in each theme. */
-html.dark #inq-actions button:hover { background: #5a5a5a; border-color: #6a6a6a; }
-html:not(.dark) #inq-actions button:hover { background: #cfd3d9; border-color: #b3b8bf; }
+html.dark #inq-actions button:hover { background: #04603c; border-color: #0a6b44; }
+html:not(.dark) #inq-actions button:hover { background: #c2cfae; border-color: #aeb9a0; }
 #inq-actions button:disabled { opacity: .6; cursor: default; }
 #inq-done { color: var(--text); font-size: 13px; padding: 6px 0 2px; line-height: 1.6; }
 .inq-done-title { font-weight: 700; }
@@ -838,7 +832,7 @@ section#charts { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .acd-k { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .acd-v { color: var(--text); font-size: 12.5px; font-weight: 600;
   font-variant-numeric: tabular-nums; font-family: var(--mono); }
-.acd-v.p-pos { color: #58a05a; } .acd-v.p-neg { color: #e05d5d; }
+.acd-v.p-pos { color: var(--up); } .acd-v.p-neg { color: var(--down); }
 #acd-tabs { margin-left: auto; display: flex; gap: 2px; align-items: center; }
 #acd-min {
   margin-left: 6px; width: 22px;
@@ -866,7 +860,7 @@ section#charts { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .acd-table td { padding: 4px 14px; border-top: 1px solid var(--edge); color: var(--text); }
 .acd-row { cursor: pointer; }
 .acd-row:hover td { background: var(--hover); }
-.acd-table td.p-pos { color: #58a05a; } .acd-table td.p-neg { color: #e05d5d; }
+.acd-table td.p-pos { color: var(--up); } .acd-table td.p-neg { color: var(--down); }
 .acd-close {
   /* A real button, not a ghost glyph: the bare dim x was invisible against
      the table rows. */
@@ -874,7 +868,7 @@ section#charts { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   cursor: pointer; border-radius: 3px;
   font-size: 13px; line-height: 1; padding: 2px 6px;
 }
-.acd-close:hover { color: #e05d5d; border-color: #e05d5d; background: var(--hover); }
+.acd-close:hover { color: var(--down); border-color: var(--down); background: var(--hover); }
 /* position row dropdown (JS-positioned at the cursor, flips above the dock) */
 .acd-menu {
   position: fixed; z-index: 60; min-width: 158px;
@@ -891,7 +885,7 @@ section#charts { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   color: var(--text); font-size: 12px; padding: 5px 9px; border-radius: 2px;
 }
 .acd-menu button:hover { background: var(--hover); }
-.acd-menu button.danger:hover { color: #e05d5d; }
+.acd-menu button.danger:hover { color: var(--down); }
 .acd-menu-sep { height: 1px; background: var(--edge); margin: 3px 2px; }
 .pane { height: 140px; border-top: 1px solid var(--edge); position: relative; }
 .pane .pane-label {
@@ -1669,12 +1663,12 @@ table.air-md-table th { color: var(--dim); font-weight: 600; }
   padding: 5px 11px; cursor: pointer; font-size: 13px;
 }
 .air-menu-item.sel { background: var(--edge); }
-/* The active mode: a standing dark grey, distinct from the hover/keyboard
+/* The active mode: a standing racing tint, distinct from the hover/keyboard
    highlight, so the selected stance reads at a glance in the flat list. */
-.air-menu-item.on { background: #303030; }
-.air-menu-item.on.sel { background: #3a3a3a; }
-html:not(.dark) .air-menu-item.on { background: #d5d8dd; }
-html:not(.dark) .air-menu-item.on.sel { background: #c6cad1; }
+.air-menu-item.on { background: #143024; }
+.air-menu-item.on.sel { background: #1a3d2d; }
+html:not(.dark) .air-menu-item.on { background: #d3ddcb; }
+html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 .air-menu-label { color: var(--text); flex: 0 0 auto; }
 .air-menu-desc {
   color: var(--dim); font-size: 12px; flex: 1 1 auto; min-width: 0;
@@ -2164,7 +2158,7 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6cad1; }
 }
 .ctx-item { padding: 4px 10px; border-radius: 3px; cursor: pointer; white-space: nowrap; }
 .ctx-item:hover { background: var(--hover); }
-.ctx-item.danger:hover { color: #e57373; }
+.ctx-item.danger:hover { color: var(--down); }
 .ctx-sep { height: 1px; margin: 4px 6px; background: var(--edge); }
 
 /* Library facts, VS Code style: one line per file, the manifest numbers
@@ -2210,7 +2204,7 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6cad1; }
 .tpl-sub { color: var(--dim); font-size: 11px; flex: none; }
 .tpl-del { border: none; background: none; color: var(--dim); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 2px; flex: none; }
 .tpl-del:hover { color: var(--text); }
-.tpl-del.armed { color: #e05d5d; font-size: 11px; }
+.tpl-del.armed { color: var(--down); font-size: 11px; }
 .tpl-empty { padding: 8px; color: var(--dim); font-size: 12px; }
 #tpl-save-row { width: 100%; text-align: left; color: var(--dim); border-style: dashed; }
 #tpl-save-row:hover { color: var(--text); }
@@ -2238,7 +2232,7 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6cad1; }
 }
 .ind-row:hover .ind-star { visibility: visible; }
 .ind-star:hover { color: var(--text); }
-.ind-star.fav { visibility: visible; color: #e2b93d; }
+.ind-star.fav { visibility: visible; color: var(--accent-bar); }
 .ind-sep { height: 1px; background: var(--edge); margin: 3px 6px; }
 .ind-empty { padding: 8px; color: var(--dim); }
 #ind-create { width: 100%; text-align: left; color: var(--dim); border-style: dashed; }
@@ -2991,7 +2985,7 @@ html:not(.dark) .hl-v { color: #001080; }
    text weight the rest of the strip uses. */
 .tpx-mcell > span.tpx-short { color: var(--down); }
 #tpx-msg { font-size: 11px; min-height: 14px; margin-top: 6px; color: var(--dim); }
-#tpx-msg.err { color: #e05d5d; } #tpx-msg.ok { color: #58a05a; }
+#tpx-msg.err { color: var(--down); } #tpx-msg.ok { color: var(--up); }
 /* Rail widgets: user-picked cards between the ticket and the assistant.
    Neutral chrome; each card body scrolls inside a
    capped height so a long list never eats the chat below, and the stack
@@ -3027,7 +3021,7 @@ html:not(.dark) .hl-v { color: #001080; }
 .rw-num { flex: 0 0 auto; margin-left: auto; text-align: right; }
 .rw-link { cursor: pointer; }
 .rw-link:hover .rw-grow { text-decoration: underline; }
-.rw-up { color: #58a05a; } .rw-down { color: #e05d5d; }
+.rw-up { color: var(--up); } .rw-down { color: var(--down); }
 /* Options board rows: calls left, strike centre, puts right. */
 .rw-orow { display: flex; padding: 2px 0; color: var(--fg); }
 .rw-orow .c { flex: 1; text-align: left; }
@@ -3152,7 +3146,7 @@ nav#timeframes {
   overflow: hidden;
   /* Deep radial so the globe glows out of the corners, not a flat fill. */
   background:
-    radial-gradient(120% 120% at 50% 42%, #10203a 0%, #0a1220 45%, #060a12 100%);
+    radial-gradient(120% 120% at 50% 42%, #0d241a 0%, #081711 45%, #040b08 100%);
   border-right: 1px solid var(--edge);
 }
 #news-globe {
@@ -3169,7 +3163,7 @@ nav#timeframes {
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: .14em;
-  color: rgba(150, 200, 235, .55);
+  color: rgba(176, 141, 87, .6);
   pointer-events: none;
   user-select: none;
 }
@@ -3211,8 +3205,8 @@ nav#timeframes {
   cursor: pointer;
 }
 .news-item:hover { background: var(--hover); }
-.news-item.sel { background: var(--active); border-left-color: #f2b34e; }
-.news-item.hl { background: var(--hover); border-left-color: rgba(242,179,78,.5); }
+.news-item.sel { background: var(--active); border-left-color: #b08d57; }
+.news-item.hl { background: var(--hover); border-left-color: rgba(176,141,87,.5); }
 .news-thumb {
   flex: 0 0 62px;
   width: 62px; height: 62px;
@@ -3310,13 +3304,13 @@ nav#timeframes {
 
 /* Algo trading strip (live paper runs under the backtest bar) */
 #algo-strip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-  padding: 4px 8px; border-top: 1px solid var(--border, #2a2a2e); }
+  padding: 4px 8px; border-top: 1px solid var(--edge); }
 #algo-strip .algo-row { display: flex; gap: 8px; align-items: center;
-  font-size: 12px; padding: 2px 6px; border: 1px solid var(--border, #2a2a2e);
+  font-size: 12px; padding: 2px 6px; border: 1px solid var(--edge);
   border-radius: 4px; }
 #algo-strip .algo-last { opacity: 0.7; max-width: 220px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
-#algo-strip .algo-kill { color: #fff; background: #7f1d1d; border: none;
+#algo-strip .algo-kill { color: #f4f1e8; background: #8f2940; border: none;
   padding: 2px 10px; border-radius: 4px; cursor: pointer; }
 
 /* ── Level 3 (MBO) rail: charts | l3-rail | ai-rail ─────────────────────── */

@@ -550,13 +550,13 @@ const themeVar = (name, fallback) =>
 // Kept for the backtest equity curve, which is still a lightweight-charts
 // instance. The price chart is the ported LSE engine (see pushToChart).
 const chartOpts = () => ({
-  layout: { background: { color: themeVar("--bg", "#212121") },
+  layout: { background: { color: themeVar("--bg", "#05080a") },
             textColor: themeVar("--dim", "#8b8e94"),
             attributionLogo: false },
-  grid: { vertLines: { color: themeVar("--hover", "#1a1c1f") },
-          horzLines: { color: themeVar("--hover", "#1a1c1f") } },
-  timeScale: { timeVisible: true, secondsVisible: false, borderColor: themeVar("--edge", "#26282c") },
-  rightPriceScale: { borderColor: themeVar("--edge", "#26282c") },
+  grid: { vertLines: { color: themeVar("--hover", "#0a0f0c") },
+          horzLines: { color: themeVar("--hover", "#0a0f0c") } },
+  timeScale: { timeVisible: true, secondsVisible: false, borderColor: themeVar("--edge", "#1d2b23") },
+  rightPriceScale: { borderColor: themeVar("--edge", "#1d2b23") },
   crosshair: { mode: 0 },
   autoSize: true,
 });
@@ -3361,8 +3361,8 @@ function setupBacktest() {
     if (!backtest.equityChart) {
       backtest.equityChart = LightweightCharts.createChart($("bt-equity"), chartOpts());
       backtest.equitySeries = backtest.equityChart.addAreaSeries({
-        lineColor: "#21b3a4", topColor: "rgba(33,179,164,.25)",
-        bottomColor: "rgba(33,179,164,.02)", lineWidth: 2,
+        lineColor: "#1f9d55", topColor: "rgba(31,157,85,.25)",
+        bottomColor: "rgba(31,157,85,.02)", lineWidth: 2,
       });
     }
   };
@@ -6146,10 +6146,10 @@ function setupAiPanel(hosted) {
     ai.term = new Terminal({
       fontSize: 12.5, cursorBlink: true, scrollback: 5000,
       fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-      theme: { background: themeVar("--bg", "#212121"),
-               foreground: themeVar("--text", "#e6e8ea"),
-               cursor: themeVar("--text", "#e6e8ea"),
-               selectionBackground: themeVar("--edge", "#26282c") },
+      theme: { background: themeVar("--bg", "#05080a"),
+               foreground: themeVar("--text", "#f4f1e8"),
+               cursor: themeVar("--text", "#f4f1e8"),
+               selectionBackground: themeVar("--edge", "#1d2b23") },
     });
     ai.fit = new FitAddon.FitAddon();
     ai.term.loadAddon(ai.fit);
@@ -6959,11 +6959,11 @@ const FILE_ICO = {
   py: `<svg viewBox="0 0 16 16" width="16" height="16"><path fill="#4b8bbe" d="M7.9 1.3c-2 0-3.1.9-3.1 2.3v1.7h3.3v.5H3.3c-1.4 0-2.2 1-2.2 2.7 0 1.7.8 2.7 2.2 2.7h1.3V9.3c0-1.3 1.1-2.4 2.4-2.4h3c1.1 0 2-.9 2-2V3.6c0-1.5-1.2-2.3-2.6-2.3H7.9zM7 2.5a.62.62 0 1 1 0 1.24A.62.62 0 0 1 7 2.5z"/><path fill="#ffd43b" d="M8.1 14.7c2 0 3.1-.9 3.1-2.3v-1.7H7.9v-.5h4.8c1.4 0 2.2-1 2.2-2.7 0-1.7-.8-2.7-2.2-2.7h-1.3v1.9c0 1.3-1.1 2.4-2.4 2.4H6c-1.1 0-2 .9-2 2v1.3c0 1.5 1.2 2.3 2.6 2.3h1.5zm.9-1.2a.62.62 0 1 1 0-1.24.62.62 0 0 1 0 1.24z"/></svg>`,
   sql: `<svg viewBox="0 0 16 16" width="16" height="16" fill="#ec407a"><ellipse cx="8" cy="3.4" rx="5" ry="2.1"/><path d="M3 5v3c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1V5c-1 .9-2.9 1.5-5 1.5S4 5.9 3 5z"/><path d="M3 9.4v3.2c0 1.2 2.2 2.1 5 2.1s5-.9 5-2.1V9.4c-1 .9-2.9 1.5-5 1.5s-4-.6-5-1.5z"/></svg>`,
   md: `<svg viewBox="0 0 16 16" width="16" height="16"><path fill="#42a5f5" d="M8 13 3.4 7.4h2.8V2.6h3.6v4.8h2.8z"/></svg>`,
-  readme: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#90a4ae" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.6" stroke-linecap="round"/><path d="M8 5v.1" stroke-linecap="round" stroke-width="1.8"/></svg>`,
+  readme: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#9aa79d" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v3.6" stroke-linecap="round"/><path d="M8 5v.1" stroke-linecap="round" stroke-width="1.8"/></svg>`,
   json: `<svg viewBox="0 0 16 16" width="16" height="16"><text x="8" y="12" text-anchor="middle" font-size="11" font-weight="700" fill="#fbc02d" font-family="monospace">{}</text></svg>`,
   table: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#8bc34a" stroke-width="1.2"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 6.4h12M6.5 6.4V13M10.7 6.4V13"/></svg>`,
   series: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#a074c4" stroke-width="1.2"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 6.4h12M6.5 6.4V13M10.7 6.4V13"/></svg>`,
-  sheet: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#2e7d32" stroke-width="1.2"><rect x="2.5" y="2" width="11" height="12" rx="1"/><path d="M5.4 6.2l5.2 5.2M10.6 6.2l-5.2 5.2"/></svg>`,
+  sheet: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#1f9d55" stroke-width="1.2"><rect x="2.5" y="2" width="11" height="12" rx="1"/><path d="M5.4 6.2l5.2 5.2M10.6 6.2l-5.2 5.2"/></svg>`,
   file: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="#8a9199" stroke-width="1.2"><path d="M3.5 1.8h6l3 3v9.4h-9z"/><path d="M9.5 1.8v3h3"/></svg>`,
 };
 
@@ -6989,7 +6989,7 @@ function libFileIcon(name) {
    one blue folder among grey ones that looked like a state (selected? synced?)
    and meant nothing but a name match. "strategies" is only the preset name and
    users rename it freely, at which point the colour silently disappeared. */
-const FOLDER_COLOR = "#90a4ae";
+const FOLDER_COLOR = "#9aa79d";
 function libFolderIcon(name, open) {
   const c = FOLDER_COLOR;
   if (open) {
@@ -8680,8 +8680,8 @@ function edDrawPreview(data) {
   const price = LightweightCharts.createChart($("ed-pv-price"), chartOpts());
   editor.pvPrice = price;
   price.addCandlestickSeries({
-    upColor: "#26a69a", downColor: "#ef5350",
-    wickUpColor: "#26a69a", wickDownColor: "#ef5350", borderVisible: false,
+    upColor: "#1f9d55", downColor: "#c04a5e",
+    wickUpColor: "#1f9d55", wickDownColor: "#c04a5e", borderVisible: false,
   }).setData(candles);
   let ci = 0;
   const paneSeries = [];
@@ -10674,10 +10674,10 @@ function showOrderFlowPage() {
 
    Assets ship inside the app under /assets/globe (no CDN, offline
    product). Everything is precomputed once on first open; each frame is cheap
-   trig. The blue is the VIZ, not chrome (steel #4a86c5, no neon); the news
+   trig. The brass is the VIZ, not chrome (#b08d57, no neon); the news
    backdrop is always dark, so the globe uses the dark-tuned palette. */
 
-const NEWS_STEEL = "#4a86c5"; // steel accent for the globe canvas only
+const NEWS_STEEL = "#b08d57"; // brass accent for the globe canvas only
 // Key financial cities: the recognisable nodes of the network, labelled.
 const NEWS_CITIES = [
   { name: "London", lat: 51.51, lon: -0.13 },
@@ -10903,8 +10903,8 @@ function newsDraw() {
 
   // Rivers underneath, then borders and coastlines at one consistent weight.
   newsStrokeLines(g.rivers, "#5f7a8c", 0.5, 0.36, sinL0, cosL0, sinT, cosT);
-  newsStrokeLines(g.borders, "#a9b5c2", 0.7, 0.66, sinL0, cosL0, sinT, cosT);
-  newsStrokeLines(g.coast, "#a9b5c2", 0.75, 0.72, sinL0, cosL0, sinT, cosT);
+  newsStrokeLines(g.borders, "#9aa79d", 0.7, 0.66, sinL0, cosL0, sinT, cosT);
+  newsStrokeLines(g.coast, "#9aa79d", 0.75, 0.72, sinL0, cosL0, sinT, cosT);
 
   // City lights. Same spreading problem as the land dots, grown more gently
   // so the bright cores do not blob together when zoomed right in.
@@ -11036,7 +11036,7 @@ function newsDraw() {
     const pulse = (g.phase + i * 0.097) % 1;         // staggered ping
     // Expanding ping ring.
     ctx.globalAlpha = (1 - pulse) * (seld ? 0.75 : 0.42) * dep;
-    ctx.strokeStyle = "#f2b34e";
+    ctx.strokeStyle = "#b08d57";
     ctx.lineWidth = seld ? 1.7 : 1.1;
     ctx.beginPath(); ctx.arc(x, y, 4 + pulse * (seld ? 17 : 11), 0, Math.PI*2); ctx.stroke();
     // Soft glow halo.
@@ -14573,13 +14573,13 @@ function pyTermMake(kind) {
     fontSize: 14, scrollback: 5000,
     cursorBlink: !isConsole, disableStdin: isConsole,
     fontFamily: 'Consolas, "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-    theme: { background: themeVar("--bg", "#212121"),
-             foreground: themeVar("--text", "#e6e8ea"),
+    theme: { background: themeVar("--bg", "#05080a"),
+             foreground: themeVar("--text", "#f4f1e8"),
              // The run console hides its caret: a block caret promises
              // typing that goes nowhere.
              cursor: themeVar(isConsole ? "--bg" : "--text",
-                              isConsole ? "#212121" : "#e6e8ea"),
-             selectionBackground: themeVar("--edge", "#26282c") },
+                              isConsole ? "#05080a" : "#f4f1e8"),
+             selectionBackground: themeVar("--edge", "#1d2b23") },
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -15245,10 +15245,10 @@ function wsxEnsureTerm() {
     // editor above now uses, so the two panes read as one tool.
     fontSize: 14, cursorBlink: true, scrollback: 5000,
     fontFamily: 'Consolas, "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-    theme: { background: themeVar("--bg", "#212121"),
-             foreground: themeVar("--text", "#e6e8ea"),
-             cursor: themeVar("--text", "#e6e8ea"),
-             selectionBackground: themeVar("--edge", "#26282c") },
+    theme: { background: themeVar("--bg", "#05080a"),
+             foreground: themeVar("--text", "#f4f1e8"),
+             cursor: themeVar("--text", "#f4f1e8"),
+             selectionBackground: themeVar("--edge", "#1d2b23") },
   });
   wsx.fit = new FitAddon.FitAddon();
   wsx.term.loadAddon(wsx.fit);
