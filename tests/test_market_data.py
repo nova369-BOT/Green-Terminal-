@@ -303,6 +303,22 @@ def test_shell_waiting_markers():
     assert "ts-edge" in html
 
 
+def test_shell_command_palette_and_product_voice():
+    """One product: command palette, no internal engine brand in the shell."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "lse_terminal/ui/static/index.html").read_text()
+    app = (root / "lse_terminal/ui/static/app.js").read_text()
+    assert 'id="cmdk"' in html
+    assert 'id="cmdk-open"' in html
+    assert 'id="dw-profile"' in html
+    assert "EdgeDepth" not in html
+    assert "GATEWAY" not in html
+    assert "separate optional feed" not in app
+    assert 'PRODUCT_NAME = "Green Terminal"' in app
+    assert "function setupCommandPalette" in app
+
+
 def test_edgedepth_artifacts_endpoint(client: TestClient):
     """Real EdgeDepth build outputs are present (CI-built, committed)."""
     r = client.get("/api/edgedepth/artifacts")

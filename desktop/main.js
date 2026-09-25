@@ -425,7 +425,7 @@ async function start() {
   win.on("page-title-updated", (e, title) => {
     if (!IS_DEMO && !IS_DEV) return;
     e.preventDefault();
-    win.setTitle(title.replace(/LSE Terminal/g, APP_TITLE));
+    win.setTitle(title.replace(/Green Terminal|LSE Terminal/g, APP_TITLE));
   });
   win.on("close", saveWindowState);
   win.on("closed", () => { win = null; });

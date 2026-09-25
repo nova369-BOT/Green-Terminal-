@@ -24,9 +24,11 @@ Read this first, every session. The user is a beginner; clarity beats cleverness
 
 ## 3. Git (strict)
 
-- Session branch ONLY: `arena/01a0caa0-green-terminal`
-  (origin: `nova369-BOT/Green-Terminal-`).
+- Session branch is the one Arena assigned for THIS session (in the system
+  prompt). Origin: `nova369-BOT/Green-Terminal-`.
 - **NEVER push `main`.** Never switch/create/push any other branch.
+- Do not assume the old name `arena/01a0caa0-green-terminal`. That was a
+  previous session. Push only the branch this session was given.
 - `remote.origin.fetch` historically tracks only `main`; if the remote-tracking
   ref for the session branch is missing, fetch it explicitly:
   `git fetch origin 'refs/heads/arena/01a0caa0-green-terminal:refs/remotes/origin/arena/01a0caa0-green-terminal'`
@@ -70,6 +72,11 @@ Read this first, every session. The user is a beginner; clarity beats cleverness
 
 - 2026-09-25: Order Flow LIVE on Hyperliquid BTC inside GT (user confirmed).
   User's network blocks Binance (ISP + geo); Hyperliquid reachable.
+- 2026-09-25: Shell professionalism pass. Ctrl/Cmd K command palette jumps to
+  every real view (same handlers as the rail). Window titles say Green
+  Terminal. Waiting state no longer names EdgeDepth. Status strip says
+  G-FLOW LIVE/OFFLINE, never GATEWAY. Rail labels are readable. Brand marks
+  are the same artwork, resized (was ~1.6 MB). Color rebrand is NOT done.
 - Rebrand approved: **Palette A — Emerald + Gold** (`#0f9d58` / `#d4af37` on
   near-black). Awaiting explicit `go colors` to build Phase A (engine tokens +
   header + GT bar). Phase B (clean default layout, de-scatter labels) follows.

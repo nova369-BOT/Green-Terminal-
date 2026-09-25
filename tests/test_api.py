@@ -132,7 +132,7 @@ def test_ws_streams_demo_ticks(client):
 def test_ui_served(client):
     page = client.get("/")
     assert page.status_code == 200
-    assert "LSE Terminal" in page.text
+    assert "GREEN TERMINAL" in page.text
 
 
 # ── workspace: the user's chart work is stored in a file, not the browser ──

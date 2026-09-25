@@ -35,7 +35,7 @@ document.documentElement.setAttribute("data-theme",
 <header>
   <div id="topline">
     <!-- The brand wordmark is gone: the native title bar already says
-         "LSE Terminal", so the topline's left slot carries the active data
+         "Green Terminal", so the topline's left slot carries the active data
          connection (the API-key manager) instead, and the
          section rail sits to its right. -->
     <div id="connline">
@@ -83,7 +83,8 @@ document.documentElement.setAttribute("data-theme",
          downloading / restart to install) and picks the install path, the
          desktop updater or the release download. -->
     <button id="update-btn" class="hidden"></button>
-    <button id="theme-toggle" title="Switch between light and dark">&#9728;&#65039;</button>
+    <button id="cmdk-open" type="button" title="Commands (Ctrl K)" aria-keyshortcuts="Control+K" aria-haspopup="dialog">Ctrl K</button>
+    <button id="theme-toggle" type="button" title="Switch between light and dark" aria-label="Switch to light theme"><svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="9" cy="9" r="3.1"/><path d="M9 1.7v1.7M9 14.6v1.7M1.7 9h1.7M14.6 9h1.7M3.6 3.6l1.2 1.2M13.2 13.2l1.2 1.2M14.4 3.6l-1.2 1.2M4.8 13.2l-1.2 1.2"/></svg></button>
   </div>
   <!-- Floating view dock: the active section's sub-views in a glass pill
        that hovers bottom-center and melts away while studying the chart.
@@ -335,7 +336,8 @@ def my_ind(df, length=20):
         <div class="dw-badge">DATA</div>
         <div id="dw-title" class="dw-title">WAITING FOR MARKET DATA</div>
         <div id="dw-detail" class="dw-detail">No live data source connected.</div>
-        <div class="dw-hint">Add your free LSE API key · EdgeDepth gateway is a separate optional feed</div>
+        <button type="button" id="dw-profile" class="dw-act">Open Profile</button>
+        <div class="dw-hint">Live prices need an LSE key. The command button jumps to any view.</div>
       </div>
     </div>
     <div id="panes"></div>
@@ -480,7 +482,7 @@ def my_ind(df, length=20):
       <span class="of-k">G-FLOW</span>
       <span class="of-sep"></span>
       <span class="of-k">SOURCE</span><span id="of-source" class="of-v">GT DATA ENGINE</span>
-      <span class="of-k">GATEWAY</span><span id="of-gw" class="of-v off">OFFLINE</span>
+      <span class="of-k">ENGINE</span><span id="of-gw" class="of-v off">OFFLINE</span>
       <span class="of-k">RUNTIME</span><span id="of-art" class="of-v off">—</span>
       <span class="of-k">SYMBOL</span><span id="of-sym" class="of-v">—</span>
       <span class="of-flex"></span>
@@ -1352,14 +1354,25 @@ def my_ind(df, length=20):
 <!-- Phase 3-UI bottom status strip -->
 <footer id="term-status" aria-label="Terminal status">
   <span class="ts-cell"><span class="ts-k">DATA</span><span id="ts-data" class="ts-v">—</span></span>
-  <span class="ts-cell"><span class="ts-k">GATEWAY</span><span id="ts-edge" class="ts-v">—</span></span>
+  <span class="ts-cell"><span class="ts-k">G-FLOW</span><span id="ts-edge" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">FEED</span><span id="ts-feed" class="ts-v">—</span></span>
-  <span class="ts-cell"><span class="ts-k">LATENCY</span><span id="ts-lat" class="ts-v">—</span></span>
-  <span class="ts-cell"><span class="ts-k">SESSION</span><span id="ts-ses" class="ts-v">—</span></span>
+  <span class="ts-cell ts-opt"><span class="ts-k">LATENCY</span><span id="ts-lat" class="ts-v">—</span></span>
+  <span class="ts-cell ts-opt"><span class="ts-k">SESSION</span><span id="ts-ses" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">SYMBOL</span><span id="ts-sym" class="ts-v">—</span></span>
   <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
+<div id="cmdk" class="hidden" role="dialog" aria-modal="true" aria-label="Commands">
+  <div id="cmdk-card">
+    <input id="cmdk-input" type="text" placeholder="Jump to a view or run a command" spellcheck="false" autocomplete="off" aria-controls="cmdk-list" aria-autocomplete="list">
+    <div id="cmdk-list" role="listbox"></div>
+    <div id="cmdk-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> move</span>
+      <span><kbd>Enter</kbd> open</span>
+      <span><kbd>Esc</kbd> close</span>
+    </div>
+  </div>
+</div>
 <script src="./app.js"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@ Search the walkthrough from the box above the contents; the glossary at the end 
 
 ## What the terminal is
 
-LSE Terminal is a free desktop application for market research and strategy testing. It runs on your own computer: charts, backtests, machine learning, notebooks and the assistant all execute locally, and your data stays on your disk.
+Green Terminal is a free desktop application for market research and strategy testing. It runs on your own computer: charts, backtests, machine learning, notebooks and the assistant all execute locally, and your data stays on your disk.
 
 Three things sit behind the app:
 
@@ -38,20 +38,20 @@ Download the app, open it, and it works with the ten sample datasets that ship i
 
 ## The layout
 
-The header holds the connection control, the five rail tabs, then TERMINAL WALKTHROUGH and MY DATA on the right, the update button and the theme toggle; a secondary bar under the rail lists the active tab's sub views; the left column is the watchlist or the file library; the right rail is the assistant.
+The left edge is the section rail. The top bar holds the brand button (it opens Profile), a command key, and the theme toggle. A dock along the bottom lists the active section's views. The left column is the watchlist or the file library. The right rail is the assistant.
 
-- **Connection control (top left).** Shows the active data connection ("Live data" or "No data key") and the connected broker. Click it to open the Connections screen (see Connections and keys).
-- **Rail tabs.** MARKETS, BACKTEST, ECONOMIC, WORKSPACE, RESEARCH. Each tab is a page; the secondary bar under the rail carries its sub views (for example MARKETS has PRICE & CHARTS, OPTIONS, NEWS, SCREENER).
-- **TERMINAL WALKTHROUGH and MY DATA (top right).** This document, and your imported files and library, each one click away from every page.
+- **Brand button (top left).** Reads GREEN TERMINAL, with the data state under it ("Live data" or "No data key") and the connected broker. Click it to open Profile, where the API key and brokers live.
+- **Section rail.** MARKETS, BACKTEST, ECONOMIC, WORKSPACE, RESEARCH, then Profile, My Data and this guide under Settings. Each section is a page. The bottom dock lists its views (MARKETS has Price & Charts, G-Flow, Options, News, Screener).
+- **Commands.** The Ctrl K key in the top bar (⌘K on a Mac) opens a search that jumps to any view or runs Save, Load, fullscreen and the theme switch. Same list as the rail and the dock.
 - **UPDATE.** Hidden until a newer release exists. It then shows the version, downloads it, and offers a restart to install. Source runs check hourly and show a banner instead.
-- **Theme toggle.** Light or dark. The choice is remembered and the page reloads so every chart and panel repaints in the new theme.
+- **Theme toggle.** A sun or moon icon, not a label. Light or dark. The choice is remembered and the page reloads so every chart and panel repaints in the new theme.
 - **Left column.** On MARKETS it is the watchlist (live instruments in folders). On BACKTEST, MY DATA and WORKSPACE it is the library tree: your strategy files, your imported datasets and your notebooks in one list. ECONOMIC, RESEARCH and the walkthrough hide it. A chevron on the divider folds it to a slim strip.
 - **Right rail.** The assistant, plus the trade ticket at the top when you are on MARKETS > PRICE & CHARTS with a live key. Drag its left edge to resize; the double chevron folds it.
 - **Window title.** Follows the charted instrument and timeframe on MARKETS, and names the page elsewhere.
 
 ## MARKETS
 
-MARKETS is live data: charts with indicators and drawings, an options board, a news wall, a screener across the whole instrument universe, and the trade ticket with its account dock. It needs the free LSE key; without one the tab shows the connect form, and OPTIONS, NEWS and SCREENER stay reachable from the secondary bar.
+MARKETS is live data: charts with indicators and drawings, G-Flow (the order-flow engine), an options board, a news wall, a screener across the whole instrument universe, and the trade ticket with its account dock. It needs the free LSE key. Without one the chart shows a waiting state and an Open Profile button. It does not invent prices. Options, News and Screener stay reachable from the dock.
 
 ### Price & charts
 
@@ -321,7 +321,8 @@ Your data files, strategies, notebooks, chats and broker credentials stay on you
 
 The shortcuts and pointer gestures the terminal answers to, page by page.
 
-- Escape closes the open overlay: the Connections screen, the indicator editor, the screener profile card, the research reader, the chart layout panel, a position menu, and cancels a drawing in progress. Escape or Backspace deletes the selected drawing.
+- Ctrl K (⌘K on a Mac) opens the command palette from any page. Type to filter, Enter to open, Escape to close. The same key closes it.
+- Escape closes the open overlay: the command palette first, then the Connections screen, the indicator editor, the screener profile card, the research reader, the chart layout panel, a position menu, and cancels a drawing in progress. Escape or Backspace deletes the selected drawing. Escape also leaves chart fullscreen.
 - Enter submits the key fields and the template name; Enter sends a chat message.
 - Chart: drag to pan, wheel to zoom, drag the price scale to free it (Auto resets), right click for the chart menu, drag the divider between price and indicator panes.
 - Watchlist and library: click to chart or select; right click a dataset for Rename and Delete; drag a dataset into a folder.
@@ -334,7 +335,7 @@ The shortcuts and pointer gestures the terminal answers to, page by page.
 
 The questions new users ask most, with the answer and where in the app it lives.
 
-- **Nothing shows under MARKETS.** No key yet. Paste the free key from londonstrategicedge.com/data into the connect form; the watchlist and chart fill within a moment.
+- **Nothing shows under MARKETS.** No key yet. The chart says waiting for market data. Open Profile (the button on that screen, the brand button, or Ctrl K) and paste the free key from londonstrategicedge.com/data. The watchlist and chart fill within a moment. Prices are never invented while you wait.
 - **RUN says the pinned dataset is missing.** The file's `# run:` line names a dataset that is not in your library. Import or download it, or click a dataset in the library to rewrite the pin.
 - **The assistant delivered a strategy but no numbers.** It always runs the code first; if the numbers are missing, the run failed and the message says why. Ask it to fix and rerun.
 - **My strategy has zero trades.** Loosen the entry conditions or check the timeframe: hourly parameters on daily data rarely fire. The assistant loosens parameters itself for up to three attempts.

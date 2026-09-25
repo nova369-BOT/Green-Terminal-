@@ -1,4 +1,4 @@
-/* LSE Terminal v0.2 UI: dynamic indicators, multi-pane rendering, chart
+/* Green Terminal shell: dynamic indicators, multi-pane rendering, chart
    types, OHLC legend. Vanilla JS on purpose; the richer React workspace
    replaces this later, speaking to exactly the same /api endpoints. */
 
@@ -59,6 +59,12 @@ const API_PREFIX = APP_BASE === "/" ? "" : APP_BASE.replace(/\/$/, "");
 
 const $ = (id) => document.getElementById(id);
 const status = (msg) => { $("status").textContent = msg; };
+/* One product name. Window titles and the command palette read this —
+   do not hard-code the old "LSE Terminal" label in user-facing chrome. */
+const PRODUCT_NAME = "Green Terminal";
+function setDocTitle(page) {
+  document.title = page ? page + " · " + PRODUCT_NAME : PRODUCT_NAME;
+}
 
 /* ---------- Phase 2: instrument header (Market → Price & Chart) ----------
    Values come only from state.prices / state.quotes / state.candleData /
@@ -305,8 +311,7 @@ function updateTermStatus() {
   // Data-engine cell: real reachability from /api/edgedepth/status only.
   if (state.edgeGateway) {
     const eg = state.edgeGateway;
-    const label = eg.reachable ? "ENGINE LIVE" : "ENGINE OFFLINE";
-    set("ts-edge", label, eg.reachable ? "on" : "off");
+    set("ts-edge", eg.reachable ? "LIVE" : "OFFLINE", eg.reachable ? "on" : "off");
   }
   set("ts-sym", state.symbol || null);
   set("ts-tf", state.timeframe || null);
@@ -412,11 +417,7 @@ function setupWsControls() {
   const full = $("ws-full"), save = $("ws-save"),
         load = $("ws-load"), reset = $("ws-reset");
   if (!full) return;
-  full.onclick = () => {
-    const on = document.body.classList.toggle("ws-fullscreen");
-    full.classList.toggle("active", on);
-    full.textContent = on ? "Exit fullscreen" : "Fullscreen";
-    // Chart engine needs a resize tick after the layout flips.
+  const bumpChart = () => {
     setTimeout(() => {
       window.dispatchEvent(new Event("resize"));
       if (window.LSEChart && typeof window.LSEChart.resize === "function") {
@@ -424,13 +425,21 @@ function setupWsControls() {
       }
     }, 50);
   };
+  full.onclick = () => {
+    const on = document.body.classList.toggle("ws-fullscreen");
+    full.classList.toggle("active", on);
+    full.textContent = on ? "Exit fullscreen" : "Fullscreen";
+    bumpChart();
+  };
   // Dedicated exit path (pill + Esc): never toggles ON, only leaves, so a
   // stuck fullscreen always has two ways out besides the toolbar button.
+  // Exit must resize the engine too — a window event alone left the last
+  // frame stretched until the next user drag.
   const exitFs = () => {
     if (!document.body.classList.contains("ws-fullscreen")) return;
     document.body.classList.remove("ws-fullscreen");
     full.classList.remove("active"); full.textContent = "Fullscreen";
-    setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+    bumpChart();
   };
   const exitPill = $("ws-exit");
   if (exitPill) exitPill.onclick = () => exitFs();
@@ -660,7 +669,7 @@ function activeGridSymbol() {
 
 function updateWindowTitle() {
   if ($("portfolio-backtest") && !$("portfolio-backtest").classList.contains("hidden")) {
-    document.title = "Portfolio Backtest · LSE Terminal";
+    setDocTitle("Portfolio Backtest");
     return;
   }
   // The native title bar mirrors the open chart:
@@ -671,7 +680,7 @@ function updateWindowTitle() {
   const shown = activeGridSymbol() || state.symbol;
   if (!shown) return;   // pre-login / pre-instrument state: keep the app name
   const inst = state.instruments.find((i) => i.symbol === shown);
-  document.title = `${shown}${inst && inst.name ? " · " + inst.name : ""} ${state.timeframe} · LSE Terminal`;
+  document.title = `${shown}${inst && inst.name ? " · " + inst.name : ""} ${state.timeframe} · ${PRODUCT_NAME}`;
   // The assistant's hero names the charted symbol + timeframe too.
   aiPanelRefreshEmpty();
 }
@@ -9103,7 +9112,7 @@ function closeBacktestPages() {
 
 function openPortfolioBacktest() {
   subrailMark("sub-bt-portfolio");
-  document.title = "Portfolio Backtest · LSE Terminal";
+  setDocTitle("Portfolio Backtest");
   $("portfolio-backtest").classList.remove("hidden");
   if (!portfolioBacktest.mounted) {
     window.LSEPortfolioBacktest.mount($("portfolio-builder"), {
@@ -9489,7 +9498,7 @@ async function openBacktest(mode) {
   if (!["py", "portfolio", "manual", "ml"].includes(mode)) mode = "py";
   for (const b of document.querySelectorAll(".rail-btn")) b.classList.remove("active");
   $("rail-backtest").classList.add("active");
-  document.title = "Backtest · LSE Terminal";
+  setDocTitle("Backtest");
   $("side").classList.remove("hidden");
   renderSubrail("backtest", null);
   // scrpage was missing from this sweep: SCREENER -> BACKTEST left the
@@ -9723,7 +9732,7 @@ document.addEventListener("keydown", (ev) => {
 function openDataViz() {
   for (const b of document.querySelectorAll(".rail-btn")) b.classList.remove("active");
   $("rail-workspace").classList.add("active");
-  document.title = "Data Visualisation · LSE Terminal";
+  setDocTitle("Data Visualisation");
   $("side").classList.add("hidden");
   renderSubrail("workspace", "sub-ws-dataviz");
   // scrpage joined this sweep with openBacktest's (same finding:
@@ -9744,7 +9753,7 @@ function openDataViz() {
 function openNotebooks() {
   for (const b of document.querySelectorAll(".rail-btn")) b.classList.remove("active");
   $("rail-workspace").classList.add("active");
-  document.title = "Notebook · LSE Terminal";
+  setDocTitle("Notebook");
   $("side").classList.add("hidden");
   renderSubrail("workspace", "sub-ws-notebooks");
   for (const id of ["optpage", "news", "charts", "backtest", "mydata",
@@ -10446,8 +10455,7 @@ function rsShowView(view) {
   subrailMark("sub-rs-" + view);
   $("rs-articles").classList.toggle("hidden", view !== "articles");
   $("rs-models").classList.toggle("hidden", view !== "models");
-  document.title = (view === "models" ? "Quant Models" : "Research")
-    + " · LSE Terminal";
+  setDocTitle(view === "models" ? "Quant Models" : "Research");
   if (view === "articles") {
     rsLoadWire();
   } else if (view === "models") {
@@ -10674,7 +10682,7 @@ function optLoadPrefs() {
 
 function showOptionsPage() {
   subrailMark("sub-mk-options");
-  document.title = "Options · LSE Terminal";
+  setDocTitle("Options");
   // Full-page like ECONOMIC: the watchlist sidebar is chart context, and a
   // click there would silently swap the page back to charts anyway.
   $("side").classList.add("hidden");
@@ -10716,8 +10724,7 @@ async function refreshOrderFlowStatus() {
   const gwOn = !!(gw && (gw.reachable || gw.state === "CONNECTED"));
   set("of-source", "GT DATA ENGINE", gwOn ? "on" : "warn");
   set("of-gw", gwOn ? "LIVE" : ((gw && gw.state) || "OFFLINE"), gwOn ? "on" : "off");
-  set("of-art", ready ? "RUNTIME READY" : "RUNTIME ARTIFACTS MISSING",
-      ready ? "on" : "off");
+  set("of-art", ready ? "READY" : "NOT LOADED", ready ? "on" : "off");
   set("of-sym", state.symbol || "—");
   const missing = art && art.present
     ? Object.entries(art.present).filter(([, ok]) => !ok).map(([k]) => k)
@@ -10760,7 +10767,7 @@ async function refreshOrderFlowStatus() {
 
 function showOrderFlowPage() {
   subrailMark("sub-mk-flow");
-  document.title = "G-Flow · Green Terminal";
+  setDocTitle("G-Flow");
   // Same chrome rules as PRICE & CHART (sidebar stays for symbol sync).
   // NOTE: setSidebar() lives inside setupRail() and is NOT in scope here —
   // calling it threw and aborted the page swap (ORDER FLOW highlighted but
@@ -11629,7 +11636,7 @@ function showNewsPage(ctx) {
   // from and hide every other section regardless of the entry point.
   if (ctx === "econ") renderSubrail("econ", "sub-ec-news");
   else subrailMark("sub-mk-news");
-  document.title = "News · LSE Terminal";
+  setDocTitle("News");
   // Full-page like OPTIONS: the watchlist is chart context, hide it.
   $("side").classList.add("hidden");
   $("charts").classList.add("hidden");
@@ -12616,9 +12623,9 @@ function setupRail() {
   // MARKETS restores the charted pair, other tabs name themselves, and
   // the ECONOMIC page refines its own further (country / open series).
   const setTitle = (text) => {
-    document.title = text ? `${text} · LSE Terminal`
-      : state.symbol ? `${state.symbol} ${state.timeframe} · LSE Terminal`
-      : "LSE Terminal";
+    document.title = text ? `${text} · ${PRODUCT_NAME}`
+      : state.symbol ? `${state.symbol} ${state.timeframe} · ${PRODUCT_NAME}`
+      : PRODUCT_NAME;
   };
   // The left sidebar is the watchlist on MARKETS and the file library on
   // BACKTEST / MY DATA, but ECONOMIC and MACHINE LEARNING have no use for
@@ -12658,9 +12665,8 @@ function setupRail() {
       $("charts").classList.remove("hidden");
       enterDataWaiting(
         "WAITING FOR MARKET DATA",
-        "No live data source connected. Add your free LSE API key to stream " +
-        "real market data. EdgeDepth gateway (for depth/order-flow) is a " +
-        "separate optional feed — see the status strip.");
+        "No live source is connected. Open Profile and add your free LSE key " +
+        "to stream prices.");
       updateInstrumentBar();
       return;
     }
@@ -12702,7 +12708,7 @@ function setupRail() {
   // setSidebar live in this boot scope only.
   $("rail-profile").onclick = () => {
     setActive("rail-profile");
-    document.title = "Profile · Green Terminal";
+    setDocTitle("Profile");
     setSidebar(false);
     renderSubrail(null);
     $("optpage").classList.add("hidden");
@@ -15845,9 +15851,17 @@ async function boot() {
   // before first paint.
   const themeBtn = $("theme-toggle");
   const isDarkTheme = () => document.documentElement.classList.contains("dark");
-  // Emoji shows the mode a click switches TO: sun offers light, moon offers
-  // dark (replaced the "Light"/"Dark" text label).
-  themeBtn.textContent = isDarkTheme() ? "☀️" : "🌙";
+  // Stroke icons, not emoji: a sun/moon glyph renders differently on every
+  // OS and read as consumer chrome. Sun offers light, moon offers dark.
+  const ICON_SUN = '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="9" cy="9" r="3.1"/><path d="M9 1.7v1.7M9 14.6v1.7M1.7 9h1.7M14.6 9h1.7M3.6 3.6l1.2 1.2M13.2 13.2l1.2 1.2M14.4 3.6l-1.2 1.2M4.8 13.2l-1.2 1.2"/></svg>';
+  const ICON_MOON = '<svg viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14.4 11.6A6.3 6.3 0 0 1 6.4 3.6 6.3 6.3 0 1 0 14.4 11.6z"/></svg>';
+  const paintThemeToggle = () => {
+    const dark = isDarkTheme();
+    themeBtn.innerHTML = dark ? ICON_SUN : ICON_MOON;
+    themeBtn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+    themeBtn.title = dark ? "Switch to light" : "Switch to dark";
+  };
+  paintThemeToggle();
   themeBtn.onclick = () => {
     try { localStorage.setItem("lset-theme", isDarkTheme() ? "light" : "dark"); } catch (e) {}
     location.reload();
@@ -17957,7 +17971,7 @@ function showScreenerPage() {
   if ($("orderflow")) $("orderflow").classList.add("hidden");
   stopOrderFlowHost();
   subrailMark("sub-mk-screener");
-  document.title = "Screener · LSE Terminal";
+  setDocTitle("Screener");
   // Full-page like OPTIONS/NEWS: the watchlist is chart context, hide it.
   $("side").classList.add("hidden");
   $("charts").classList.add("hidden");
@@ -18349,3 +18363,261 @@ function scrShowCard(r) {
   }
   back.classList.remove("hidden");
 }
+
+/* Command palette — Ctrl/Cmd K. One jump list for every real section.
+   Each command calls the same handler as the rail or the dock. Nothing
+   here invents a page or a data source. */
+function setupCommandPalette() {
+  const root = $("cmdk");
+  const input = $("cmdk-input");
+  const list = $("cmdk-list");
+  const openBtn = $("cmdk-open");
+  if (!root || !input || !list) return;
+
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || "");
+  if (openBtn) {
+    openBtn.textContent = mac ? "⌘K" : "Ctrl K";
+    openBtn.title = mac ? "Commands (⌘K)" : "Commands (Ctrl K)";
+  }
+  const dw = $("dw-profile");
+  if (dw && !dw.dataset.bound) {
+    dw.dataset.bound = "1";
+    dw.addEventListener("click", () => {
+      const b = $("rail-profile");
+      if (b) b.click();
+    });
+  }
+
+  const PRETTY = {
+    "sub-mk-charts": "Price & Charts",
+    "sub-mk-flow": "G-Flow",
+    "sub-mk-options": "Options",
+    "sub-mk-news": "News",
+    "sub-mk-screener": "Screener",
+    "sub-bt-py": "Algo Development",
+    "sub-bt-portfolio": "Portfolio Backtesting",
+    "sub-bt-ml": "Machine Learning",
+    "sub-bt-manual": "Manual Replay",
+    "sub-ec-cal": "Economic Calendar",
+    "sub-ec-news": "Economic News",
+    "sub-ec-indicators": "Economic Indicators",
+    "sub-ec-yields": "Bond Yields",
+    "sub-ec-banks": "Central Banks",
+    "sub-ws-ide": "Workspace IDE",
+    "sub-ws-dataviz": "Data Visualisation",
+    "sub-ws-notebooks": "Notebook",
+    "sub-rs-articles": "Research Articles",
+    "sub-rs-models": "Quant Models",
+  };
+  const EXTRA = {
+    "sub-mk-flow": "order flow depth book heatmap tape footprint",
+    "sub-mk-charts": "candles chart price",
+    "sub-bt-manual": "replay bar by bar hand trade",
+    "sub-bt-py": "strategy python ide editor",
+    "sub-ws-ide": "code editor terminal",
+    "sub-rs-models": "garch kalman monte carlo black scholes",
+  };
+  const GROUP = {
+    markets: "Markets", backtest: "Backtest", econ: "Economic",
+    workspace: "Workspace", research: "Research",
+  };
+
+  const click = (id) => () => { const b = $(id); if (b) b.click(); };
+  const hiddenBtn = (id) => {
+    const b = $(id);
+    return !!(b && b.classList.contains("hidden"));
+  };
+  const RAIL_FOR = {
+    markets: "rail-markets", backtest: "rail-backtest", econ: "rail-econ",
+    workspace: "rail-workspace", research: "rail-research",
+  };
+  function commands() {
+    const out = [];
+    if (typeof SUBRAIL === "object" && SUBRAIL) {
+      for (const [section, rows] of Object.entries(SUBRAIL)) {
+        if (hiddenBtn(RAIL_FOR[section])) continue;
+        for (const it of rows) {
+          if (typeof it.go !== "function") continue;
+          const label = PRETTY[it.id] || it.label;
+          out.push({
+            group: GROUP[section] || section,
+            label,
+            keys: (label + " " + it.label + " " + (it.desc || "") + " " +
+                   (EXTRA[it.id] || "")).toLowerCase(),
+            run: it.go,
+          });
+        }
+      }
+    }
+    if (!hiddenBtn("rail-profile"))
+      out.push({ group: "Terminal", label: "Profile", keys: "profile api key connections account", run: click("rail-profile") });
+    if (!hiddenBtn("rail-data"))
+      out.push({ group: "Terminal", label: "My Data", keys: "import library files data", run: click("rail-data") });
+    if (!hiddenBtn("rail-guide"))
+      out.push({ group: "Terminal", label: "Guide", keys: "help walkthrough docs", run: click("rail-guide") });
+    out.push(
+      { group: "Chart", label: "Focus symbol search", keys: "symbol search find instrument", run: () => {
+          const rail = $("rail-markets"); if (rail) rail.click();
+          // The toolbar unhides in a mutation microtask. Focus on the next
+          // turn so the box is actually visible.
+          setTimeout(() => {
+            const s = $("symbol");
+            if (s && s.offsetParent !== null) { s.focus(); s.select(); }
+          }, 0);
+        } },
+      { group: "Chart", label: "Toggle fullscreen", keys: "fullscreen expand maximise maximize", run: click("ws-full") },
+      { group: "Chart", label: "Save workspace", keys: "save layout", run: click("ws-save") },
+      { group: "Chart", label: "Load workspace", keys: "load restore", run: click("ws-load") },
+      { group: "Chart", label: "Reset workspace", keys: "reset defaults", run: click("ws-reset") },
+      { group: "Appearance", label: "Switch light / dark", keys: "theme light dark appearance", run: click("theme-toggle") },
+    );
+    return out;
+  }
+
+  const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  let items = [];
+  let active = 0;
+  let restore = null;
+
+  function filtered(q) {
+    const parts = norm(q).split(" ").filter(Boolean);
+    return commands().filter((c) => {
+      if (!parts.length) return true;
+      const hay = norm(c.group + " " + c.label + " " + c.keys);
+      const flat = hay.replace(/ /g, "");
+      return parts.every((p) => hay.includes(p) || flat.includes(p));
+    });
+  }
+
+  function markActive(scroll) {
+    const rows = list.querySelectorAll(".cmdk-row");
+    rows.forEach((row, i) => {
+      const on = i === active;
+      row.classList.toggle("on", on);
+      row.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    if (scroll) {
+      const on = list.querySelector(".cmdk-row.on");
+      if (on) on.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function paint() {
+    items = filtered(input.value);
+    if (active >= items.length) active = Math.max(0, items.length - 1);
+    list.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.id = "cmdk-empty";
+      empty.textContent = "No matching command";
+      list.appendChild(empty);
+      return;
+    }
+    let group = "";
+    items.forEach((c, i) => {
+      if (c.group !== group) {
+        group = c.group;
+        const h = document.createElement("div");
+        h.className = "cmdk-group";
+        h.textContent = group.toUpperCase();
+        list.appendChild(h);
+      }
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cmdk-row" + (i === active ? " on" : "");
+      b.setAttribute("role", "option");
+      b.setAttribute("aria-selected", i === active ? "true" : "false");
+      const lab = document.createElement("span");
+      lab.textContent = c.label;
+      b.appendChild(lab);
+      b.addEventListener("click", () => run(i));
+      b.addEventListener("mousemove", () => {
+        if (active === i) return;
+        active = i;
+        markActive(false);
+      });
+      list.appendChild(b);
+    });
+  }
+
+  function run(i) {
+    const c = items[i];
+    if (!c) return;
+    close();
+    try { c.run(); }
+    catch (e) { status("command failed"); }
+  }
+
+  function isOpen() { return !root.classList.contains("hidden"); }
+  function open() {
+    if (isOpen()) return;
+    restore = document.activeElement;
+    root.classList.remove("hidden");
+    if (openBtn) openBtn.setAttribute("aria-expanded", "true");
+    input.value = "";
+    active = 0;
+    paint();
+    input.focus();
+  }
+  function close() {
+    if (!isOpen()) return;
+    root.classList.add("hidden");
+    if (openBtn) openBtn.setAttribute("aria-expanded", "false");
+    if (restore && typeof restore.focus === "function") {
+      try { restore.focus(); } catch (e) { /* detached */ }
+    }
+    restore = null;
+  }
+  function toggle() { if (isOpen()) close(); else open(); }
+
+  input.addEventListener("input", () => { active = 0; paint(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      active = Math.min(Math.max(items.length - 1, 0), active + 1);
+      markActive(true);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      active = Math.max(0, active - 1);
+      markActive(true);
+    } else if (e.key === "Home") {
+      e.preventDefault(); active = 0; markActive(true);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      active = Math.max(0, items.length - 1);
+      markActive(true);
+    } else if (e.key === "Enter") {
+      e.preventDefault(); run(active);
+    } else if (e.key === "Escape") {
+      e.preventDefault(); e.stopPropagation(); close();
+    }
+  });
+  root.addEventListener("mousedown", (e) => { if (e.target === root) close(); });
+  root.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || !isOpen()) return;
+    const focusable = [input, ...list.querySelectorAll("button")];
+    if (!focusable.length) return;
+    e.preventDefault();
+    const i = focusable.indexOf(document.activeElement);
+    const n = focusable.length;
+    const next = focusable[e.shiftKey ? (i - 1 + n) % n : (i + 1) % n];
+    if (next) next.focus();
+  });
+  if (openBtn) openBtn.addEventListener("click", (e) => { e.preventDefault(); toggle(); });
+
+  document.addEventListener("keydown", (e) => {
+    const meta = e.ctrlKey || e.metaKey;
+    if (meta && !e.altKey && !e.shiftKey && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggle();
+      return;
+    }
+    if (e.key === "Escape" && isOpen()) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  }, true);
+}
+setupCommandPalette();
