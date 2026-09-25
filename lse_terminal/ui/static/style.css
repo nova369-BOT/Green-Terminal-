@@ -4076,10 +4076,15 @@ body.ws-fullscreen #acct-dock { display: none !important; }
 /* Fullscreen keeps the command bar's workspace group: the Exit hatch must
    stay clickable (the strip used to live outside #controls). */
 body.ws-fullscreen #controls > :not(.ws-btn):not(.ws-sep):not(#lasso-open) { display: none !important; }
-/* Fullscreen = pure chart: the entire command strip is gone (user order).
-   Esc is the way out (exitFs, long wired); L still lassos (z-90 layer). */
-body.ws-fullscreen #controls { display: none !important; }
-body.ws-fullscreen #controls { justify-content: flex-end; border-bottom: none; position: relative; z-index: 90; background: transparent; pointer-events: none; }
+/* Fullscreen: the strip is HALVED — right half only, so the chart's own
+   top-left tools (e.g. Simple Moving Average) are never covered. The bar
+   itself is transparent + click-through; only the pills catch the mouse. */
+body.ws-fullscreen #controls {
+  display: flex !important;
+  justify-content: flex-end; border-bottom: none; position: relative; z-index: 90;
+  background: transparent; pointer-events: none;
+  margin-left: auto; max-width: 50%;
+}
 /* The strip itself is click-through (chart tools underneath stay usable);
    only the pills re-arm the mouse. */
 body.ws-fullscreen #controls .ws-btn,
