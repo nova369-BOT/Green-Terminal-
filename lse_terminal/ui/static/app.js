@@ -9986,7 +9986,7 @@ function lassoInField(el) {
     el.tagName === "SELECT" || el.isContentEditable);
 }
 document.addEventListener("keydown", (e) => {
-  if ((e.key === "l" || e.key === "L") && !e.repeat && !lassoInField(e.target) && !lasso.armed) {
+  if ((e.key === "l" || e.key === "L") && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !lassoInField(e.target) && !lasso.armed) {
     if (!lassoChartHost()) return;
     lassoArm(false);
   }
