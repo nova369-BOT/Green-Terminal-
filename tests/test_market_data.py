@@ -344,14 +344,14 @@ def test_orderflow_workspace_markers():
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
 
 
-def test_gateway_serves_binance_and_hyperliquid():
-    """Gateway registry + HL adapter ship; Order Flow boots hl/BTC (reachable
-    where Binance is blocked, with the in-terminal venue toggle for Binance)."""
+def test_gateway_serves_hyperliquid_only():
+    """Gateway registry is HL-only for now (Binance unregistered); Order Flow
+    boots hl/BTC, reachable where Binance is blocked."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     main = (root / "third_party/edgedepth-gateway/cmd/edgedepth-gateway/main.go").read_text()
     assert "hyperliquid.New(log)" in main
-    assert "binance.New(log)" in main
+    assert "binance.New(log)" not in main
     hl = root / "third_party/edgedepth-gateway/internal/hyperliquid"
     for name in ("adapter.go", "feed.go", "rest.go", "stream.go", "ticker.go"):
         assert (hl / name).is_file(), f"missing hyperliquid/{name}"

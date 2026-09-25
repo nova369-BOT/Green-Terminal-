@@ -2,8 +2,8 @@
 
 A small Go binary that bridges public futures streams into the
 [EdgeDepth Terminal](https://github.com/edgedepthhq/edgedepth-terminal) wire
-format, on localhost. Two venues are served: `binancef` (Binance USD-M
-futures) and `hl` (Hyperliquid perpetuals).
+format, on localhost. One venue is served for now: `hl` (Hyperliquid
+perpetuals). The Binance adapter stays in the tree, unregistered.
 
 The terminal is a client. It speaks protobuf over WebSocket and connects to
 whatever feed you point it at. This is a feed you can run yourself, with one
@@ -109,9 +109,6 @@ Every flag has an environment variable equivalent.
 | `-addr` | `EDGEDEPTH_ADDR` | `:8080` | listen address |
 | `-path` | `EDGEDEPTH_PATH` | `/ws` | WebSocket path |
 | `-log` | `EDGEDEPTH_LOG` | `info` | `debug`, `info`, `warn`, `error` |
-| `-trade-stream` | `BINANCE_TRADE_STREAM` | `aggTrade` | `aggTrade` or `trade` |
-| `-binance-rest` | `BINANCE_REST` | Binance | override REST base URL |
-| `-binance-ws` | `BINANCE_WS` | Binance | override stream base URL |
 | `-hl-rest` | `HL_REST` | Hyperliquid | override REST base URL |
 | `-hl-ws` | `HL_WS` | Hyperliquid | override WebSocket URL |
 

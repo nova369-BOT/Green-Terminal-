@@ -270,16 +270,16 @@ void render_symbol_picker_popup(
                     u32(Tokens::TX3), lc);
         ImGui::PopFont();
 
-        // ── venue toggle: BINANCE | HYPERLIQUID - filters the list by exchange ──
+        // ── venue toggle: HYPERLIQUID only for now (Binance unregistered server-side) ──
         {
             ImGui::PushFont(Fonts::ui());
             const float chip_h = 20.0f;
             const float chip_y = w0.y + (head_h - chip_h) * 0.5f;
             float chip_x = w0.x + PADX + tw + 14.0f + lcw + 12.0f;
             struct Venue { const char* id; const char* label; };
-            const Venue venues[2] = { {"binancef", "Binance"}, {"hl", "Hyperliquid"} };
+            const Venue venues[1] = { {"hl", "Hyperliquid"} };
             const float ven_logo = 14.0f;
-            for (int i = 0; i < 2; ++i) {
+            for (int i = 0; i < 1; ++i) {
                 const bool active = (g_symbol_picker.selected_exchange == venues[i].id);
                 const ImVec2 ts = ImGui::CalcTextSize(venues[i].label);
                 // Exchange mark left of the label; only insets once its texture is

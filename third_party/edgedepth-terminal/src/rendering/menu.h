@@ -29,9 +29,10 @@ namespace Menu {
         enum class SortMode { Symbol, Score, VPIN, Price, Change24h, Volume } sort_mode = SortMode::Symbol;
         bool sort_ascending = true; // true = ascending, false = descending
 
-        // Exchange the picker list is filtered to (venue toggle). "binancef" | "hl".
-        std::string selected_exchange = "binancef";
-        std::string prev_exchange     = "binancef";
+        // Exchange the picker list is filtered to (venue toggle). "hl" only for
+        // now; Binance is unregistered server-side.
+        std::string selected_exchange = "hl";
+        std::string prev_exchange     = "hl";
         int exchange_total = 0; // count of listed symbols for selected_exchange (header)
 
         std::vector<std::string> cached_categories;
