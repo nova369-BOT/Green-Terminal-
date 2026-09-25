@@ -4077,6 +4077,21 @@ body.ws-fullscreen #acct-dock { display: none !important; }
    stay clickable (the strip used to live outside #controls). */
 body.ws-fullscreen #controls > :not(.ws-btn):not(.ws-sep) { display: none !important; }
 body.ws-fullscreen #controls { justify-content: flex-end; border-bottom: none; position: relative; z-index: 90; }
+/* Exit pill: only ever painted in shell fullscreen, above everything. */
+#ws-exit {
+  display: none; position: fixed; right: 14px; bottom: 34px; z-index: 9999;
+  background: var(--accent-bar); color: #0a0f0c; border: none;
+  border-radius: 999px; padding: 8px 16px; cursor: pointer;
+  font-size: 11px; font-weight: 700; letter-spacing: .1em;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+body.ws-fullscreen #ws-exit { display: block; }
+/* Tool menus must pop ABOVE the fullscreen chart overlay (z-80): the shell
+   dropdowns and the chart bundle's portaled (Radix) menus alike. */
+body.ws-fullscreen #ind-panel,
+body.ws-fullscreen #ind-cfg,
+body.ws-fullscreen #tpl-panel { z-index: 95; }
+body.ws-fullscreen [data-radix-popper-content-wrapper] { z-index: 95 !important; }
 body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 62px; z-index: 80; background: var(--bg); }
 body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
 body.ws-fullscreen #term-status { z-index: 90; }

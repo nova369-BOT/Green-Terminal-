@@ -101,6 +101,9 @@ document.documentElement.setAttribute("data-theme",
        as the dock). app.js renderFlyout() fills it; empty + hidden until
        a section is clicked. -->
   <div id="flyout" class="hidden" role="menu" aria-label="Section views"></div>
+  <!-- Fullscreen exit pill: visible ONLY in ws-fullscreen (CSS). A second,
+       unmissable way out besides the command bar's Exit button. -->
+  <button id="ws-exit" type="button" title="Exit fullscreen (Esc)">EXIT FULLSCREEN</button>
   <div id="controls">
   <!-- No data-source dropdown: the active rail tab decides the source.
        MARKETS is live LSE data (API key), BACKTEST / MY DATA are the

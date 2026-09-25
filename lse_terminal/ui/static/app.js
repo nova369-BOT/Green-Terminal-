@@ -424,6 +424,19 @@ function setupWsControls() {
       }
     }, 50);
   };
+  // Dedicated exit path (pill + Esc): never toggles ON, only leaves, so a
+  // stuck fullscreen always has two ways out besides the toolbar button.
+  const exitFs = () => {
+    if (!document.body.classList.contains("ws-fullscreen")) return;
+    document.body.classList.remove("ws-fullscreen");
+    full.classList.remove("active"); full.textContent = "Fullscreen";
+    setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+  };
+  const exitPill = $("ws-exit");
+  if (exitPill) exitPill.onclick = () => exitFs();
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") exitFs();
+  });
   if (save) save.onclick = async () => {
     try {
       if (typeof saveShellState === "function") await saveShellState();
