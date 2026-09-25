@@ -1748,7 +1748,7 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 #profile.hidden { display: none !important; }
 #pf-wrap { max-width: 920px; margin: 0 auto; padding: 26px 22px 60px; }
 #pf-head { display: flex; gap: 18px; align-items: center; }
-#pf-mark { width: 72px; height: 72px; border-radius: 10px; flex: none; }
+#pf-mark { width: 190px; height: 190px; border-radius: 12px; flex: none; }
 #pf-name {
   background: transparent; border: none; border-bottom: 1px solid var(--edge);
   color: var(--text); font-size: 22px; font-weight: 700; padding: 2px 4px;
