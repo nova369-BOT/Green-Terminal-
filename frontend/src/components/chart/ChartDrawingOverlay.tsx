@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment } from 'react';
 import { flushSync } from 'react-dom';
+import { placeBand, placeSpan, placeStreak, placeSwing, placeWound } from './deskTools';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'swing' | 'span' | 'band' | 'wound' | 'streak' | null;
 
 // Brush-like tools that share the same freehand drawing behavior
 const BRUSH_TOOLS: DrawingTool[] = ['brush', 'highlighter', 'arrow'];
@@ -2149,6 +2150,37 @@ const ChartDrawingOverlayComponent = ({
       return;
     }
 
+    // Desk tools. They store as a line or a box so the existing renderer
+    // draws them. The number on the mark is counted from the loaded bars.
+    if (activeTool === 'swing' || activeTool === 'band' || activeTool === 'wound' || activeTool === 'streak') {
+      const made = activeTool === 'swing' ? placeSwing(candles || [], chartPoint)
+        : activeTool === 'band' ? placeBand(candles || [], chartPoint)
+        : activeTool === 'wound' ? placeWound(candles || [], chartPoint)
+        : placeStreak(candles || [], chartPoint);
+      const newDrawingId = Date.now().toString();
+      onDrawingsChange([...drawings, { ...made, id: newDrawingId }]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    if (activeTool === 'span') {
+      if (tempPoints.length === 0) {
+        setTempPoints([{ x, y }]);
+      } else {
+        const startChart = pixelToChart(tempPoints[0]);
+        if (!startChart) return;
+        const made = placeSpan(candles || [], startChart, chartPoint);
+        const newDrawingId = Date.now().toString();
+        onDrawingsChange([...drawings, { ...made, id: newDrawingId }]);
+        onSelectDrawing?.(newDrawingId);
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
     if (activeTool === 'horizontal') {
       const newDrawingId = Date.now().toString();
       // Apply pre-placement settings bar values
@@ -4161,7 +4193,7 @@ const ChartDrawingOverlayComponent = ({
       );
     }
 
-    if (activeTool === 'trend') {
+    if (activeTool === 'trend' || activeTool === 'span') {
       // Simple segment preview, uses actual tool settings for WYSIWYG drawing
       return (
         <line

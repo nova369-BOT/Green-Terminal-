@@ -536,8 +536,8 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
 
   return (
     <div className="relative h-full w-full flex">
-      {/* Tool rail: the chart's drawing-tools panel, so every one of the
-          engine's 33 drawing tools is reachable exactly as on the live chart. */}
+      {/* Tool rail: a short drawing set. The old 33-tool flyout is not
+          mounted. Marks are placed by ChartDrawingOverlay. */}
       {/* The rail wears the SHELL's chrome vars, not the chart palette: it
           must follow the terminal's light/dark class like every other panel. */}
       <div className="shrink-0 border-r border-[var(--edge)] bg-[var(--panel)] overflow-y-auto">

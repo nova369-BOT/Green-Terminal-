@@ -57,5 +57,7 @@ const guide = read("lse_terminal/ui/static/guide.md");
 assert.match(guide, /\*\*ANALYSIS\.\*\*/);
 assert.doesNotMatch(guide, /Twenty interactive models/);
 assert.doesNotMatch(guide, /diffusion simulator/);
+assert.doesNotMatch(guide, /33 tools/);
+assert.match(guide, /\*\*Swing\*\*/);
 
 console.log("shell chrome contract ok");

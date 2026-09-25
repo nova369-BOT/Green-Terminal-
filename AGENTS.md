@@ -72,6 +72,10 @@ Read this first, every session. The user is a beginner; clarity beats cleverness
 
 - 2026-09-25: Order Flow LIVE on Hyperliquid BTC inside GT (user confirmed).
   User's network blocks Binance (ISP + geo); Hyperliquid reachable.
+- 2026-09-25: Chart drawing rail is six icons (Line, Swing, Span, Band,
+  Wound, Streak) in DrawingToolsPanel. Do not put the 33-tool flyout back.
+  The chart bundle must be rebuilt (`frontend` `npm run build`) for the
+  rail to change. RESEARCH > ANALYSIS is a separate page, not the drawing rail.
 - 2026-09-25: RESEARCH > ANALYSIS replaces the quant-model toy island. Readings
   are counted in `lse_terminal/ui/static/analysis.js` from loaded bars only.
   Do not remount `LSEQuantModels` as that page. Camera control is `#shot-btn`
