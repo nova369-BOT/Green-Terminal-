@@ -4076,7 +4076,7 @@ body.ws-fullscreen #acct-dock { display: none !important; }
 /* Fullscreen keeps the command bar's workspace group: the Exit hatch must
    stay clickable (the strip used to live outside #controls). */
 body.ws-fullscreen #controls > :not(.ws-btn):not(.ws-sep) { display: none !important; }
-body.ws-fullscreen #controls { justify-content: flex-end; border-bottom: none; }
+body.ws-fullscreen #controls { justify-content: flex-end; border-bottom: none; position: relative; z-index: 90; }
 body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 62px; z-index: 80; background: var(--bg); }
 body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
 body.ws-fullscreen #term-status { z-index: 90; }
