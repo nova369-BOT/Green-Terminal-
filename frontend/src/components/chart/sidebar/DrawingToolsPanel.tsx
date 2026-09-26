@@ -17,7 +17,7 @@ import {
   ArrowUpCircle, ArrowDownCircle, Trash2, Lock, Unlock, Eye, EyeOff, Ruler, Keyboard,
   ChevronRight, ArrowRight, MoveVertical, Circle, Triangle, RotateCw,
   Octagon, Diamond, Pentagon, Hexagon, Heart, ArrowBigRight, Highlighter,
-  MousePointer2, DollarSign, Settings, Bell, Camera, Lasso
+  MousePointer2, DollarSign, Settings, Bell, Camera, Lasso, ArrowUp, ArrowDown
 } from "lucide-react";
 import { UnifiedLayoutButton, type LayoutType } from "@/components/chart/MultiTimeframeLayoutSelector";
 import { DrawingTool, Drawing } from "@/components/chart/ChartDrawingOverlay";
@@ -152,12 +152,14 @@ export default function DrawingToolsPanel({
   const [selectedFibTool, setSelectedFibTool] = useState<'fibonacci' | 'fibExtension'>('fibonacci');
   const [selectedShapeTool, setSelectedShapeTool] = useState<'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart'>('rectangle');
   const [selectedBrushTool, setSelectedBrushTool] = useState<'brush' | 'highlighter' | 'arrow'>('brush');
+  const [selectedMarkerTool, setSelectedMarkerTool] = useState<'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown'>('markerArrowUp');
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
   const [lineToolMenuOpen, setLineToolMenuOpen] = useState(false);
   const [fibToolMenuOpen, setFibToolMenuOpen] = useState(false);
   const [shapeToolMenuOpen, setShapeToolMenuOpen] = useState(false);
   const [brushToolMenuOpen, setBrushToolMenuOpen] = useState(false);
+  const [markerToolMenuOpen, setMarkerToolMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
   const handleToggleFavorite = useCallback((toolId: string) => {
@@ -252,6 +254,26 @@ export default function DrawingToolsPanel({
     brush: <Paintbrush className="h-[18px] w-[18px]" />,
     highlighter: <Highlighter className="h-[18px] w-[18px]" />,
     arrow: <MousePointer2 className="h-[18px] w-[18px]" />,
+  };
+  const markerIcons: Record<string, React.ReactNode> = {
+    markerArrowUp: <ArrowUp className="h-[18px] w-[18px]" />,
+    markerArrowDown: <ArrowDown className="h-[18px] w-[18px]" />,
+    markerCircle: <Circle className="h-[18px] w-[18px]" fill="currentColor" />,
+    markerSquare: <Square className="h-[18px] w-[18px]" fill="currentColor" />,
+    markerDiamond: <Diamond className="h-[18px] w-[18px]" fill="currentColor" />,
+    markerStar: <Star className="h-[18px] w-[18px]" fill="currentColor" />,
+    markerTriangleUp: <Triangle className="h-[18px] w-[18px]" fill="currentColor" />,
+    markerTriangleDown: <Triangle className="h-[18px] w-[18px]" fill="currentColor" style={{ transform: 'rotate(180deg)' }} />,
+  };
+  const markerLabels: Record<string, string> = {
+    markerArrowUp: 'Arrow Up',
+    markerArrowDown: 'Arrow Down',
+    markerCircle: 'Circle',
+    markerSquare: 'Square',
+    markerDiamond: 'Diamond',
+    markerStar: 'Star',
+    markerTriangleUp: 'Triangle Up',
+    markerTriangleDown: 'Triangle Down',
   };
 
   // Helper to create a tool menu item and update selected tool
@@ -356,6 +378,18 @@ export default function DrawingToolsPanel({
               { id: 'arrow', label: 'Arrow' },
             ].map(t => (
               <ToolMenuItem key={t.id} toolId={t.id} label={t.label} icon={brushIcons[t.id]} isActive={activeTool === t.id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedBrushTool, setBrushToolMenuOpen, t.id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
+          </div>
+        )}
+        {/* Markers Group */}
+        {renderToolGroup(
+          markerToolMenuOpen, setMarkerToolMenuOpen, selectedMarkerTool,
+          Object.keys(markerIcons),
+          markerIcons[selectedMarkerTool],
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Markers</div>
+            {['markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={markerLabels[id]} icon={markerIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedMarkerTool, setMarkerToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
           </div>
         )}

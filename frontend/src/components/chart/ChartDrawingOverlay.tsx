@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment } from 'react';
 import { flushSync } from 'react-dom';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | null;
 
 // Brush-like tools that share the same freehand drawing behavior
 const BRUSH_TOOLS: DrawingTool[] = ['brush', 'highlighter', 'arrow'];
 const isBrushTool = (tool: DrawingTool): boolean => BRUSH_TOOLS.includes(tool);
+
+// Single-click marker tools (one anchor point, fixed-size icon)
+const MARKER_TOOLS: DrawingTool[] = ['markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
+const isMarkerTool = (tool: DrawingTool): boolean => MARKER_TOOLS.includes(tool);
 
 // Get default color for brush tools
 const getBrushToolColor = (tool: DrawingTool): string => {
@@ -1135,7 +1139,7 @@ const ChartDrawingOverlayComponent = ({
     // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
     // This allows placing new drawings on top of existing ones
     // Exception: brush tool should start drawing immediately in handlePointerDown
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
     if (activeTool && drawingTools.includes(activeTool)) {
       return false; // Let handleClick/handleTap handle the new drawing creation
     }
@@ -1630,6 +1634,19 @@ const ChartDrawingOverlayComponent = ({
         const textWidth = (drawing.text?.length || 5) * 8;
         const textHeight = 20;
         if (x >= p.x - 5 && x <= p.x + textWidth && y >= p.y - textHeight && y <= p.y + 5) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check marker drawing (click within the icon bounding box)
+      if (isMarkerTool(drawing.type) && pixels.length >= 1) {
+        const p = pixels[0];
+        if (Math.abs(x - p.x) <= 12 && Math.abs(y - p.y) <= 12) {
           hitAnyDrawing = true;
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
@@ -2294,6 +2311,24 @@ const ChartDrawingOverlayComponent = ({
 
     if (activeTool === 'text') {
       setTextInput({ x, y, value: '' });
+      return;
+    }
+
+    // Single-click markers: place a fixed-size icon at one anchor point
+    if (isMarkerTool(activeTool)) {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: activeTool,
+        points: [chartPoint],
+        color: toolSettings?.color ?? '#2962ff',
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
       return;
     }
 
@@ -3888,6 +3923,67 @@ const ChartDrawingOverlayComponent = ({
             </>
           )}
           {midpointDot}
+        </g>
+      );
+    }
+
+    if (isMarkerTool(drawing.type)) {
+      if (pixels.length < 1) return null;
+      const mp = pixels[0];
+      const mCol = drawing.color || '#2962ff';
+      const cx = mp.x, cy = mp.y;
+      const starPts = (ox: number, oy: number, outer: number, inner: number) => {
+        const pts: string[] = [];
+        for (let i = 0; i < 10; i++) {
+          const r = i % 2 === 0 ? outer : inner;
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          pts.push(`${ox + r * Math.cos(a)},${oy + r * Math.sin(a)}`);
+        }
+        return pts.join(' ');
+      };
+      let shape: React.ReactNode = null;
+      switch (drawing.type) {
+        case 'markerCircle':
+          shape = <circle cx={cx} cy={cy} r={8} fill={mCol} />;
+          break;
+        case 'markerSquare':
+          shape = <rect x={cx - 8} y={cy - 8} width={16} height={16} fill={mCol} />;
+          break;
+        case 'markerDiamond':
+          shape = <polygon points={`${cx},${cy - 9} ${cx + 9},${cy} ${cx},${cy + 9} ${cx - 9},${cy}`} fill={mCol} />;
+          break;
+        case 'markerTriangleUp':
+          shape = <polygon points={`${cx},${cy - 9} ${cx + 9},${cy + 7} ${cx - 9},${cy + 7}`} fill={mCol} />;
+          break;
+        case 'markerTriangleDown':
+          shape = <polygon points={`${cx},${cy + 9} ${cx + 9},${cy - 7} ${cx - 9},${cy - 7}`} fill={mCol} />;
+          break;
+        case 'markerArrowUp':
+          shape = <polygon points={`${cx},${cy - 10} ${cx + 7},${cy - 1} ${cx + 3},${cy - 1} ${cx + 3},${cy + 10} ${cx - 3},${cy + 10} ${cx - 3},${cy - 1} ${cx - 7},${cy - 1}`} fill={mCol} />;
+          break;
+        case 'markerArrowDown':
+          shape = <polygon points={`${cx},${cy + 10} ${cx + 7},${cy + 1} ${cx + 3},${cy + 1} ${cx + 3},${cy - 10} ${cx - 3},${cy - 10} ${cx - 3},${cy + 1} ${cx - 7},${cy + 1}`} fill={mCol} />;
+          break;
+        case 'markerStar':
+          shape = <polygon points={starPts(cx, cy, 10, 4)} fill={mCol} />;
+          break;
+        default:
+          shape = <circle cx={cx} cy={cy} r={8} fill={mCol} />;
+      }
+      const mSelected = selectedDrawingId === drawing.id;
+      return (
+        <g
+          key={drawing.id}
+          id={`${clipId}_drawing-${drawing.id}`}
+          opacity={strokeOpacity}
+          onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+          onMouseLeave={() => setHoveredDrawingId(null)}
+          style={{ cursor: 'move', pointerEvents: 'all' }}
+        >
+          {shape}
+          {mSelected && (
+            <circle cx={cx} cy={cy} r={14} fill="none" stroke="#2962ff" strokeWidth={1} strokeDasharray="3 3" />
+          )}
         </g>
       );
     }
