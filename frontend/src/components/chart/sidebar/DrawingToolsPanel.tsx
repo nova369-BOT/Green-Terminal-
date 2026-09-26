@@ -149,7 +149,7 @@ export default function DrawingToolsPanel({
   // Track which sub-tool is selected for each group's primary button display
   const [selectedTrendTool, setSelectedTrendTool] = useState<'trend' | 'trendRay' | 'parallelChannel' | 'straightArrow'>('trend');
   const [selectedLineTool, setSelectedLineTool] = useState<'horizontal' | 'horizontalRay' | 'vertical' | 'line' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline'>('horizontal');
-  const [selectedFibTool, setSelectedFibTool] = useState<'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones'>('fibonacci');
+  const [selectedFibTool, setSelectedFibTool] = useState<'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs'>('fibonacci');
   const [selectedShapeTool, setSelectedShapeTool] = useState<'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart'>('rectangle');
   const [selectedBrushTool, setSelectedBrushTool] = useState<'brush' | 'highlighter' | 'arrow'>('brush');
   const [selectedMarkerTool, setSelectedMarkerTool] = useState<'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown'>('markerArrowUp');
@@ -372,7 +372,7 @@ export default function DrawingToolsPanel({
         {/* Fibonacci Group */}
         {renderToolGroup(
           fibToolMenuOpen, setFibToolMenuOpen, selectedFibTool,
-          ['fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones'],
+          ['fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs'],
           <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="4" x2="21" y2="4" /><line x1="3" y1="9" x2="17" y2="9" opacity="0.7" /><line x1="3" y1="14" x2="13" y2="14" opacity="0.5" /><line x1="3" y1="19" x2="21" y2="19" /><line x1="18" y1="4" x2="6" y2="19" strokeWidth="1.5" strokeDasharray="3 2" /></svg>,
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Fibonacci</div>
@@ -381,6 +381,10 @@ export default function DrawingToolsPanel({
               { id: 'fibExtension', label: 'Fib Extension', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="20" x2="21" y2="20" /><line x1="3" y1="14" x2="17" y2="14" opacity="0.7" /><line x1="3" y1="8" x2="13" y2="8" opacity="0.5" /><line x1="3" y1="3" x2="21" y2="3" /><line x1="6" y1="20" x2="18" y2="3" strokeWidth="1.5" strokeDasharray="3 2" /><polyline points="15,3 18,3 18,6" strokeWidth="1.5" /></svg> },
               { id: 'fibFan', label: 'Fib Fan', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="3" /><line x1="3" y1="21" x2="21" y2="10" opacity="0.7" /><line x1="3" y1="21" x2="21" y2="16" opacity="0.5" /><line x1="3" y1="21" x2="21" y2="21" /></svg> },
               { id: 'fibTimeZones', label: 'Fib Time Zones', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="3" x2="4" y2="21" /><line x1="9" y1="3" x2="9" y2="21" opacity="0.8" /><line x1="15" y1="3" x2="15" y2="21" opacity="0.6" /><line x1="21" y1="3" x2="21" y2="21" opacity="0.4" /></svg> },
+              { id: 'fibChannel', label: 'Fib Channel', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="18" x2="21" y2="8" /><line x1="3" y1="13" x2="21" y2="3" opacity="0.6" /><line x1="3" y1="22" x2="21" y2="12" opacity="0.6" /></svg> },
+              { id: 'fibCircles', label: 'Fib Circles', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5.5" opacity="0.7" /><circle cx="12" cy="12" r="2" opacity="0.5" /></svg> },
+              { id: 'fibSpiral', label: 'Fib Spiral', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12 m0 0 a2 2 0 1 1 2 -2 a4 4 0 1 1 -4 4 a6 6 0 1 1 6 -6 a8.5 8.5 0 1 1 -8.5 8.5" /></svg> },
+              { id: 'fibArcs', label: 'Fib Arcs', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21 a18 18 0 0 1 18 -18" /><path d="M3 21 a12 12 0 0 1 12 -12" opacity="0.7" /><path d="M3 21 a6 6 0 0 1 6 -6" opacity="0.5" /></svg> },
             ].map(t => (
               <ToolMenuItem key={t.id} toolId={t.id} label={t.label} icon={t.icon} isActive={activeTool === t.id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedFibTool, setFibToolMenuOpen, t.id)} onToggleFavorite={handleToggleFavorite} />
             ))}
