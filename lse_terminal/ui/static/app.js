@@ -7,6 +7,32 @@
 const TF_SECONDS = { "1s": 1, "5s": 5, "15s": 15, "30s": 30,
                      "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
                      "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
+
+// Bucket-start (epoch seconds) for a tick at `ts` on timeframe `tf`. Handles
+// the native fixed ladder AND the ⋮-menu's custom / calendar resolutions
+// (45m, 2h, 8h, 1M, 3M, 6M, 1Y), mirroring engine/tf_aggregate.py so a live
+// tick forms exactly the bar the history endpoint served — no spurious 1h bar
+// grafted onto a monthly series.
+function tfBucketStart(ts, tf) {
+  const s = String(tf || "").trim();
+  let m = /^(\d+)\s*([smhdw])$/.exec(s);            // lower-case units: sub-monthly
+  if (m) {
+    const step = Number(m[1]) * ({ s: 1, m: 60, h: 3600, d: 86400, w: 604800 })[m[2]];
+    return step > 0 ? Math.floor(ts / step) * step : ts;
+  }
+  m = /^(\d+)\s*M$/.exec(s);                        // capital M: calendar months
+  let months = m ? Number(m[1]) : null;
+  const y = /^(\d+)\s*[yY]$/.exec(s);              // years -> months
+  if (y) months = Number(y[1]) * 12;
+  if (months && months > 0) {
+    const d = new Date(ts * 1000);
+    const period = d.getUTCFullYear() * 12 + d.getUTCMonth();
+    const base = Math.floor(period / months) * months;
+    return Math.floor(Date.UTC(Math.floor(base / 12), base % 12, 1, 0, 0, 0) / 1000);
+  }
+  const step = TF_SECONDS[s] || 3600;
+  return Math.floor(ts / step) * step;
+}
 // A tick chart appends one bar per trade; big liquid pairs print ~24/s, so
 // without a cap a day-open session would grow the array into millions of
 // bars and the canvas repaint would die long before the memory did.
@@ -975,8 +1001,7 @@ function onTick(t) {
     return;
   }
   if (!state.lastBar) return;
-  const step = TF_SECONDS[state.timeframe] || 3600;
-  const bucket = Math.floor((t.ts || Date.now() / 1000) / step) * step;
+  const bucket = tfBucketStart(t.ts || Date.now() / 1000, state.timeframe);
   let bar = state.lastBar;
   if (bucket > bar.time) {
     bar = { time: bucket, open: t.price, high: t.price, low: t.price, close: t.price };

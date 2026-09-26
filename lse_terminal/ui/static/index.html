@@ -114,7 +114,16 @@ document.documentElement.setAttribute("data-theme",
   <!-- Symbol search now lives once, in the sidebar (#wl-filter). The old
        toolbar search box was removed so there is only one search. -->
   <nav id="timeframes"></nav>
-  <select id="chart-type" title="Chart type">
+  <!-- cTrader-style timeframe "⋮ more" menu, sitting right after the rail
+       (…1d 1w ⋮). Mounted here by the chart bundle
+       (LSEChart.mountTimeframeSelector); it owns bar type AND timeframe,
+       including custom / monthly resolutions, and drives state.timeframe /
+       state.chartType. -->
+  <span id="bar-type-slot" title="Timeframe & bar type"></span>
+  <!-- Chart-type control folded into the ⋮ menu above. Kept in the DOM (hidden)
+       so the shell's existing read/write of its .value stays a no-op source of
+       truth for workspace load/save. -->
+  <select id="chart-type" title="Chart type" style="display:none">
     <option value="candles">Candles</option>
     <option value="bars">OHLC</option>
     <option value="line">Line</option>
@@ -122,10 +131,6 @@ document.documentElement.setAttribute("data-theme",
     <option value="heikinAshi">Heikin Ashi</option>
     <option value="renko">Renko</option>
   </select>
-  <!-- cTrader-style timeframe + bar-type mega-selector. Mounted here by the
-       chart bundle (LSEChart.mountTimeframeSelector); it drives the same
-       state.timeframe / state.chartType the rail and the <select> above do. -->
-  <span id="bar-type-slot" title="Timeframe & bar type"></span>
   <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
   <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for
        an instant dossier of the real candles inside. Same ids the boot path

@@ -1077,11 +1077,31 @@ def create_app() -> FastAPI:
             raise HTTPException(429, f"rate limited for provider {provider}")
         try:
             p = reg.get(provider)
-            # start/end are ISO timestamps. Every provider's candles() already
-            # takes them (the manual-backtest replay needs "history up to the
-            # session start" and windowed scrollback, not just "latest N").
-            df = p.candles(symbol, timeframe, limit=min(int(limit), 5000),
-                           start=start, end=end)
+            capped = min(int(limit), 5000)
+            natives = list(getattr(p, "timeframes", []) or [])
+            if timeframe in natives:
+                # Native resolution: unchanged passthrough.
+                df = p.candles(symbol, timeframe, limit=capped,
+                               start=start, end=end)
+            else:
+                # Custom / calendar resolution the provider does not serve
+                # natively (45m, 2h, 1M, 3M, 6M…): build it by resampling a
+                # finer native base. Real OHLCV only — never a fabricated bar.
+                from lse_terminal.engine.tf_aggregate import (
+                    aggregate, parse_timeframe, pick_base,
+                )
+                base = pick_base(timeframe, natives) if parse_timeframe(timeframe) else None
+                if base is None:
+                    # Nothing can build it: let the provider raise its own
+                    # "unsupported timeframe" error rather than invent data.
+                    df = p.candles(symbol, timeframe, limit=capped,
+                                   start=start, end=end)
+                else:
+                    base_df = p.candles(symbol, base, limit=5000,
+                                        start=start, end=end)
+                    df = aggregate(base_df, timeframe)
+                    n = max(1, int(limit))
+                    df = (df.head(n) if start else df.tail(n)).reset_index(drop=True)
         except ValueError as e:
             raise HTTPException(404, str(e))
         except Exception as e:
