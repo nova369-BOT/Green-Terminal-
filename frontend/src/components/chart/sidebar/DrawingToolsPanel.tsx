@@ -148,7 +148,7 @@ export default function DrawingToolsPanel({
   const [drawingFavorites, setDrawingFavorites] = useState<string[]>(getDrawingFavorites);
   // Track which sub-tool is selected for each group's primary button display
   const [selectedTrendTool, setSelectedTrendTool] = useState<'trend' | 'trendRay' | 'parallelChannel' | 'straightArrow'>('trend');
-  const [selectedLineTool, setSelectedLineTool] = useState<'horizontal' | 'horizontalRay' | 'vertical' | 'line'>('horizontal');
+  const [selectedLineTool, setSelectedLineTool] = useState<'horizontal' | 'horizontalRay' | 'vertical' | 'line' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline'>('horizontal');
   const [selectedFibTool, setSelectedFibTool] = useState<'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones'>('fibonacci');
   const [selectedShapeTool, setSelectedShapeTool] = useState<'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart'>('rectangle');
   const [selectedBrushTool, setSelectedBrushTool] = useState<'brush' | 'highlighter' | 'arrow'>('brush');
@@ -233,6 +233,10 @@ export default function DrawingToolsPanel({
     horizontalRay: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="12" /><polyline points="17,9 20,12 17,15" /></svg>,
     vertical: <MoveVertical className="h-[18px] w-[18px]" />,
     line: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="4" /></svg>,
+    extendedLine: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="22" x2="22" y2="2" /><circle cx="8" cy="16" r="1.5" fill="currentColor" /><circle cx="16" cy="8" r="1.5" fill="currentColor" /></svg>,
+    infoLine: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="4" /><circle cx="18" cy="18" r="3.5" /><line x1="18" y1="17" x2="18" y2="19.5" /><circle cx="18" cy="15.6" r="0.6" fill="currentColor" /></svg>,
+    trendAngle: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="20" /><line x1="4" y1="20" x2="18" y2="6" /><path d="M12 20 A 8 8 0 0 0 9.5 14.5" strokeWidth="1.5" /></svg>,
+    crossline: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="22" y2="12" /><line x1="12" y1="2" x2="12" y2="22" /></svg>,
   };
   const shapeIcons: Record<string, React.ReactNode> = {
     rectangle: <RectangleHorizontal className="h-[18px] w-[18px]" />,
@@ -333,7 +337,7 @@ export default function DrawingToolsPanel({
         {/* Lines Group */}
         {renderToolGroup(
           lineToolMenuOpen, setLineToolMenuOpen, selectedLineTool,
-          ['horizontal', 'horizontalRay', 'vertical', 'line'],
+          ['horizontal', 'horizontalRay', 'vertical', 'line', 'extendedLine', 'infoLine', 'trendAngle', 'crossline'],
           lineIcons[selectedLineTool],
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Lines</div>
@@ -342,6 +346,10 @@ export default function DrawingToolsPanel({
               { id: 'horizontalRay', label: 'Horizontal Ray' },
               { id: 'vertical', label: 'Vertical Line' },
               { id: 'line', label: 'Straight Line' },
+              { id: 'extendedLine', label: 'Extended Line' },
+              { id: 'infoLine', label: 'Info Line' },
+              { id: 'trendAngle', label: 'Trend Angle' },
+              { id: 'crossline', label: 'Cross Line' },
             ].map(t => (
               <ToolMenuItem key={t.id} toolId={t.id} label={t.label} icon={lineIcons[t.id]} isActive={activeTool === t.id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedLineTool, setLineToolMenuOpen, t.id)} onToggleFavorite={handleToggleFavorite} />
             ))}
