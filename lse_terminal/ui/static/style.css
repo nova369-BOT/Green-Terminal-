@@ -382,6 +382,26 @@ aside#side.collapsed #side-fold { display: none; }
 }
 .wrow:hover { background: var(--edge); }
 .wrow.active { border-left-color: var(--accent-bar); background: var(--active); }
+/* Drag-to-chart: the row being dragged dims; the chart shows a gold drop zone
+   over the pane (or whole chart in 1x1) that will receive the symbol. The
+   overlay is click-through (pointer-events:none) so the native drop still
+   reaches #chart-stage underneath. */
+.wrow.gt-dragging { opacity: .45; }
+/* The logo <img> is draggable by default and would become the drag source if
+   grabbed; make the logo click-through so the whole row is one drag handle
+   (the row still handles clicks). */
+.wrow .wlogo { pointer-events: none; }
+#gt-drop-hl {
+  position: fixed; z-index: 9998; display: none; pointer-events: none;
+  box-sizing: border-box; border: 2px dashed var(--accent-bar); border-radius: 6px;
+  background: rgba(176, 141, 87, .10); box-shadow: inset 0 0 0 1px rgba(176, 141, 87, .25);
+}
+.gt-drop-lbl {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  font: 600 14px/1 var(--sans, system-ui, sans-serif); letter-spacing: .04em;
+  color: var(--accent-bar); background: rgba(5, 8, 10, .72);
+  padding: 7px 13px; border-radius: 4px; white-space: nowrap;
+}
 .wsym { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The watchlist star: a fixed slot at the row's end so prices never
    shift; hidden until hover on an unstarred row, always shown (filled,

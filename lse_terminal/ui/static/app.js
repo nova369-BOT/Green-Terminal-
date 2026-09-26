@@ -1261,6 +1261,24 @@ function renderWatchlist() {
     const row = document.createElement("div");
     row.className = "wrow" + (ins.symbol === state.symbol ? " active" : "");
     row.dataset.symbol = ins.symbol;
+    // Drag source: a row can be dragged onto the chart (or one grid pane) to
+    // load that symbol there. Uses a private mime type so only our own drop
+    // target reacts; the plain-text copy is a harmless fallback.
+    row.draggable = true;
+    row.addEventListener("dragstart", (e) => {
+      try {
+        e.dataTransfer.setData("text/gt-symbol", ins.symbol);
+        e.dataTransfer.setData("text/plain", ins.symbol);
+        e.dataTransfer.effectAllowed = "copy";
+      } catch (_) { /* older engines: drop still works via type check */ }
+      row.classList.add("gt-dragging");
+      document.body.classList.add("gt-dragging-symbol");
+    });
+    row.addEventListener("dragend", () => {
+      row.classList.remove("gt-dragging");
+      document.body.classList.remove("gt-dragging-symbol");
+      chartDropClear();
+    });
     // live === false: a history-only dataset (chartable archive, no feed).
     // Labeled instead of showing a dash that reads like a broken price,
     // and excluded from the price poll (visibleWatchSymbols).
@@ -10189,6 +10207,104 @@ function paneBadgesUpdate() {
     new MutationObserver(soon).observe(host, { childList: true, subtree: true });
   }
   setTimeout(paneBadgesUpdate, 800);
+})();
+/* ═══ Drag a watchlist symbol → drop on the chart (or one grid pane) ═══
+   Rows are drag sources (see wrow); #chart-stage is the drop target. In a
+   multi-window layout the drop lands on ONE pane and only that pane switches,
+   using the same grid geometry the pane badges read (paneGrid). In 1x1 it just
+   retargets the chart. Routes through the same setSymbol / layoutStore the
+   sidebar click uses — real data path only, no new fetch logic. */
+function chartDropIndex(x, y) {
+  const grid = paneGrid();
+  if (!grid) return -1;
+  const kids = Array.from(grid.children);
+  for (let i = 0; i < kids.length; i++) {
+    const r = kids[i].getBoundingClientRect();
+    if (r.width < 40 || r.height < 40) continue;
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return i;
+  }
+  return -1;
+}
+function chartDropRect(x, y) {
+  const grid = paneGrid();
+  if (grid) {
+    for (const k of grid.children) {
+      const r = k.getBoundingClientRect();
+      if (r.width < 40 || r.height < 40) continue;
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return r;
+    }
+  }
+  const host = $("chart-pro");
+  return host ? host.getBoundingClientRect() : null;
+}
+function chartDropHighlight(x, y) {
+  const r = chartDropRect(x, y);
+  if (!r) { chartDropClear(); return; }
+  let hl = $("gt-drop-hl");
+  if (!hl) {
+    hl = document.createElement("div");
+    hl.id = "gt-drop-hl";
+    hl.innerHTML = '<span class="gt-drop-lbl">Drop to load symbol</span>';
+    document.body.appendChild(hl);
+  }
+  hl.style.display = "block";
+  hl.style.left = r.left + "px";
+  hl.style.top = r.top + "px";
+  hl.style.width = r.width + "px";
+  hl.style.height = r.height + "px";
+}
+function chartDropClear() {
+  const hl = $("gt-drop-hl");
+  if (hl) hl.style.display = "none";
+}
+function chartDropApply(symbol, x, y) {
+  if (!symbol) return;
+  const ls = window.LSEChart && window.LSEChart.layoutStore;
+  const st = ls && ls.get ? ls.get() : null;
+  const multi = !!(st && st.layout && st.layout !== "1x1");
+  const syncSym = !!(st && st.sync && st.sync.syncSymbol);
+  // Multi-window with independent symbols: land on the dropped pane only.
+  if (multi && !syncSym && ls.setPanelSymbol) {
+    let idx = chartDropIndex(x, y);
+    if (idx < 0) idx = (st && Number.isFinite(st.activePanel)) ? st.activePanel : 0;
+    if (ls.setActivePanel) ls.setActivePanel(idx);
+    ls.setPanelSymbol(idx, symbol);
+    if (typeof updateWindowTitle === "function") updateWindowTitle();
+    if (typeof paneBadgesUpdate === "function") setTimeout(paneBadgesUpdate, 60);
+    return;
+  }
+  // 1x1, symbol-sync on, or no store: the standard whole-chart retarget.
+  setSymbol(symbol);
+}
+(function chartDropBind() {
+  const stage = $("chart-stage");
+  if (!stage || stage.dataset.dropWired) return;
+  stage.dataset.dropWired = "1";
+  const hasSym = (e) => {
+    try { return Array.from(e.dataTransfer.types || []).indexOf("text/gt-symbol") !== -1; }
+    catch (_) { return false; }
+  };
+  stage.addEventListener("dragover", (e) => {
+    if (!hasSym(e)) return;
+    e.preventDefault();                       // required to allow a drop
+    try { e.dataTransfer.dropEffect = "copy"; } catch (_) {}
+    chartDropHighlight(e.clientX, e.clientY);
+  });
+  stage.addEventListener("dragleave", (e) => {
+    // Moving between children keeps us inside the stage; only clear on real exit.
+    if (e.relatedTarget && stage.contains(e.relatedTarget)) return;
+    chartDropClear();
+  });
+  stage.addEventListener("drop", (e) => {
+    if (!hasSym(e)) return;
+    e.preventDefault();
+    let sym = "";
+    try { sym = e.dataTransfer.getData("text/gt-symbol") || e.dataTransfer.getData("text/plain"); }
+    catch (_) {}
+    chartDropClear();
+    document.body.classList.remove("gt-dragging-symbol");
+    chartDropApply(sym, e.clientX, e.clientY);
+  });
 })();
 (function lassoBind() {
   const layer = $("lasso-layer");
