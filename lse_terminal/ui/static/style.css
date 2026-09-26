@@ -476,6 +476,10 @@ aside#side.collapsed #wl-search { opacity: 0; pointer-events: none; }
 #wl-tabs button:hover { color: var(--text); }
 #wl-tabs button.active { color: var(--text); border-bottom-color: var(--accent-bar); }
 #wl-newlist.hidden, #wl-settings.hidden { display: none; }
+/* Lasso + screenshot moved into the chart's drawing-tool rail (one toolbar,
+   no duplicate buttons up top). The elements stay in the DOM so the shell's
+   lasso state / key-hold logic keeps working; only the top buttons are hidden. */
+#lasso-open, #cam-shot { display: none !important; }
 /* full-width create-list button at the foot of the WATCHLIST tab */
 .wl-createbtn {
   display: block; width: calc(100% - 20px); margin: 10px; padding: 9px 0;

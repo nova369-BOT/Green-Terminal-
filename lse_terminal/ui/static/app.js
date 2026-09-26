@@ -3374,6 +3374,11 @@ function setupLayouts() {
   // "Chart template" right-click menu); this bridge is that menu's data
   // source, so the store and apply path stay.
   window.__lseShell = {
+    // The chart's tool rail calls back into the shell for the two
+    // shell-owned actions, so they sit WITH the drawing tools (one toolbar,
+    // no duplicate top-bar buttons): a chart screenshot and the AI zone lasso.
+    screenshot: () => { try { screenshotChart(); } catch (_) {} },
+    lasso: () => { try { lassoArm(true); } catch (_) {} },
     // Phase 2 infinite scrollback: the chart bundle pages older bars and
     // asks the shell to own the prepended rows (single source of truth).
     prependCandles: (older) => {

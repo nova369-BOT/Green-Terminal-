@@ -17,7 +17,7 @@ import {
   ArrowUpCircle, ArrowDownCircle, Trash2, Lock, Unlock, Eye, EyeOff, Ruler, Keyboard,
   ChevronRight, ArrowRight, MoveVertical, Circle, Triangle, RotateCw,
   Octagon, Diamond, Pentagon, Hexagon, Heart, ArrowBigRight, Highlighter,
-  MousePointer2, DollarSign, Settings, Bell
+  MousePointer2, DollarSign, Settings, Bell, Camera, Lasso
 } from "lucide-react";
 import { UnifiedLayoutButton, type LayoutType } from "@/components/chart/MultiTimeframeLayoutSelector";
 import { DrawingTool, Drawing } from "@/components/chart/ChartDrawingOverlay";
@@ -418,6 +418,30 @@ export default function DrawingToolsPanel({
         </TooltipProvider>
         {/* Paper Trading toggle removed; now handled by chevron in the bottom time bar */}
         {/* Divider: separates drawing tools from utility/destructive actions */}
+        <div className="w-7 lg:w-9 h-px bg-border mx-auto my-0.5" />
+        {/* Shell tools: chart screenshot + AI zone lasso. Both actions live in
+            the terminal shell; the rail calls them through window.__lseShell so
+            they sit here WITH the drawing tools instead of a separate top bar. */}
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.screenshot?.()}>
+                <Camera className="h-5 w-5 lg:h-6 lg:w-6" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs lg:text-sm">Screenshot chart</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.lasso?.()}>
+                <Lasso className="h-5 w-5 lg:h-6 lg:w-6" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs lg:text-sm">Lasso a zone for AI analysis</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <div className="w-7 lg:w-9 h-px bg-border mx-auto my-0.5" />
         {/* Phone-only utility group above trash: Layout (folder) and Settings. */}
         {/* Tablet/desktop render these elsewhere (ChartControlsPanel for tablet, */}
