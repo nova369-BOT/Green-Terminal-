@@ -4075,36 +4075,60 @@ body.ws-fullscreen #dockzone,
 body.ws-fullscreen #acct-dock { display: none !important; }
 /* Fullscreen keeps the command bar's workspace group: the Exit hatch must
    stay clickable (the strip used to live outside #controls). */
+/* Fullscreen top edge: Lasso + camera only, on the RIGHT HALF so the
+   chart's own top-left tools (e.g. Simple Moving Average) are never
+   covered. The bar itself is transparent + click-through (chart tools
+   underneath stay usable); only the pills re-arm the mouse. */
 body.ws-fullscreen #controls > :not(.ws-btn):not(.ws-sep):not(#lasso-open) { display: none !important; }
-/* Fullscreen: the strip is HALVED — right half only, so the chart's own
-   top-left tools (e.g. Simple Moving Average) are never covered. The bar
-   itself is transparent + click-through; only the pills catch the mouse. */
 body.ws-fullscreen #controls {
   display: flex !important;
-  justify-content: flex-end; border-bottom: none; position: relative; z-index: 90;
+  justify-content: flex-end; align-items: center;
+  border-bottom: none; position: relative; z-index: 90;
   background: transparent; pointer-events: none;
   margin-left: auto; max-width: 50%;
+  gap: 10px; padding: 8px 16px 8px 8px;
 }
-/* The strip itself is click-through (chart tools underneath stay usable);
-   only the pills re-arm the mouse. */
 body.ws-fullscreen #controls .ws-btn,
 body.ws-fullscreen #controls #lasso-open { pointer-events: auto; }
-/* Fullscreen keeps half the strip: Exit + camera + Lasso only. Workspace
-   chores (Save/Load/Reset) hide until you exit. */
+/* Workspace chores (Save/Load/Reset) and stray dividers hide until exit. */
 body.ws-fullscreen #ws-save,
 body.ws-fullscreen #ws-load,
-body.ws-fullscreen #ws-reset { display: none !important; }
-/* Exit pill: hidden normally; in shell fullscreen it replaces the text
-   Fullscreen button as one brass pill in the command bar's right group. */
+body.ws-fullscreen #ws-reset,
+body.ws-fullscreen #controls .ws-sep { display: none !important; }
+/* Top-edge pills: a matched glass pair with identical geometry. */
+body.ws-fullscreen #lasso-open,
+body.ws-fullscreen #cam-shot {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--edge); color: var(--text);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+}
+body.ws-fullscreen #cam-shot { padding: 0 9px; }
+body.ws-fullscreen #lasso-open:hover,
+body.ws-fullscreen #cam-shot:hover { border-color: var(--accent-bar); }
+body.ws-fullscreen #lasso-open.active {
+  background: var(--accent-bar); border-color: transparent; color: #0a0f0c;
+}
+/* Exit: hidden normally; in shell fullscreen it is ONE icon-only button
+   pinned bottom-right above the status strip (never over the chart). */
 #ws-exit { display: none; }
 /* Camera: icon-only capture button in the command bar's right group. */
 #cam-shot { display: inline-flex; align-items: center; justify-content: center; padding: 3px 7px; }
 #cam-shot svg { display: block; }
 body.ws-fullscreen #ws-exit {
-  display: inline-block; background: var(--accent-bar); color: #0a0f0c;
-  border-color: transparent; border-radius: 999px; padding: 4px 14px;
-  font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  position: fixed; right: 14px; bottom: 30px; z-index: 95;
+  width: 34px; height: 34px; border-radius: 50%; padding: 0;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--accent-bar); color: var(--accent-bar);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  opacity: .65;
 }
+body.ws-fullscreen #ws-exit:hover { opacity: 1; background: var(--accent-bar); color: #0a0f0c; }
+body.ws-fullscreen #ws-exit svg { display: block; }
 body.ws-fullscreen #ws-full { display: none; }
 /* Tool menus must pop ABOVE the fullscreen chart overlay (z-80): the shell
    dropdowns and the chart bundle's portaled (Radix) menus alike. */
