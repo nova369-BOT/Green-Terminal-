@@ -105,6 +105,8 @@ document.documentElement.setAttribute("data-theme",
        the dossier card. Both hidden unless a lasso is in progress/done. -->
   <div id="lasso-layer" class="hidden" aria-hidden="true"><svg id="lasso-svg"></svg></div>
   <div id="lasso-card" class="hidden" role="status" aria-label="Zone dossier"></div>
+  <!-- Focus mode: double-click a grid pane to edit it solo; this is the way back. -->
+  <button id="focus-back" class="hidden" type="button" title="Back to the chart grid">‹ Grid</button>
   <div id="controls">
   <!-- No data-source dropdown: the active rail tab decides the source.
        MARKETS is live LSE data (API key), BACKTEST / MY DATA are the
@@ -1369,7 +1371,7 @@ def my_ind(df, length=20):
   <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
   <!-- BUILD stamp: bump the number on every UI push so a stale
        build/cache is visible at a glance in the status strip. -->
-  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">4-paneGlow</span></span>
+  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">5-focus</span></span>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
 <script src="./app.js"></script>

@@ -10018,6 +10018,71 @@ document.addEventListener("pointerdown", (e) => {
     lassoHideCard(); lassoClearDraw();
   }
 }, true);
+
+/* ═══ Focus mode (option B): double-click a grid pane to edit it SOLO ════
+   with the full single-chart toolbar (trendlines, fibs, everything), then
+   one click on ‹ Grid jumps back. Shell-side only: the bundle's own
+   setLayout + per-pane state do the work. Pane defaults mirror the bundle
+   exactly (pane 0 follows the global pair; others cycle the same
+   1h/4h/1d/15m/5m/1w/30m/1m rotation) unless the user overrode them. */
+const FOCUS_ALE = ["1h", "4h", "1d", "15m", "5m", "1w", "30m", "1m"];
+const focus = { on: false, from: null, symbol: null, timeframe: null };
+function focusPanePair(i) {
+  const ls = window.LSEChart && window.LSEChart.layoutStore;
+  const st = ls && ls.get ? ls.get() : null;
+  const sym = (st && st.sync && st.sync.syncSymbol) ? state.symbol
+    : ((st && st.panelSymbols && st.panelSymbols[i]) || state.symbol);
+  const tf = (st && st.sync && st.sync.syncInterval) ? state.timeframe
+    : ((st && st.panelIntervals && st.panelIntervals[i]) ||
+       (i === 0 ? state.timeframe : FOCUS_ALE[i % FOCUS_ALE.length]));
+  return { sym, tf };
+}
+function focusEnter(i) {
+  const ls = window.LSEChart && window.LSEChart.layoutStore;
+  if (!ls || typeof ls.setLayout !== "function") return;
+  const st = ls.get ? ls.get() : null;
+  if (!st || st.layout === "1x1" || focus.on) return;
+  const { sym, tf } = focusPanePair(i);
+  focus.on = true;
+  focus.from = st.layout;
+  focus.symbol = state.symbol;
+  focus.timeframe = state.timeframe;
+  state.symbol = sym;
+  state.timeframe = tf;
+  renderTimeframes();
+  updateWindowTitle();
+  loadChart();
+  ls.setLayout("1x1");
+  $("focus-back").classList.remove("hidden");
+  status(`focused pane ${i + 1}: ${sym} ${tf}`);
+  setTimeout(() => status(""), 2000);
+}
+function focusExit() {
+  const ls = window.LSEChart && window.LSEChart.layoutStore;
+  if (!focus.on) return;
+  focus.on = false;
+  $("focus-back").classList.add("hidden");
+  if (focus.symbol) state.symbol = focus.symbol;
+  if (focus.timeframe) state.timeframe = focus.timeframe;
+  renderTimeframes();
+  updateWindowTitle();
+  loadChart();
+  if (ls && typeof ls.setLayout === "function" && focus.from && focus.from !== "1x1") {
+    ls.setLayout(focus.from);
+  }
+  focus.from = null;
+}
+document.addEventListener("dblclick", (e) => {
+  if (focus.on) return;
+  const host = $("chart-pro");
+  if (!host || !host.contains(e.target)) return;
+  if (e.target.closest('button, select, input, textarea, a, [role="menu"], [role="dialog"], [data-radix-popper-content-wrapper]')) return;
+  const ls = window.LSEChart && window.LSEChart.layoutStore;
+  const st = ls && ls.get ? ls.get() : null;
+  if (!st || st.layout === "1x1") return;
+  focusEnter(typeof st.activePanel === "number" ? st.activePanel : 0);
+});
+if ($("focus-back")) $("focus-back").onclick = focusExit;
 (function lassoBind() {
   const layer = $("lasso-layer");
   if (!layer || layer.dataset.wired) return;

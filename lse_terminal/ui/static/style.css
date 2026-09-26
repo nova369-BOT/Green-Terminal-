@@ -4144,6 +4144,19 @@ body.ws-fullscreen [data-radix-popper-content-wrapper] { z-index: 95 !important;
   border-radius: 3px;
   box-shadow: 0 0 0 1px rgba(176, 141, 87, .35), 0 0 18px rgba(176, 141, 87, .18) !important;
 }
+/* Focus mode way-back: brass pill pinned bottom-left above the status
+   strip; visible only while a grid pane is focused solo. */
+#focus-back {
+  position: fixed; left: 76px; bottom: 34px; z-index: 60;
+  display: inline-flex; align-items: center;
+  height: 30px; padding: 0 14px; border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--accent-bar); color: var(--accent-bar); font-weight: 700;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+}
+#focus-back.hidden { display: none; }
+#focus-back:hover { background: var(--accent-bar); color: #0a0f0c; }
 /* Pro analysis toolbar: the bundle's drawing rail, tailored. Scoped under
    #chart-pro (higher specificity than the bundle's own rules, so no
    source edits to the minified build). */
