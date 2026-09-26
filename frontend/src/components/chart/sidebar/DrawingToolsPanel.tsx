@@ -163,6 +163,7 @@ export default function DrawingToolsPanel({
   const [selectedElliottTool, setSelectedElliottTool] = useState<'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo'>('elliottImpulse');
   const [selectedTextTool, setSelectedTextTool] = useState<'text' | 'note' | 'callout' | 'priceLabel' | 'signpost'>('text');
   const [selectedEmoji, setSelectedEmoji] = useState<string>(emojiSelection.current);
+  const [selectedVolumeTool, setSelectedVolumeTool] = useState<'anchoredVwap' | 'fixedVolumeProfile'>('anchoredVwap');
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
   const [lineToolMenuOpen, setLineToolMenuOpen] = useState(false);
@@ -176,6 +177,7 @@ export default function DrawingToolsPanel({
   const [elliottToolMenuOpen, setElliottToolMenuOpen] = useState(false);
   const [textToolMenuOpen, setTextToolMenuOpen] = useState(false);
   const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
+  const [volumeToolMenuOpen, setVolumeToolMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
   const handleToggleFavorite = useCallback((toolId: string) => {
@@ -284,6 +286,13 @@ export default function DrawingToolsPanel({
   };
   const textLabels: Record<string, string> = {
     text: 'Text', note: 'Note', callout: 'Callout', priceLabel: 'Price Label', signpost: 'Signpost / Flag',
+  };
+  const volumeIcons: Record<string, React.ReactNode> = {
+    anchoredVwap: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18c4 0 5-11 9-11s5 8 9 8" /><circle cx="3" cy="18" r="1.8" fill="currentColor" /></svg>,
+    fixedVolumeProfile: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="4" x2="4" y2="20" /><line x1="4" y1="6.5" x2="12" y2="6.5" /><line x1="4" y1="10.5" x2="20" y2="10.5" /><line x1="4" y1="14.5" x2="10" y2="14.5" /><line x1="4" y1="18.5" x2="15" y2="18.5" /></svg>,
+  };
+  const volumeLabels: Record<string, string> = {
+    anchoredVwap: 'Anchored VWAP', fixedVolumeProfile: 'Fixed Range Volume Profile',
   };
   const lineIcons: Record<string, React.ReactNode> = {
     horizontal: <Minus className="h-[18px] w-[18px]" />,
@@ -572,6 +581,18 @@ export default function DrawingToolsPanel({
             </div>
           </PopoverContent>
         </Popover>
+        {/* Volume Group */}
+        {renderToolGroup(
+          volumeToolMenuOpen, setVolumeToolMenuOpen, selectedVolumeTool,
+          ['anchoredVwap', 'fixedVolumeProfile'],
+          volumeIcons[selectedVolumeTool],
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Volume</div>
+            {['anchoredVwap', 'fixedVolumeProfile'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={volumeLabels[id]} icon={volumeIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedVolumeTool, setVolumeToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
+          </div>
+        )}
         {/* Long Position */}
         <TooltipProvider delayDuration={300}>
           <Tooltip>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment 
 import { flushSync } from 'react-dom';
 import { emojiSelection } from './emojiStore';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | 'emoji' | 'note' | 'callout' | 'priceLabel' | 'signpost' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | 'emoji' | 'note' | 'callout' | 'priceLabel' | 'signpost' | 'anchoredVwap' | 'fixedVolumeProfile' | null;
 
 // Multi-point pattern & Elliott tools: shared config (point count, node labels, connector lines, fill triangles)
 const MULTIPOINT_TOOLS: Record<string, { n: number; labels: string[]; connectors: [number, number][]; fillTris: [number, number, number][] }> = {
@@ -124,7 +124,7 @@ type Props = {
   currentSymbol?: string; // For measure tool calculations
   timeframeMs?: number; // Timeframe in milliseconds for candle counting
   currentPrice?: number; // Live price for badge collision avoidance
-  candles?: { time: number; open: number; high: number; low: number; close: number }[]; // For long/short TP/SL hit detection
+  candles?: { time: number; open: number; high: number; low: number; close: number; volume?: number }[]; // For long/short TP/SL hit detection + volume tools
   // Pre-placement tool settings from the settings bar (color, strokeWidth, lineStyle, etc.)
   // When provided, new drawings use these instead of hardcoded defaults
   toolSettings?: { color: string; strokeWidth: number; lineStyle: 'solid' | 'dashed' | 'dotted'; opacity: number; fillColor?: string; fillOpacity?: number };
@@ -215,6 +215,76 @@ const ChartDrawingOverlayComponent = ({
   const getNewDrawingOpacity = () => toolSettings?.opacity ?? 100;
   const getNewDrawingFillColor = (fallback?: string) => toolSettings?.fillColor ?? fallback;
   const getNewDrawingFillOpacity = () => toolSettings?.fillOpacity ?? 100;
+
+  // Anchored VWAP: cumulative volume-weighted average price from an anchor bar to
+  // the latest bar, with running standard-deviation bands (±1σ/±2σ). Uses REAL
+  // candle volume only; returns null when no volume is available in range.
+  const computeAnchoredVwap = (anchorTime: number) => {
+    const cs = candlesProp;
+    if (!cs || cs.length === 0) return null;
+    let startIdx = cs.findIndex((c) => c.time >= anchorTime);
+    if (startIdx < 0) startIdx = cs.length - 1;
+    let cumPV = 0, cumV = 0, cumPV2 = 0, lastVwap = 0;
+    const line: PixelPoint[] = [], u1: PixelPoint[] = [], l1: PixelPoint[] = [], u2: PixelPoint[] = [], l2: PixelPoint[] = [];
+    for (let i = startIdx; i < cs.length; i++) {
+      const c = cs[i];
+      const tp = (c.high + c.low + c.close) / 3;
+      const v = c.volume ?? 0;
+      cumPV += tp * v; cumV += v; cumPV2 += tp * tp * v;
+      if (cumV <= 0) continue;
+      const vwap = cumPV / cumV;
+      lastVwap = vwap;
+      const sd = Math.sqrt(Math.max(0, cumPV2 / cumV - vwap * vwap));
+      const x = converter.timeToX(c.time);
+      line.push({ x, y: converter.priceToY(vwap) });
+      u1.push({ x, y: converter.priceToY(vwap + sd) });
+      l1.push({ x, y: converter.priceToY(vwap - sd) });
+      u2.push({ x, y: converter.priceToY(vwap + 2 * sd) });
+      l2.push({ x, y: converter.priceToY(vwap - 2 * sd) });
+    }
+    if (line.length === 0) return null;
+    return { line, u1, l1, u2, l2, lastVwap };
+  };
+
+  // Fixed-Range Volume Profile: bins REAL volume of candles inside a time range
+  // across the price axis, splitting up/down volume, and finds POC + 70% value area.
+  const computeVolumeProfile = (t1: number, t2: number) => {
+    const cs = candlesProp;
+    if (!cs || cs.length === 0) return null;
+    const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
+    const win = cs.filter((c) => c.time >= lo && c.time <= hi);
+    if (win.length === 0) return null;
+    let priceLo = Infinity, priceHi = -Infinity;
+    for (const c of win) { if (c.low < priceLo) priceLo = c.low; if (c.high > priceHi) priceHi = c.high; }
+    if (!(priceHi > priceLo)) return null;
+    const N = 24;
+    const rowH = (priceHi - priceLo) / N;
+    const up = new Array(N).fill(0), down = new Array(N).fill(0);
+    for (const c of win) {
+      const v = c.volume ?? 0;
+      if (v <= 0) continue;
+      const r0 = Math.max(0, Math.floor((c.low - priceLo) / rowH));
+      const r1 = Math.min(N - 1, Math.floor((c.high - priceLo) / rowH));
+      const rows = Math.max(1, r1 - r0 + 1);
+      const share = v / rows;
+      const isUp = c.close >= c.open;
+      for (let r = r0; r <= r1; r++) { if (isUp) up[r] += share; else down[r] += share; }
+    }
+    const totals = up.map((u: number, i: number) => u + down[i]);
+    const totalVol = totals.reduce((a: number, b: number) => a + b, 0);
+    if (totalVol <= 0) return null;
+    const maxVol = Math.max(...totals);
+    let pocIdx = 0;
+    for (let i = 1; i < N; i++) if (totals[i] > totals[pocIdx]) pocIdx = i;
+    let vaLo = pocIdx, vaHi = pocIdx, vaSum = totals[pocIdx];
+    const target = totalVol * 0.7;
+    while (vaSum < target && (vaLo > 0 || vaHi < N - 1)) {
+      const below = vaLo > 0 ? totals[vaLo - 1] : -1;
+      const above = vaHi < N - 1 ? totals[vaHi + 1] : -1;
+      if (above >= below) { vaHi++; vaSum += totals[vaHi]; } else { vaLo--; vaSum += totals[vaLo]; }
+    }
+    return { N, rowH, up, down, totals, priceLo, priceHi, maxVol, totalVol, pocIdx, vaLo, vaHi };
+  };
 
   // Performance optimization: Use refs for smooth dragging without React re-renders
   const rafIdRef = useRef<number | null>(null);
@@ -1072,7 +1142,7 @@ const ChartDrawingOverlayComponent = ({
     }
 
     // Show crosshair and preview when a drawing tool is active
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'callout', 'brush', 'highlighter', 'arrow', 'measure'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'callout', 'anchoredVwap', 'fixedVolumeProfile', 'brush', 'highlighter', 'arrow', 'measure'];
     if (activeTool && drawingTools.includes(activeTool)) {
       const clampedPoint = clampToChartArea({ x, y });
 
@@ -1159,7 +1229,7 @@ const ChartDrawingOverlayComponent = ({
     // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
     // This allows placing new drawings on top of existing ones
     // Exception: brush tool should start drawing immediately in handlePointerDown
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'extendedLine', 'infoLine', 'trendAngle', 'crossline', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown', 'emoji', 'note', 'callout', 'priceLabel', 'signpost'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'extendedLine', 'infoLine', 'trendAngle', 'crossline', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown', 'emoji', 'note', 'callout', 'priceLabel', 'signpost', 'anchoredVwap', 'fixedVolumeProfile'];
     if (activeTool && drawingTools.includes(activeTool)) {
       return false; // Let handleClick/handleTap handle the new drawing creation
     }
@@ -1754,6 +1824,46 @@ const ChartDrawingOverlayComponent = ({
         }
       }
 
+      // Check anchored VWAP (anchor marker or along the line)
+      if (drawing.type === 'anchoredVwap' && pixels.length >= 1) {
+        const anchor = drawing.points[0];
+        const ax = converter.timeToX(anchor.time), ay = converter.priceToY(anchor.price);
+        let hit = Math.abs(x - ax) <= 8 && Math.abs(y - ay) <= 8;
+        if (!hit) {
+          const vw = computeAnchoredVwap(anchor.time);
+          if (vw) {
+            for (const p of vw.line) { if (Math.abs(x - p.x) <= 6 && Math.abs(y - p.y) <= 6) { hit = true; break; } }
+          }
+        }
+        if (hit) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check fixed-range volume profile (selection box)
+      if (drawing.type === 'fixedVolumeProfile' && pixels.length >= 2) {
+        const p1 = drawing.points[0], p2 = drawing.points[1];
+        const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
+        const left = Math.min(x1, x2), right = Math.max(x1, x2);
+        const vp = computeVolumeProfile(p1.time, p2.time);
+        let top: number, bot: number;
+        if (vp) { const a = converter.priceToY(vp.priceHi), b = converter.priceToY(vp.priceLo); top = Math.min(a, b); bot = Math.max(a, b); }
+        else { const a = converter.priceToY(p1.price), b = converter.priceToY(p2.price); top = Math.min(a, b); bot = Math.max(a, b); }
+        if (x >= left - 3 && x <= right + 3 && y >= top - 3 && y <= bot + 3) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
       // Check signpost drawing (box or pole)
       if (drawing.type === 'signpost' && pixels.length >= 1) {
         const p = pixels[0];
@@ -2027,7 +2137,7 @@ const ChartDrawingOverlayComponent = ({
     }
 
     // PRIORITY: If user has an active drawing tool, start drawing instead of interacting with existing drawings
-    const twoPointDrawingTools: DrawingTool[] = ['trend', 'trendRay', 'line', 'straightArrow', 'extendedLine', 'infoLine', 'trendAngle', 'fibonacci', 'fibExtension', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'parallelChannel', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime'];
+    const twoPointDrawingTools: DrawingTool[] = ['trend', 'trendRay', 'line', 'straightArrow', 'extendedLine', 'infoLine', 'trendAngle', 'fibonacci', 'fibExtension', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'parallelChannel', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'fixedVolumeProfile'];
     if (activeTool && twoPointDrawingTools.includes(activeTool)) {
       // Skip existing drawing detection - proceed to drawing logic below
     } else if (handlePointerDown(x, y, touch.clientX, touch.clientY)) {
@@ -2550,6 +2660,25 @@ const ChartDrawingOverlayComponent = ({
       return;
     }
 
+    // Anchored VWAP: single click sets the anchor bar; the line runs to the latest bar
+    if (activeTool === 'anchoredVwap') {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'anchoredVwap',
+        points: [chartPoint],
+        color: toolSettings?.color ?? '#2dd4bf',
+        strokeWidth: getNewDrawingStrokeWidth(),
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
     // Price label: single click drops a pill showing the price at that point
     if (activeTool === 'priceLabel') {
       const chartPoint = pixelToChart({ x, y });
@@ -2606,7 +2735,7 @@ const ChartDrawingOverlayComponent = ({
       return;
     }
 
-    if (activeTool === 'trend' || activeTool === 'trendRay' || activeTool === 'line' || activeTool === 'extendedLine' || activeTool === 'infoLine' || activeTool === 'trendAngle' || activeTool === 'fibonacci' || activeTool === 'fibExtension' || activeTool === 'fibFan' || activeTool === 'fibTimeZones' || activeTool === 'fibCircles' || activeTool === 'fibSpiral' || activeTool === 'fibArcs' || activeTool === 'fibWedge' || activeTool === 'gannFan' || activeTool === 'gannBox' || activeTool === 'gannSquare' || activeTool === 'gannSquareFixed' || activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart') {
+    if (activeTool === 'trend' || activeTool === 'trendRay' || activeTool === 'line' || activeTool === 'extendedLine' || activeTool === 'infoLine' || activeTool === 'trendAngle' || activeTool === 'fibonacci' || activeTool === 'fibExtension' || activeTool === 'fibFan' || activeTool === 'fibTimeZones' || activeTool === 'fibCircles' || activeTool === 'fibSpiral' || activeTool === 'fibArcs' || activeTool === 'fibWedge' || activeTool === 'gannFan' || activeTool === 'gannBox' || activeTool === 'gannSquare' || activeTool === 'gannSquareFixed' || activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart' || activeTool === 'fixedVolumeProfile') {
       if (tempPoints.length === 0) {
         setTempPoints([{ x, y }]);
       } else {
@@ -5040,6 +5169,108 @@ const ChartDrawingOverlayComponent = ({
       );
     }
 
+    if (drawing.type === 'anchoredVwap') {
+      const anchor = drawing.points[0];
+      const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
+      const ax = converter.timeToX(anchor.time);
+      const ay = converter.priceToY(anchor.price);
+      const vw = computeAnchoredVwap(anchor.time);
+      const band = (up: PixelPoint[], loArr: PixelPoint[]) => {
+        const top = up.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        const bot = [...loArr].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ');
+        return `${top} ${bot} Z`;
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          {vw && (
+            <>
+              <path d={band(vw.u2, vw.l2)} fill={col} fillOpacity={0.05} stroke="none" style={{ pointerEvents: 'none' }} />
+              <path d={band(vw.u1, vw.l1)} fill={col} fillOpacity={0.09} stroke="none" style={{ pointerEvents: 'none' }} />
+              <path d={vw.line.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={drawing.strokeWidth || 2} strokeOpacity={strokeOpacity} style={{ cursor: 'move', pointerEvents: 'stroke' }} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} />
+              {(() => {
+                const last = vw.line[vw.line.length - 1];
+                const txt = `VWAP ${vw.lastVwap.toFixed(vw.lastVwap < 1 ? 6 : 2)}`;
+                const tw = txt.length * 6.2 + 10;
+                return (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <rect x={last.x + 6} y={last.y - 9} width={tw} height={16} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeOpacity={0.5} strokeWidth={0.75} />
+                    <text x={last.x + 11} y={last.y + 2.5} fill={col} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                  </g>
+                );
+              })()}
+            </>
+          )}
+          <path d={`M ${ax} ${ay - 6} L ${ax + 6} ${ay} L ${ax} ${ay + 6} L ${ax - 6} ${ay} Z`} fill={col} stroke="#0b0f14" strokeWidth={1} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {showHandles && isSelected && <circle cx={ax} cy={ay} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fixedVolumeProfile') {
+      const p1 = drawing.points[0], p2 = drawing.points[1];
+      if (!p1 || !p2) return null;
+      const vp = computeVolumeProfile(p1.time, p2.time);
+      const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
+      const left = Math.min(x1, x2), right = Math.max(x1, x2);
+      const rangeW = Math.max(right - left, 12);
+      const barMaxW = rangeW * 0.92;
+      const upCol = '#2dd4bf', downCol = '#6366f1', pocCol = '#fbbf24', frameCol = '#94a3b8';
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          {vp ? (() => {
+            const yHi = converter.priceToY(vp.priceHi), yLo = converter.priceToY(vp.priceLo);
+            const boxTop = Math.min(yHi, yLo), boxH = Math.abs(yLo - yHi);
+            const pocY = converter.priceToY(vp.priceLo + (vp.pocIdx + 0.5) * vp.rowH);
+            const pocPrice = vp.priceLo + (vp.pocIdx + 0.5) * vp.rowH;
+            const txt = `POC ${pocPrice.toFixed(pocPrice < 1 ? 6 : 2)}`;
+            const tw = txt.length * 6.2 + 10;
+            return (
+              <>
+                <rect x={left} y={boxTop} width={right - left} height={boxH} fill="none" stroke={frameCol} strokeOpacity={0.4} strokeWidth={1} strokeDasharray="4 3" style={{ pointerEvents: 'all', cursor: 'move' }} />
+                {Array.from({ length: vp.N }).map((_, i) => {
+                  const rowBotY = converter.priceToY(vp.priceLo + i * vp.rowH);
+                  const rowTopY = converter.priceToY(vp.priceLo + (i + 1) * vp.rowH);
+                  const y = Math.min(rowTopY, rowBotY);
+                  const h = Math.max(1, Math.abs(rowBotY - rowTopY) - 1);
+                  const wDown = (vp.down[i] / vp.maxVol) * barMaxW;
+                  const wUp = (vp.up[i] / vp.maxVol) * barMaxW;
+                  const isPoc = i === vp.pocIdx;
+                  const inVA = i >= vp.vaLo && i <= vp.vaHi;
+                  const op = isPoc ? 1 : inVA ? 0.85 : 0.4;
+                  return (
+                    <g key={i} style={{ pointerEvents: 'none' }}>
+                      <rect x={left} y={y} width={wDown} height={h} fill={isPoc ? pocCol : downCol} fillOpacity={op} />
+                      <rect x={left + wDown} y={y} width={wUp} height={h} fill={isPoc ? pocCol : upCol} fillOpacity={op} />
+                    </g>
+                  );
+                })}
+                <line x1={left} y1={pocY} x2={right} y2={pocY} stroke={pocCol} strokeWidth={1.25} strokeOpacity={0.9} strokeDasharray="2 2" style={{ pointerEvents: 'none' }} />
+                <g style={{ pointerEvents: 'none' }}>
+                  <rect x={left + 4} y={boxTop + 4} width={tw} height={15} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={pocCol} strokeOpacity={0.5} strokeWidth={0.75} />
+                  <text x={left + 9} y={boxTop + 15} fill={pocCol} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                </g>
+              </>
+            );
+          })() : (() => {
+            const a = converter.priceToY(p1.price), b = converter.priceToY(p2.price);
+            const top = Math.min(a, b), h = Math.abs(b - a);
+            return (
+              <g style={{ pointerEvents: 'all', cursor: 'move' }}>
+                <rect x={left} y={top} width={right - left} height={h} fill="none" stroke={frameCol} strokeOpacity={0.3} strokeWidth={1} strokeDasharray="4 3" />
+                <text x={(left + right) / 2} y={top + h / 2} textAnchor="middle" fill={frameCol} fontSize={10} style={{ userSelect: 'none', pointerEvents: 'none' }}>No volume in range</text>
+              </g>
+            );
+          })()}
+          {showHandles && isSelected && (
+            <>
+              <circle cx={x1} cy={converter.priceToY(p1.price)} r={4} fill="#2dd4bf" stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              <circle cx={x2} cy={converter.priceToY(p2.price)} r={4} fill="#2dd4bf" stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
     if (drawing.type === 'signpost' && drawing.text) {
       if (pixels.length < 1) return null;
       const p = pixels[0];
@@ -5831,6 +6062,15 @@ const ChartDrawingOverlayComponent = ({
       return (
         <g>
           <rect x={x0} y={y0} width={Math.abs(endPixel.x - startPixel.x)} height={Math.abs(endPixel.y - startPixel.y)} fill="none" stroke={previewColor} strokeWidth="1.25" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'fixedVolumeProfile') {
+      const x0 = Math.min(startPixel.x, endPixel.x), y0 = Math.min(startPixel.y, endPixel.y);
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <rect x={x0} y={y0} width={Math.abs(endPixel.x - startPixel.x)} height={Math.abs(endPixel.y - startPixel.y)} fill="#2dd4bf" fillOpacity={0.05} stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
         </g>
       );
     }
