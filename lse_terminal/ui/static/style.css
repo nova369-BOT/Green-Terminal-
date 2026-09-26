@@ -4157,6 +4157,31 @@ body.ws-fullscreen [data-radix-popper-content-wrapper] { z-index: 95 !important;
 }
 #focus-back.hidden { display: none; }
 #focus-back:hover { background: var(--accent-bar); color: #0a0f0c; }
+/* Pane badges: per-pane pair + focus button floating on each grid pane. */
+#pane-badges { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+#pane-badges.hidden { display: none; }
+body.ws-fullscreen #pane-badges { z-index: 85; }
+.pane-badge {
+  position: fixed; display: inline-flex; align-items: center; gap: 2px;
+  height: 24px; padding: 0 4px 0 9px; border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--edge);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .45);
+  pointer-events: auto; font-size: 11px; white-space: nowrap;
+}
+.pane-badge .pb-label {
+  background: none; border: none; padding: 0 4px 0 0; color: var(--dim);
+  font: inherit; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.pane-badge .pb-label:hover { color: var(--text); }
+.pane-badge.active { border-color: var(--accent-bar); }
+.pane-badge.active .pb-label { color: var(--accent-bar); font-weight: 700; }
+.pane-badge .pb-expand {
+  background: none; border: none; border-radius: 4px; padding: 0 5px;
+  color: var(--dim); cursor: pointer; font-size: 12px; line-height: 1;
+}
+.pane-badge .pb-expand:hover { color: #0a0f0c; background: var(--accent-bar); }
 /* Pro analysis toolbar: the bundle's drawing rail, tailored. Scoped under
    #chart-pro (higher specificity than the bundle's own rules, so no
    source edits to the minified build). */
