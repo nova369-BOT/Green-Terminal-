@@ -137,7 +137,7 @@ export default function TerminalMultiGrid({
   const cfg = LAYOUTS[layout] || LAYOUTS['2x2'];
   // Selection and per-panel symbols live in layoutStore, not local state: the
   // shell reads them to name the window title and to retarget symbol picks.
-  const { activePanel, panelSymbols } = useLayoutState();
+  const { activePanel, panelSymbols, panelIntervals } = useLayoutState();
   const active = Math.min(activePanel, cfg.count - 1);
   const [panelTfs, setPanelTfs] = useState<string[]>([]);
   const [crossT, setCrossT] = useState<number | null>(null);
@@ -171,7 +171,10 @@ export default function TerminalMultiGrid({
         <Panel
           key={i}
           symbol={syncSettings.syncSymbol ? pair : (panelSymbols[i] || pair)}
-          timeframe={syncSettings.syncInterval ? timeframe : (panelTfs[i] || timeframe)}
+          // Per-pane timeframe precedence (matches the shell's timeframe rail
+          // + focusPanePair): interval-sync forces the global tf; otherwise an
+          // explicit store override wins, then the staggered local default.
+          timeframe={syncSettings.syncInterval ? timeframe : (panelIntervals[i] || panelTfs[i] || timeframe)}
           colors={base}
           active={i === active}
           onActivate={() => layoutStore.setActivePanel(i)}

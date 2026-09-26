@@ -23,6 +23,11 @@ export type LayoutState = {
   layout: LayoutType;
   sync: SyncSettings;
   panelSymbols: string[];
+  // Per-panel timeframe override, keyed by panel index. Empty/undefined for a
+  // panel means "use the staggered default" (see TerminalMultiGrid). Set from
+  // the shell's timeframe rail (retargets the selected pane when interval-sync
+  // is off) and persisted so a chosen grid of timeframes survives a reload.
+  panelIntervals: string[];
   // Which grid panel is selected (border highlight + title-bar name + where
   // a sidebar/search symbol pick lands). Session-only, not persisted.
   activePanel: number;
@@ -35,6 +40,7 @@ const _state: LayoutState = (() => {
       sync: JSON.parse(localStorage.getItem('lset-layout-sync') || 'null') ||
         { syncSymbol: false, syncInterval: false, syncCrosshair: false, syncTime: false },
       panelSymbols: JSON.parse(localStorage.getItem('lset-layout-symbols') || '[]') || [],
+      panelIntervals: JSON.parse(localStorage.getItem('lset-layout-intervals') || '[]') || [],
       activePanel: 0,
     };
   } catch {
@@ -44,6 +50,7 @@ const _state: LayoutState = (() => {
       layout: '1x1' as LayoutType,
       sync: { syncSymbol: false, syncInterval: false, syncCrosshair: false, syncTime: false },
       panelSymbols: [],
+      panelIntervals: [],
       activePanel: 0,
     };
   }
@@ -71,6 +78,12 @@ export const layoutStore = {
     _state.panelSymbols = [..._state.panelSymbols];
     _state.panelSymbols[i] = sym;
     persist('lset-layout-symbols', JSON.stringify(_state.panelSymbols));
+    notify();
+  },
+  setPanelInterval(i: number, tf: string) {
+    _state.panelIntervals = [..._state.panelIntervals];
+    _state.panelIntervals[i] = tf;
+    persist('lset-layout-intervals', JSON.stringify(_state.panelIntervals));
     notify();
   },
   setActivePanel(i: number) {
