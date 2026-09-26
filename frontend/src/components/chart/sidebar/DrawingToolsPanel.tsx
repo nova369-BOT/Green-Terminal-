@@ -184,7 +184,7 @@ export default function DrawingToolsPanel({
               <Button
                 variant="ghost"
                 size="icon"
-                className={`relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all ${
+                className={`relative h-10 w-10 rounded-none transition-all ${
                   toolOptions.includes(activeTool as string)
                     ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r'
                     : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
@@ -219,39 +219,39 @@ export default function DrawingToolsPanel({
 
   // Icon lookup for trend tools
   const trendIcons: Record<string, React.ReactNode> = {
-    trend: <svg className="h-5 w-5 lg:h-[38px] lg:w-[38px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="4" /><circle cx="4" cy="20" r="1.5" fill="currentColor" /><circle cx="20" cy="4" r="1.5" fill="currentColor" /></svg>,
-    trendRay: <svg className="h-5 w-5 lg:h-[38px] lg:w-[38px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="4" /></svg>,
-    parallelChannel: <svg className="h-5 w-5 lg:h-[38px] lg:w-[38px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="18" x2="22" y2="10" /><line x1="2" y1="10" x2="22" y2="2" /></svg>,
-    straightArrow: <ArrowRight className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
+    trend: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="4" /><circle cx="4" cy="20" r="1.5" fill="currentColor" /><circle cx="20" cy="4" r="1.5" fill="currentColor" /></svg>,
+    trendRay: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="4" /></svg>,
+    parallelChannel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="18" x2="22" y2="10" /><line x1="2" y1="10" x2="22" y2="2" /></svg>,
+    straightArrow: <ArrowRight className="h-[18px] w-[18px]" />,
   };
   const lineIcons: Record<string, React.ReactNode> = {
-    horizontal: <Minus className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    horizontalRay: <svg className="h-5 w-5 lg:h-[38px] lg:w-[38px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="12" /><polyline points="17,9 20,12 17,15" /></svg>,
-    vertical: <MoveVertical className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    line: <svg className="h-5 w-5 lg:h-[38px] lg:w-[38px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="4" /></svg>,
+    horizontal: <Minus className="h-[18px] w-[18px]" />,
+    horizontalRay: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="12" /><polyline points="17,9 20,12 17,15" /></svg>,
+    vertical: <MoveVertical className="h-[18px] w-[18px]" />,
+    line: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="4" /></svg>,
   };
   const shapeIcons: Record<string, React.ReactNode> = {
-    rectangle: <RectangleHorizontal className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    square: <Square className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    circle: <Circle className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    oval: <Circle className="h-5 w-5 lg:h-[38px] lg:w-[38px]" style={{ transform: 'scaleX(1.3)' }} />,
-    triangle: <Triangle className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    freeTriangle: <Triangle className="h-5 w-5 lg:h-[38px] lg:w-[38px]" style={{ opacity: 0.7 }} />,
-    parallelogram: <svg className="h-5 w-5 lg:h-[38px] lg:w-[38px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6,4 22,4 18,20 2,20" /></svg>,
-    octagon: <Octagon className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    diamond: <Diamond className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    pentagon: <Pentagon className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    hexagon: <Hexagon className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    star: <Star className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    cross: <Plus className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    arrowBlock: <ArrowBigRight className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    wedge: <Triangle className="h-5 w-5 lg:h-[38px] lg:w-[38px]" style={{ transform: 'rotate(-90deg)' }} />,
-    heart: <Heart className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
+    rectangle: <RectangleHorizontal className="h-[18px] w-[18px]" />,
+    square: <Square className="h-[18px] w-[18px]" />,
+    circle: <Circle className="h-[18px] w-[18px]" />,
+    oval: <Circle className="h-[18px] w-[18px]" style={{ transform: 'scaleX(1.3)' }} />,
+    triangle: <Triangle className="h-[18px] w-[18px]" />,
+    freeTriangle: <Triangle className="h-[18px] w-[18px]" style={{ opacity: 0.7 }} />,
+    parallelogram: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6,4 22,4 18,20 2,20" /></svg>,
+    octagon: <Octagon className="h-[18px] w-[18px]" />,
+    diamond: <Diamond className="h-[18px] w-[18px]" />,
+    pentagon: <Pentagon className="h-[18px] w-[18px]" />,
+    hexagon: <Hexagon className="h-[18px] w-[18px]" />,
+    star: <Star className="h-[18px] w-[18px]" />,
+    cross: <Plus className="h-[18px] w-[18px]" />,
+    arrowBlock: <ArrowBigRight className="h-[18px] w-[18px]" />,
+    wedge: <Triangle className="h-[18px] w-[18px]" style={{ transform: 'rotate(-90deg)' }} />,
+    heart: <Heart className="h-[18px] w-[18px]" />,
   };
   const brushIcons: Record<string, React.ReactNode> = {
-    brush: <Paintbrush className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    highlighter: <Highlighter className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
-    arrow: <MousePointer2 className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />,
+    brush: <Paintbrush className="h-[18px] w-[18px]" />,
+    highlighter: <Highlighter className="h-[18px] w-[18px]" />,
+    arrow: <MousePointer2 className="h-[18px] w-[18px]" />,
   };
 
   // Helper to create a tool menu item and update selected tool
@@ -263,7 +263,20 @@ export default function DrawingToolsPanel({
 
   return (
     <>
-      <div className="flex flex-col gap-0">
+      <div className="flex flex-col gap-0 items-center py-1">
+        {/* Cursor / select: the default state. Deselects any active drawing
+            tool so clicks select and edit existing drawings. */}
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${!activeTool ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(null)}>
+                <MousePointer2 className="h-[18px] w-[18px]" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs lg:text-sm">Cursor</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <div className="w-6 h-px bg-border mx-auto my-1" />
         {/* Trend Lines Group */}
         {renderToolGroup(
           trendToolMenuOpen, setTrendToolMenuOpen, selectedTrendTool,
@@ -302,7 +315,7 @@ export default function DrawingToolsPanel({
         {renderToolGroup(
           fibToolMenuOpen, setFibToolMenuOpen, selectedFibTool,
           ['fibonacci', 'fibExtension'],
-          <svg className="h-5 w-5 lg:h-[38px] lg:w-[38px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="4" x2="21" y2="4" /><line x1="3" y1="9" x2="17" y2="9" opacity="0.7" /><line x1="3" y1="14" x2="13" y2="14" opacity="0.5" /><line x1="3" y1="19" x2="21" y2="19" /><line x1="18" y1="4" x2="6" y2="19" strokeWidth="1.5" strokeDasharray="3 2" /></svg>,
+          <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="4" x2="21" y2="4" /><line x1="3" y1="9" x2="17" y2="9" opacity="0.7" /><line x1="3" y1="14" x2="13" y2="14" opacity="0.5" /><line x1="3" y1="19" x2="21" y2="19" /><line x1="18" y1="4" x2="6" y2="19" strokeWidth="1.5" strokeDasharray="3 2" /></svg>,
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Fibonacci</div>
             {[
@@ -350,8 +363,8 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all ${activeTool === 'text' ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'text' ? null : 'text')}>
-                <Type className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />
+              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'text' ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'text' ? null : 'text')}>
+                <Type className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs lg:text-sm">Text</TooltipContent>
@@ -361,8 +374,8 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all ${activeTool === 'long' ? 'text-neon-green before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-neon-green before:rounded-r' : 'text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-neon-green'}`} onClick={() => onToolSelect(activeTool === 'long' ? null : 'long')}>
-                <LongPositionIcon className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />
+              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'long' ? 'text-neon-green before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-neon-green before:rounded-r' : 'text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-neon-green'}`} onClick={() => onToolSelect(activeTool === 'long' ? null : 'long')}>
+                <LongPositionIcon className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs lg:text-sm">Long Position</TooltipContent>
@@ -372,20 +385,22 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all ${activeTool === 'short' ? 'text-neon-pink before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-neon-pink before:rounded-r' : 'text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-neon-pink'}`} onClick={() => onToolSelect(activeTool === 'short' ? null : 'short')}>
-                <ShortPositionIcon className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />
+              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'short' ? 'text-neon-pink before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-neon-pink before:rounded-r' : 'text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-neon-pink'}`} onClick={() => onToolSelect(activeTool === 'short' ? null : 'short')}>
+                <ShortPositionIcon className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs lg:text-sm">Short Position</TooltipContent>
           </Tooltip>
         </TooltipProvider>
+        {/* Divider: creation tools above, edit/utility actions below */}
+        <div className="w-6 h-px bg-border mx-auto my-1" />
         {/* Lock drawings */}
         {onToggleLock && (
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className={`relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all ${drawingsLocked ? 'text-yellow-400 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-yellow-400 before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={onToggleLock}>
-                  {drawingsLocked ? <Lock className="h-5 w-5 lg:h-[38px] lg:w-[38px]" /> : <Unlock className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />}
+                <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${drawingsLocked ? 'text-yellow-400 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-yellow-400 before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={onToggleLock}>
+                  {drawingsLocked ? <Lock className="h-[18px] w-[18px]" /> : <Unlock className="h-[18px] w-[18px]" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs lg:text-sm">{drawingsLocked ? 'Unlock Drawings' : 'Lock Drawings'}</TooltipContent>
@@ -397,8 +412,8 @@ export default function DrawingToolsPanel({
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className={`relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all ${drawingsHidden ? 'text-muted-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-muted-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={onToggleHide}>
-                  {drawingsHidden ? <EyeOff className="h-5 w-5 lg:h-[38px] lg:w-[38px]" /> : <Eye className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />}
+                <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${drawingsHidden ? 'text-muted-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-muted-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={onToggleHide}>
+                  {drawingsHidden ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs lg:text-sm">{drawingsHidden ? 'Show Drawings' : 'Hide Drawings'}</TooltipContent>
@@ -409,8 +424,8 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all ${activeTool === 'measure' ? 'text-electric-blue before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-electric-blue before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'measure' ? null : 'measure')}>
-                <Ruler className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />
+              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'measure' ? 'text-electric-blue before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-electric-blue before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'measure' ? null : 'measure')}>
+                <Ruler className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs lg:text-sm">Measure Tool</TooltipContent>
@@ -425,8 +440,8 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.screenshot?.()}>
-                <Camera className="h-5 w-5 lg:h-6 lg:w-6" />
+              <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.screenshot?.()}>
+                <Camera className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs lg:text-sm">Screenshot chart</TooltipContent>
@@ -435,8 +450,8 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.lasso?.()}>
-                <Lasso className="h-5 w-5 lg:h-6 lg:w-6" />
+              <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.lasso?.()}>
+                <Lasso className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs lg:text-sm">Lasso a zone for AI analysis</TooltipContent>
@@ -525,8 +540,8 @@ export default function DrawingToolsPanel({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={onOpenShortcutsDialog}>
-                    <Keyboard className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />
+                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={onOpenShortcutsDialog}>
+                    <Keyboard className="h-[18px] w-[18px]" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="text-xs lg:text-sm">Drawing Shortcuts</TooltipContent>
@@ -541,10 +556,10 @@ export default function DrawingToolsPanel({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon"
-                    className={`h-10 w-10 lg:h-12 lg:w-12 rounded-none transition-all text-muted-foreground hover:bg-destructive/10 hover:text-destructive ${selectedDrawingId ? 'text-destructive/70' : ''}`}
+                    className={`h-10 w-10 rounded-none transition-all text-muted-foreground hover:bg-destructive/10 hover:text-destructive ${selectedDrawingId ? 'text-destructive/70' : ''}`}
                     onClick={() => { if (selectedDrawingId && onDeleteSelectedDrawing) { onDeleteSelectedDrawing(selectedDrawingId); } }}
                   >
-                    <Trash2 className="h-5 w-5 lg:h-[38px] lg:w-[38px]" />
+                    <Trash2 className="h-[18px] w-[18px]" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="text-xs lg:text-sm">{selectedDrawingId ? 'Delete Selected Drawing' : 'Delete (select a drawing first)'}</TooltipContent>
