@@ -491,8 +491,16 @@ def my_ind(df, length=20):
       <span class="of-k">SOURCE</span><span id="of-source" class="of-v">GT DATA ENGINE</span>
       <span class="of-k">GATEWAY</span><span id="of-gw" class="of-v off">OFFLINE</span>
       <span class="of-k">RUNTIME</span><span id="of-art" class="of-v off">—</span>
-      <span class="of-k">SYMBOL</span><span id="of-sym" class="of-v">—</span>
+      <span class="of-k">SYMBOL</span>
+      <input id="of-symbol" class="of-sym-input" list="of-symbol-options"
+             value="BTC" placeholder="BTC" autocomplete="off" spellcheck="false"
+             aria-label="Order-flow symbol"
+             title="Type or pick a Hyperliquid perp (e.g. BTC, ETH, SOL) and press Enter">
+      <datalist id="of-symbol-options"></datalist>
+      <button type="button" class="of-link" id="of-symgo" title="Load this symbol">Load</button>
+      <span id="of-sym" class="of-v hidden">—</span>
       <span class="of-flex"></span>
+      <button type="button" class="of-link" id="of-usechart" title="Load the symbol from your main chart into G-Flow">Use chart symbol</button>
       <button type="button" class="of-link" id="of-fullscreen" title="Expand G-Flow">Expand</button>
     </div>
     <div id="of-banner" class="hidden" role="status">

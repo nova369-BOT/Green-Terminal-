@@ -4359,6 +4359,22 @@ body { padding-bottom: 22px; padding-left: 62px; }
   background: #2c3b32;
 }
 #of-bar .of-flex { flex: 1; }
+#of-bar .of-sym-input {
+  width: 78px;
+  height: 20px;
+  padding: 0 7px;
+  background: #05080a;
+  color: #f4f1e8;
+  border: 1px solid #2c3b32;
+  border-radius: 2px;
+  font: 700 11px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  outline: none;
+}
+#of-bar .of-sym-input:focus { border-color: #b08d57; }
+#of-bar .of-sym-input::placeholder { color: #5a6b60; }
+#of-bar .of-v.hidden { display: none; }
 #of-bar .of-link {
   color: #9aa79d;
   background: transparent;

@@ -11011,7 +11011,70 @@ function showOptionsPage() {
    edgedepth-terminal). DOM / heatmap / tape / footprint all run inside
    that engine. This shell only provides GREEN TERMINAL navigation, status
    (gateway reachability + artifact readiness), and layout. */
-const ofState = { poll: 0, ready: false };
+const ofState = { poll: 0, ready: false, symbol: "BTC", bound: false };
+
+// Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
+// The gateway is HL-only for now; these are the deepest, most-traded coins.
+// The input is a free-text datalist, so anything HL lists can still be typed.
+const OF_HL_PRESETS = [
+  "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "AVAX",
+  "LINK", "SUI", "LTC", "ARB", "OP", "APT", "TON", "PEPE",
+  "WIF", "INJ", "TIA", "SEI", "ADA", "NEAR",
+];
+
+// Turn whatever the main chart shows (e.g. "BTCUSD", "eth-usdt", "SOLUSD")
+// into the bare uppercase coin the Hyperliquid gateway expects ("BTC").
+function ofNormalizeSymbol(raw) {
+  let s = String(raw || "").trim().toUpperCase();
+  if (!s) return "";
+  s = s.replace(/[\/:\-_.\s]/g, "");            // strip separators
+  s = s.replace(/(USDT|USDC|PERP|USD|USDTM)$/,""); // strip quote/suffix
+  return s || String(raw || "").trim().toUpperCase();
+}
+
+// Point the warm G-Flow iframe at a new Hyperliquid symbol. Reloading the
+// engine's URL is the supported switch path: the WASM client reads
+// ?exchange= and ?symbol= on boot and resubscribes through the gateway.
+function loadOrderFlowSymbol(sym) {
+  const coin = ofNormalizeSymbol(sym) || "BTC";
+  ofState.symbol = coin;
+  const inp = $("of-symbol");
+  if (inp && inp.value.toUpperCase() !== coin) inp.value = coin;
+  const label = $("of-sym");
+  if (label) label.textContent = coin;
+  const fr = $("of-frame");
+  // Only (re)load when the runtime is ready; refreshOrderFlowStatus boots
+  // the first frame once artifacts are present.
+  if (fr && ofState.ready) {
+    fr.src = "/edgedepth/index.html?exchange=hl&symbol=" + encodeURIComponent(coin);
+  }
+}
+
+// Wire the switcher controls once (idempotent — the page can re-enter).
+function bindOrderFlowControls() {
+  if (ofState.bound) return;
+  const inp = $("of-symbol");
+  const go = $("of-symgo");
+  const useChart = $("of-usechart");
+  const list = $("of-symbol-options");
+  if (list && !list.children.length) {
+    list.innerHTML = OF_HL_PRESETS.map(s => '<option value="' + s + '">').join("");
+  }
+  const submit = () => { if (inp) loadOrderFlowSymbol(inp.value); };
+  if (inp) {
+    inp.addEventListener("change", submit);
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submit(); inp.blur(); }
+    });
+  }
+  if (go) go.addEventListener("click", submit);
+  if (useChart) {
+    useChart.addEventListener("click", () => {
+      if (state.symbol) loadOrderFlowSymbol(state.symbol);
+    });
+  }
+  ofState.bound = true;
+}
 
 function stopOrderFlowHost() {
   // Only the status poll stops. The iframe STAYS mounted (hidden with its
@@ -11037,7 +11100,7 @@ async function refreshOrderFlowStatus() {
   set("of-gw", gwOn ? "LIVE" : ((gw && gw.state) || "OFFLINE"), gwOn ? "on" : "off");
   set("of-art", ready ? "RUNTIME READY" : "RUNTIME ARTIFACTS MISSING",
       ready ? "on" : "off");
-  set("of-sym", state.symbol || "—");
+  set("of-sym", ofState.symbol || "—");
   const missing = art && art.present
     ? Object.entries(art.present).filter(([, ok]) => !ok).map(([k]) => k)
     : ["index.js", "index.wasm", "index.data"];
@@ -11058,12 +11121,12 @@ async function refreshOrderFlowStatus() {
   const fr = $("of-frame");
   if (fr && ready && !fr.getAttribute("src")) {
     // Real EdgeDepth client inside Green Terminal (same origin /edgedepth).
-    // Boots Hyperliquid BTC (HL-only gateway for now; Binance is
-    // unregistered server-side until it is reachable again).
-    fr.src = "/edgedepth/index.html?exchange=hl&symbol=BTC";
+    // Boots the selected Hyperliquid perp (HL-only gateway for now; Binance
+    // is unregistered server-side until it is reachable again).
     ofState.ready = true;
+    loadOrderFlowSymbol(ofState.symbol);
   }
-  if (fr && !ready) fr.removeAttribute("src");
+  if (fr && !ready) { fr.removeAttribute("src"); ofState.ready = false; }
   // One-product chrome: Expand toggles fullscreen on the stage (no second tab).
   const fsBtn = $("of-fullscreen");
   if (fsBtn && !fsBtn.dataset.bound) {
@@ -11092,6 +11155,7 @@ function showOrderFlowPage() {
   $("lse-connect").classList.add("hidden");
   stopOrderFlowHost();
   $("orderflow").classList.remove("hidden");
+  bindOrderFlowControls();
   refreshOrderFlowStatus();
   if (!ofState.poll) ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
   // Reuse instrument header for L1 context above the EdgeDepth surface.
