@@ -26,7 +26,7 @@ import { DEFAULT_INDICATOR_CONFIG } from '@/components/chart/IndicatorSettings';
 import { getDefaultColors, type Candle, type ChartType } from '@/components/chart/core/types';
 import { type LayoutType, type SyncSettings } from '@/components/chart/MultiTimeframeLayoutSelector';
 import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
-import PanelSymbolPicker from '@/components/chart/PanelSymbolPicker';
+import PaneSymbolBrowser from '@/components/chart/PaneSymbolBrowser';
 import { type BarSelection } from '@/engine/barTypes';
 import { transformSeries } from '@/engine/transforms';
 import { fetchLocalCandles } from '@/lib/localEngine';
@@ -52,7 +52,7 @@ const STAGGER = ['1h', '4h', '1d', '15m', '5m', '1w', '30m', '1m'];
 
 function Panel({
   symbol, timeframe, chartType, colors, active, onActivate,
-  onSymbolChange, onBarChange, suggestions,
+  onSymbolChange, onBarChange,
   syncedCrosshairTime, onCrosshairMove, syncedViewportTime, onViewportTimeChange,
   quote,
 }: {
@@ -60,7 +60,6 @@ function Panel({
   onActivate: () => void;
   onSymbolChange: (sym: string) => void;
   onBarChange: (sel: BarSelection) => void;
-  suggestions: string[];
   syncedCrosshairTime: number | null;
   onCrosshairMove: (t: number | null) => void;
   syncedViewportTime: number | null;
@@ -128,7 +127,7 @@ function Panel({
           borderBottom: '1px solid var(--edge, #2a2e39)',
         }}
       >
-        <PanelSymbolPicker value={symbol} onChange={onSymbolChange} suggestions={suggestions} compact />
+        <PaneSymbolBrowser value={symbol} onChange={onSymbolChange} compact />
         <TimeframeMegaSelector value={{ timeframe, chartType }} onChange={onBarChange} compact />
       </div>
 
@@ -195,15 +194,6 @@ export default function TerminalMultiGrid({
     if (syncSettings.syncTime) setViewT(t);
   }, [syncSettings.syncTime]);
 
-  // Instruments offered in every pane's symbol picker: the shell's charted pair
-  // plus whatever the other panes are already showing (deduped, uppercased).
-  const suggestions = useMemo(() => {
-    const seen = new Set<string>();
-    return [pair, ...panelSymbols]
-      .map((s) => (s || '').toUpperCase().trim())
-      .filter((s) => s && !seen.has(s) && (seen.add(s), true));
-  }, [pair, panelSymbols]);
-
   return (
     <div style={{
       display: 'grid', width: '100%', height: '100%', gap: 2,
@@ -225,7 +215,6 @@ export default function TerminalMultiGrid({
             chartType={ct}
             colors={base}
             active={i === active}
-            suggestions={suggestions}
             onActivate={() => layoutStore.setActivePanel(i)}
             onSymbolChange={(next) => {
               layoutStore.setActivePanel(i);

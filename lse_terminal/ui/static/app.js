@@ -3407,6 +3407,19 @@ function setupLayouts() {
       pushToChart();
       return true;
     },
+    // Phase 1b: the chart bundle's per-pane symbol browser (Watchlists tab)
+    // reads the ACTIVE provider's saved lists through here. Shape matches the
+    // shell store: [{ id, name, symbols[] }]. Returns [] before wlEnsure has a
+    // provider, so the bundle simply shows its empty state.
+    getWatchlists: () => {
+      try {
+        return wlLists().map((l) => ({
+          id: l.id,
+          name: l.name,
+          symbols: Array.isArray(l.symbols) ? l.symbols.slice() : [],
+        }));
+      } catch (_) { return []; }
+    },
     layouts: () => layoutsZone.rows.map((r) => ({ id: r.id, name: r.name })),
     applyLayout: (id) => {
       const row = layoutsZone.rows.find((r) => r.id === id);
