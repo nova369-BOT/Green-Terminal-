@@ -464,6 +464,78 @@ aside#side.collapsed #wl-search { opacity: 0; pointer-events: none; }
 #watchlist .wba-sep { opacity: .5; }
 #watchlist .wbid { color: var(--down); }
 #watchlist .wask { color: var(--up); }
+
+/* ── Multiple named watchlists, tiles, detail card, drag targets ── */
+.wgroup-list { display: flex; align-items: center; gap: 4px; }
+.wgroup-list .wcaret { cursor: pointer; flex: none; }
+.wgroup-list .wl-name {
+  flex: 0 1 auto; cursor: pointer; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wgroup-list.active .wl-name { color: var(--accent-bar); }
+.wgroup-list .wcount { margin-left: 4px; margin-right: auto; }
+.wl-add, .wl-menu {
+  flex: none; background: none; border: 0; color: var(--dim);
+  cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; visibility: hidden;
+}
+.wgroup-list:hover .wl-add, .wgroup-list:hover .wl-menu,
+.wgroup-list.active .wl-add { visibility: visible; }
+.wl-add:hover, .wl-menu:hover { color: var(--text); }
+.wl-empty { padding: 5px 12px 7px 26px; color: var(--dim); font-size: 11px; font-style: italic; }
+/* header / list drop target */
+.wl-drop-into { background: rgba(176, 141, 87, .16); outline: 1px dashed var(--accent-bar); outline-offset: -1px; }
+/* row reorder insertion indicators */
+.wrow.wl-drop-before { box-shadow: inset 0 2px 0 0 var(--accent-bar); }
+.wrow.wl-drop-after  { box-shadow: inset 0 -2px 0 0 var(--accent-bar); }
+/* per-row expander */
+.wl-exp {
+  flex: none; background: none; border: 0; color: var(--dim); cursor: pointer;
+  font-size: 8px; width: 12px; padding: 0; margin-right: 1px; line-height: 1;
+}
+.wl-exp:hover { color: var(--text); }
+/* expanded detail card */
+.wl-detail {
+  margin: 0 10px 5px 26px; padding: 6px 9px; background: var(--bg2);
+  border: 1px solid var(--edge); border-radius: 4px;
+}
+.wld-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; padding: 1px 0; }
+.wld-k { color: var(--dim); }
+.wld-v { font: 11px/1.3 var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.wld-v .wbid { color: var(--down); }
+.wld-v .wask { color: var(--up); }
+.wld-actions { margin-top: 6px; }
+.wld-chart {
+  width: 100%; background: var(--raise); border: 1px solid var(--edge); color: var(--text);
+  border-radius: 4px; padding: 4px 0; font-size: 11px; cursor: pointer;
+}
+.wld-chart:hover { background: var(--raise-h); }
+/* popup menu (list options / settings) */
+.wl-menu-pop {
+  position: fixed; z-index: 10000; min-width: 168px; background: var(--panel);
+  border: 1px solid var(--edge); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+  padding: 4px; display: flex; flex-direction: column;
+}
+.wl-menu-pop button {
+  display: flex; justify-content: space-between; gap: 12px; background: none; border: 0;
+  color: var(--text); text-align: left; padding: 7px 10px; font-size: 12.5px;
+  cursor: pointer; border-radius: 4px;
+}
+.wl-menu-pop button:hover { background: var(--edge); }
+/* header controls in the filter row */
+#wl-newlist, #wl-settings {
+  flex: none; background: var(--item); border: 1px solid var(--edge); color: var(--dim);
+  border-radius: 5px; cursor: pointer; font-size: 13px; line-height: 1; padding: 4px 7px;
+}
+#wl-newlist:hover, #wl-settings:hover { color: var(--text); }
+/* tile view */
+#watchlist.tiles .wrow {
+  position: relative; flex-direction: column; align-items: flex-start; gap: 2px;
+  border: 1px solid var(--edge); border-radius: 6px; margin: 3px 8px; padding: 6px 8px;
+}
+#watchlist.tiles .wpricecol { align-items: flex-start; }
+#watchlist.tiles .wstar { position: absolute; right: 10px; top: 6px; }
+/* daily change hidden */
+#watchlist.nochg .wchg { display: none; }
 /* price + live spread stack on the right of each row */
 .wpricecol { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
 /* nowrap + right text-align: a squeezed sidebar used to WRAP the spread text,

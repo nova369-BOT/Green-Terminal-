@@ -25,6 +25,7 @@ const state = {
   groupShown: {},                  // rows revealed so far per opened folder
   hosted: false,                   // hosted web terminal: no local subprocesses
   symbol: null, timeframe: "1h", chartType: "candles", wlFilter: "",
+  wlSets: {}, wlView: "list", wlShowChange: true, wlExpanded: {},
   activeIndicators: [],            // [{name}] params use registry defaults
   favoriteIndicators: [],          // registry names starred in the picker; float to the top
   instruments: [], ws: null, lastBar: null, prices: {}, quotes: {}, candleData: [],
@@ -668,6 +669,7 @@ function saveShellState() {
         favoriteIndicators: state.favoriteIndicators,
         chartType: state.chartType,
         watchlists: state.watchlists,
+        wlSets: state.wlSets,
         // Rail widget stack. Rides the shell section
         // rather than a section of its own: SECTIONS is frozen into the
         // desktop engine, so a new name would 404 on every frozen build.
@@ -1186,15 +1188,217 @@ function setupIndicatorPanel() {
 /* Starred instruments of the ACTIVE source (state.watchlists, keyed by
    provider name: "lse", "broker:<id>", ...). Order = order starred. */
 const WL_FAV_GROUP = "\u2605watchlist"; // groupsOpen key; cannot collide with a category name
-function wlFavs() { return state.watchlists[state.provider] || []; }
+/* ── Multiple named watchlists ─────────────────────────────────────────────
+   A provider's lists live in state.wlSets[provider] = { active, lists:[{id,
+   name, symbols[]}] }. wlEnsure() migrates the legacy flat array
+   (state.watchlists[provider]) into one list the first time, so no saved
+   favourite is ever lost. wlPersist() mirrors the ACTIVE list back into the
+   legacy field and saves, keeping older readers working. */
+function wlGenId() { return "wl" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function wlEnsure() {
+  const prov = state.provider;
+  if (!prov) return null;
+  state.wlSets = state.wlSets || {};
+  let set = state.wlSets[prov];
+  const ok = set && Array.isArray(set.lists) && set.lists.length;
+  if (!ok) {
+    const legacy = Array.isArray(state.watchlists[prov])
+      ? state.watchlists[prov].filter((x) => typeof x === "string") : [];
+    const id = wlGenId();
+    set = { active: id, lists: [{ id, name: "Watchlist", symbols: legacy }] };
+    state.wlSets[prov] = set;
+  }
+  if (!set.lists.some((l) => l.id === set.active)) set.active = set.lists[0].id;
+  return set;
+}
+function wlLists() { const s = wlEnsure(); return s ? s.lists : []; }
+function wlActive() { const s = wlEnsure(); return s ? (s.lists.find((l) => l.id === s.active) || s.lists[0]) : null; }
+function wlFindList(id) { return wlLists().find((l) => l.id === id) || null; }
+function wlPersist() {
+  const s = state.wlSets[state.provider];
+  if (s) {
+    const a = s.lists.find((l) => l.id === s.active);
+    state.watchlists[state.provider] = a ? a.symbols.slice() : [];
+  }
+  saveShellState();
+}
+function wlSetActive(id) { const s = wlEnsure(); if (s && s.lists.some((l) => l.id === id)) { s.active = id; wlPersist(); renderWatchlist(); } }
+function wlCreate(name) {
+  const s = wlEnsure(); if (!s) return;
+  const id = wlGenId();
+  s.lists.push({ id, name: (name || "New list").slice(0, 40), symbols: [] });
+  s.active = id; state.groupsOpen[id] = true; wlPersist(); renderWatchlist();
+}
+function wlRename(id, name) { const l = wlFindList(id); if (l && name) { l.name = name.slice(0, 40); wlPersist(); renderWatchlist(); } }
+function wlDuplicate(id) {
+  const l = wlFindList(id), s = wlEnsure(); if (!l || !s) return;
+  const nid = wlGenId();
+  s.lists.push({ id: nid, name: (l.name + " copy").slice(0, 40), symbols: l.symbols.slice() });
+  s.active = nid; state.groupsOpen[nid] = true; wlPersist(); renderWatchlist();
+}
+function wlDelete(id) {
+  const s = wlEnsure(); if (!s) return;
+  s.lists = s.lists.filter((l) => l.id !== id);
+  if (!s.lists.length) { const nid = wlGenId(); s.lists.push({ id: nid, name: "Watchlist", symbols: [] }); s.active = nid; }
+  if (!s.lists.some((l) => l.id === s.active)) s.active = s.lists[0].id;
+  wlPersist(); renderWatchlist();
+}
+function wlMoveSym(sym, fromId, toId, index) {
+  const to = wlFindList(toId); if (!to || !sym) return;
+  const from = fromId ? wlFindList(fromId) : null;
+  if (from && from !== to) { const i = from.symbols.indexOf(sym); if (i >= 0) from.symbols.splice(i, 1); }
+  const j = to.symbols.indexOf(sym); if (j >= 0) to.symbols.splice(j, 1);
+  let idx = index;
+  if (idx == null || idx < 0 || idx > to.symbols.length) idx = to.symbols.length;
+  to.symbols.splice(idx, 0, sym);
+  wlPersist(); renderWatchlist();
+}
+function wlRemoveSym(sym, listId) {
+  const l = wlFindList(listId); if (!l) return;
+  const i = l.symbols.indexOf(sym);
+  if (i >= 0) { l.symbols.splice(i, 1); wlPersist(); renderWatchlist(); }
+}
+/* The star adds/removes for the ACTIVE list; wlFavs/wlIsFav read it. */
+function wlFavs() { const a = wlActive(); return a ? a.symbols : []; }
 function wlIsFav(sym) { return wlFavs().includes(sym); }
 function wlToggleFav(sym) {
-  const list = wlFavs().slice();
-  const i = list.indexOf(sym);
-  if (i >= 0) list.splice(i, 1); else list.push(sym);
-  state.watchlists[state.provider] = list;
-  saveShellState();
-  renderWatchlist();
+  const a = wlActive(); if (!a) return;
+  const i = a.symbols.indexOf(sym);
+  if (i >= 0) a.symbols.splice(i, 1); else a.symbols.push(sym);
+  wlPersist(); renderWatchlist();
+}
+/* View / display prefs live in localStorage (device-local, not the session). */
+function wlPersistPrefs() { try { localStorage.setItem("gt-wl-prefs", JSON.stringify({ view: state.wlView, showChange: state.wlShowChange })); } catch (_) {} }
+function wlLoadPrefs() { try { const p = JSON.parse(localStorage.getItem("gt-wl-prefs") || "{}"); if (p.view) state.wlView = p.view; if (typeof p.showChange === "boolean") state.wlShowChange = p.showChange; } catch (_) {} }
+
+/* ── Drag helpers shared by the list drop targets ── */
+function wlHasSym(e) { try { return Array.from(e.dataTransfer.types || []).indexOf("text/gt-symbol") !== -1; } catch (_) { return false; } }
+function wlGetSym(e) { try { return e.dataTransfer.getData("text/gt-symbol") || e.dataTransfer.getData("text/plain") || ""; } catch (_) { return ""; } }
+function wlGetFrom(e) { try { return e.dataTransfer.getData("text/gt-fromlist") || null; } catch (_) { return null; } }
+function wlWireListDrop(elm, listId) {
+  elm.addEventListener("dragover", (e) => { if (!wlHasSym(e)) return; e.preventDefault(); try { e.dataTransfer.dropEffect = "copy"; } catch (_) {} elm.classList.add("wl-drop-into"); });
+  elm.addEventListener("dragleave", () => elm.classList.remove("wl-drop-into"));
+  elm.addEventListener("drop", (e) => { if (!wlHasSym(e)) return; e.preventDefault(); e.stopPropagation(); elm.classList.remove("wl-drop-into"); const sym = wlGetSym(e); if (sym) wlMoveSym(sym, wlGetFrom(e), listId, null); });
+}
+function wlWireRowDrop(row, listId, index) {
+  row.addEventListener("dragover", (e) => {
+    if (!wlHasSym(e)) return; e.preventDefault(); try { e.dataTransfer.dropEffect = "move"; } catch (_) {}
+    const r = row.getBoundingClientRect(); const after = (e.clientY - r.top) > r.height / 2;
+    row.classList.toggle("wl-drop-before", !after); row.classList.toggle("wl-drop-after", after);
+  });
+  row.addEventListener("dragleave", () => row.classList.remove("wl-drop-before", "wl-drop-after"));
+  row.addEventListener("drop", (e) => {
+    if (!wlHasSym(e)) return; e.preventDefault(); e.stopPropagation();
+    const r = row.getBoundingClientRect(); const after = (e.clientY - r.top) > r.height / 2;
+    row.classList.remove("wl-drop-before", "wl-drop-after");
+    const sym = wlGetSym(e); if (!sym) return;
+    wlMoveSym(sym, wlGetFrom(e), listId, index + (after ? 1 : 0));
+  });
+}
+
+/* ── Popup menus (list options / settings). prompt/confirm keep create,
+   rename and delete robust without a custom modal. ── */
+function wlMenuOutside(e) { if (!e.target.closest(".wl-menu-pop")) wlCloseMenus(); }
+function wlCloseMenus() { document.removeEventListener("mousedown", wlMenuOutside); document.querySelectorAll(".wl-menu-pop").forEach((n) => n.remove()); }
+function wlPopup(anchor, buttons) {
+  wlCloseMenus();
+  const m = document.createElement("div"); m.className = "wl-menu-pop";
+  for (const [label, fn] of buttons) {
+    const b = document.createElement("button"); b.type = "button"; b.innerHTML = label;
+    b.onclick = (e) => { e.stopPropagation(); wlCloseMenus(); fn(); };
+    m.appendChild(b);
+  }
+  document.body.appendChild(m);
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 180)) + "px";
+  m.style.top = (r.bottom + 4) + "px";
+  setTimeout(() => document.addEventListener("mousedown", wlMenuOutside), 0);
+}
+function wlListMenu(anchor, list) {
+  wlPopup(anchor, [
+    ["Set active", () => wlSetActive(list.id)],
+    ["Rename\u2026", () => { const n = prompt("Rename watchlist:", list.name); if (n != null && n.trim()) wlRename(list.id, n.trim()); }],
+    ["Duplicate", () => wlDuplicate(list.id)],
+    ["Delete", () => { if (confirm('Delete "' + list.name + '"?')) wlDelete(list.id); }],
+  ]);
+}
+function wlSettingsMenu(anchor) {
+  const tick = (on) => on ? "\u2713" : "";
+  wlPopup(anchor, [
+    ['<span>Tile view</span><span>' + tick(state.wlView === "tiles") + '</span>', () => { state.wlView = state.wlView === "tiles" ? "list" : "tiles"; wlPersistPrefs(); renderWatchlist(); }],
+    ['<span>Show daily change</span><span>' + tick(state.wlShowChange !== false) + '</span>', () => { state.wlShowChange = !(state.wlShowChange !== false); wlPersistPrefs(); renderWatchlist(); }],
+  ]);
+}
+
+/* ── Expanded per-row detail card (real quote data only) ── */
+function wlDetail(ins) {
+  const d = document.createElement("div"); d.className = "wl-detail";
+  const q = state.quotes[ins.symbol], ch = state.chg[ins.symbol], px = state.prices[ins.symbol];
+  const line = (k, v) => '<div class="wld-row"><span class="wld-k">' + k + '</span><span class="wld-v">' + v + "</span></div>";
+  let html = line("Last", px != null ? fmt(px) : "\u2013");
+  if (q && q.ask > q.bid) {
+    html += line("Bid", '<span class="wbid">' + fmt(q.bid) + "</span>");
+    html += line("Ask", '<span class="wask">' + fmt(q.ask) + "</span>");
+    html += line("Spread", fmtSpread(q.ask - q.bid) || "\u2013");
+  }
+  if (ch) {
+    if (ch.d != null) html += line("Change", (ch.d > 0 ? "+" : "") + fmt(ch.d));
+    if (ch.p != null) html += line("Change %", (ch.p > 0 ? "+" : "") + ch.p.toFixed(2) + "%");
+  }
+  d.innerHTML = html + '<div class="wld-actions"><button type="button" class="wld-chart">Open chart</button></div>';
+  d.querySelector(".wld-chart").onclick = (e) => { e.stopPropagation(); setSymbol(ins.symbol); };
+  return d;
+}
+
+/* ── Render every user list as a collapsible group above the categories ── */
+function renderWlLists(el, wrow, bySym) {
+  const set = wlEnsure(); if (!set) return;
+  for (const list of set.lists) {
+    const isActive = list.id === set.active;
+    const open = state.groupsOpen[list.id] !== false;
+    const head = document.createElement("div");
+    head.className = "wgroup wgroup-list" + (isActive ? " active" : "");
+    head.dataset.wlList = list.id;
+    const caret = document.createElement("span"); caret.className = "wcaret"; caret.textContent = open ? "\u25be" : "\u25b8";
+    caret.onclick = (e) => { e.stopPropagation(); state.groupsOpen[list.id] = !open; renderWatchlist(); };
+    const name = document.createElement("span"); name.className = "wl-name"; name.textContent = list.name; name.title = "Click to make this list active";
+    name.onclick = (e) => { e.stopPropagation(); state.groupsOpen[list.id] = true; wlSetActive(list.id); };
+    const count = document.createElement("span"); count.className = "wcount"; count.textContent = String(list.symbols.length);
+    const add = document.createElement("button"); add.type = "button"; add.className = "wl-add"; add.textContent = "+"; add.title = "Add symbols to this list (activates it, then use the filter/star)";
+    add.onclick = (e) => { e.stopPropagation(); wlSetActive(list.id); const inp = $("wl-filter"); if (inp) inp.focus(); };
+    const menu = document.createElement("button"); menu.type = "button"; menu.className = "wl-menu"; menu.textContent = "\u22ef"; menu.title = "List options";
+    menu.onclick = (e) => { e.stopPropagation(); wlListMenu(menu, list); };
+    head.append(caret, name, count, add, menu);
+    wlWireListDrop(head, list.id);
+    el.appendChild(head);
+    if (!open) continue;
+    const items = list.symbols.map((sy) => bySym.get(sy)).filter(Boolean);
+    if (!items.length) {
+      const empty = document.createElement("div"); empty.className = "wl-empty"; empty.textContent = "Empty \u2014 drag a symbol here, or use +";
+      wlWireListDrop(empty, list.id);
+      el.appendChild(empty);
+      continue;
+    }
+    items.forEach((ins, idx) => {
+      const row = wrow(ins);
+      row.dataset.wlList = list.id;
+      row.addEventListener("dragstart", (e) => { try { e.dataTransfer.setData("text/gt-fromlist", list.id); } catch (_) {} });
+      const key = list.id + "|" + ins.symbol;
+      const exp = document.createElement("button"); exp.type = "button"; exp.className = "wl-exp";
+      exp.textContent = state.wlExpanded[key] ? "\u25be" : "\u25b8"; exp.title = "Show details";
+      exp.onclick = (e) => { e.stopPropagation(); state.wlExpanded[key] = !state.wlExpanded[key]; renderWatchlist(); };
+      row.insertBefore(exp, row.firstChild);
+      const star = row.querySelector(".wstar");
+      if (star) {
+        star.classList.add("on"); star.innerHTML = "★";
+        star.title = "Remove from " + list.name;
+        star.onclick = (e) => { e.stopPropagation(); wlRemoveSym(ins.symbol, list.id); };
+      }
+      wlWireRowDrop(row, list.id, idx);
+      el.appendChild(row);
+      if (state.wlExpanded[key]) el.appendChild(wlDetail(ins));
+    });
+  }
 }
 
 function renderWatchlist() {
@@ -1205,6 +1409,8 @@ function renderWatchlist() {
   // Hidden by default; shown only on the live-instrument path below.
   const wlSearch = $("wl-search");
   if (wlSearch) wlSearch.classList.add("hidden");
+  el.classList.toggle("tiles", state.wlView === "tiles");
+  el.classList.toggle("nochg", state.wlShowChange === false);
   // Keyless / waiting: no synthetic rows. Honest empty state only.
   if (state.dataWaiting || (!state.provider && !state.instruments.length)) {
     el.innerHTML = '<div class="md-empty">No live source connected.<br>' +
@@ -1352,21 +1558,12 @@ function renderWatchlist() {
     setTimeout(pollPrices, 50);
     return;
   }
-  // WATCHLIST: the active source's starred instruments, first group in the
-  // sidebar, open by default; a symbol that left the source's catalog is
-  // simply not shown (its star survives in the list for when it returns).
+  // User watchlists: one or many named lists rendered as collapsible groups
+  // above the category folders. The ACTIVE list is where the star and quick
+  // add land; drag a row between lists to move it (see renderWlLists).
   {
-    const favs = wlFavs();
-    const bySym = new Map(state.instruments.map((i) => [i.symbol, i]));
-    const items = favs.map((sy) => bySym.get(sy)).filter(Boolean);
-    const open = state.groupsOpen[WL_FAV_GROUP] !== false;
-    const head = document.createElement("div");
-    head.className = "wgroup wgroup-fav";
-    head.innerHTML = `<span class="wcaret">${open ? "▾" : "▸"}</span>` +
-      `Watchlist<span class="wcount">${items.length}</span>`;
-    head.onclick = () => { state.groupsOpen[WL_FAV_GROUP] = !open; renderWatchlist(); };
-    el.appendChild(head);
-    if (open) for (const ins of items) el.appendChild(wrow(ins));
+    const bySymW = new Map(state.instruments.map((i) => [i.symbol, i]));
+    renderWlLists(el, wrow, bySymW);
   }
   for (const g of groups) {
     const open = !!state.groupsOpen[g.cat];
@@ -10362,6 +10559,13 @@ function chartDropApply(symbol, x, y) {
   };
   sync();
 })();
+(function wlControlsBind() {
+  wlLoadPrefs();
+  const nl = $("wl-newlist");
+  if (nl && !nl.dataset.wired) { nl.dataset.wired = "1"; nl.onclick = () => { const n = prompt("New watchlist name:", "My list"); if (n != null && n.trim()) wlCreate(n.trim()); }; }
+  const st = $("wl-settings");
+  if (st && !st.dataset.wired) { st.dataset.wired = "1"; st.onclick = (e) => { e.stopPropagation(); wlSettingsMenu(st); }; }
+})();
 (function lassoBind() {
   const layer = $("lasso-layer");
   if (!layer || layer.dataset.wired) return;
@@ -16545,6 +16749,18 @@ async function boot() {
       if (Array.isArray(list)) {
         state.watchlists[prov] = list.filter((x) => typeof x === "string");
       }
+    }
+  }
+  // Named-list superset. Light validation only; wlEnsure() rebuilds a missing
+  // provider set from the legacy array above, so nothing is ever lost.
+  state.wlSets = {};
+  if (shell && shell.wlSets && typeof shell.wlSets === "object") {
+    for (const [prov, set] of Object.entries(shell.wlSets)) {
+      if (!set || !Array.isArray(set.lists)) continue;
+      const lists = set.lists
+        .filter((l) => l && typeof l.id === "string" && typeof l.name === "string")
+        .map((l) => ({ id: l.id, name: l.name, symbols: Array.isArray(l.symbols) ? l.symbols.filter((x) => typeof x === "string") : [] }));
+      if (lists.length) state.wlSets[prov] = { active: set.active, lists };
     }
   }
   // The sidebar may have painted before this landed (the provider switch
