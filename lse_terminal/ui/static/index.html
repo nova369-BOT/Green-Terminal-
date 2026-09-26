@@ -307,6 +307,14 @@ def my_ind(df, length=20):
       <span class="air-exp-chev">&#187;</span>
       <span class="air-exp-label">Watchlist</span>
     </button>
+    <!-- Filter box: type-to-filter the live instrument list. Outside
+         #watchlist so it survives re-renders and keeps focus while typing;
+         shown only for a live source (toggled in renderWatchlist). -->
+    <div id="wl-search" class="hidden">
+      <svg class="wl-search-ic" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.3" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10.4" y1="10.4" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input id="wl-filter" type="text" placeholder="Filter symbols&hellip;" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="wl-filter-clear" type="button" title="Clear filter" aria-label="Clear filter">&#215;</button>
+    </div>
     <div id="watchlist"></div>
   </aside>
   <section id="charts">
@@ -1379,7 +1387,7 @@ def my_ind(df, length=20):
   <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
   <!-- BUILD stamp: bump the number on every UI push so a stale
        build/cache is visible at a glance in the status strip. -->
-  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">12-dragchart</span></span>
+  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">13-wlfilter</span></span>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
 <script src="./app.js"></script>

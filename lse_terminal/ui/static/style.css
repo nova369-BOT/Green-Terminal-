@@ -267,6 +267,26 @@ aside#side.collapsed #side-expand { display: flex; animation: air-expand-in .18s
 #side-fold:hover { color: var(--text); background: var(--hover); }
 aside#side.collapsed #side-fold { display: none; }
 #watchlist { flex: 1; overflow-y: auto; min-height: 0; }
+/* Watchlist filter box: pinned above the scrolling list, styled like the
+   quote board. Hidden until renderWatchlist shows it on a live source. */
+#wl-search {
+  flex: none; display: flex; align-items: center; gap: 6px;
+  margin: 4px 8px 6px; padding: 5px 8px;
+  background: var(--bg2); border: 1px solid var(--edge); border-radius: 5px;
+}
+#wl-search.hidden { display: none; }
+.wl-search-ic { flex: none; color: var(--dim); }
+#wl-filter {
+  flex: 1 1 auto; min-width: 0; background: none; border: 0; outline: none;
+  color: var(--text); font-size: 12.5px; padding: 1px 0;
+}
+#wl-filter::placeholder { color: var(--dim); }
+#wl-filter-clear {
+  flex: none; visibility: hidden; background: none; border: 0; cursor: pointer;
+  color: var(--dim); font-size: 15px; line-height: 1; padding: 0 3px;
+}
+#wl-filter-clear:hover { color: var(--text); }
+aside#side.collapsed #wl-search { opacity: 0; pointer-events: none; }
 /* Active data connection bar: the topline's left slot, where the brand
    wordmark used to be (the native title bar already carries the app name).
    Same hairline discipline as the rest of the chrome. Carries NO status

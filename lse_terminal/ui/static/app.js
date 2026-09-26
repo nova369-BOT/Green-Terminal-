@@ -24,7 +24,7 @@ const state = {
   groupsOpen: {},                  // sidebar folders the user expanded
   groupShown: {},                  // rows revealed so far per opened folder
   hosted: false,                   // hosted web terminal: no local subprocesses
-  symbol: null, timeframe: "1h", chartType: "candles",
+  symbol: null, timeframe: "1h", chartType: "candles", wlFilter: "",
   activeIndicators: [],            // [{name}] params use registry defaults
   favoriteIndicators: [],          // registry names starred in the picker; float to the top
   instruments: [], ws: null, lastBar: null, prices: {}, quotes: {}, candleData: [],
@@ -1197,6 +1197,10 @@ function renderWatchlist() {
   renderConnBar();
   const el = $("watchlist");
   el.innerHTML = "";
+  // The filter box lives ABOVE #watchlist (survives re-renders, keeps focus).
+  // Hidden by default; shown only on the live-instrument path below.
+  const wlSearch = $("wl-search");
+  if (wlSearch) wlSearch.classList.add("hidden");
   // Keyless / waiting: no synthetic rows. Honest empty state only.
   if (state.dataWaiting || (!state.provider && !state.instruments.length)) {
     el.innerHTML = '<div class="md-empty">No live source connected.<br>' +
@@ -1239,6 +1243,7 @@ function renderWatchlist() {
   // grouped and ordered (see loadInstruments), so folders emerge from one
   // pass; state.groupsOpen remembers what the user opened until the
   // provider changes.
+  if (wlSearch) wlSearch.classList.remove("hidden");
   const groups = [];
   for (const ins of state.instruments) {
     const cat = ins.category || "Other";
@@ -1317,6 +1322,37 @@ function renderWatchlist() {
     row.querySelector(".wstar").onclick = (e) => { e.stopPropagation(); wlToggleFav(ins.symbol); };
     return row;
   };
+  // Filter mode: when the box has text, show one flat RESULTS group of matches
+  // (symbol OR name), capped, so the lazy category chunking is bypassed and
+  // matches appear instantly. Rows use the same wrow builder, so drag, star and
+  // live price all keep working on a filtered row.
+  const wlQuery = (state.wlFilter || "").toLowerCase();
+  if (wlQuery) {
+    const matches = [];
+    for (const ins of state.instruments) {
+      const sym = (ins.symbol || "").toLowerCase();
+      const nm = (ins.name || "").toLowerCase();
+      if (sym.includes(wlQuery) || nm.includes(wlQuery)) {
+        matches.push(ins);
+        if (matches.length >= WL_FILTER_MAX) break;
+      }
+    }
+    const head = document.createElement("div");
+    head.className = "wgroup";
+    head.innerHTML = '<span class="wcaret">\u25be</span>Results' +
+      `<span class="wcount">${matches.length}${matches.length >= WL_FILTER_MAX ? "+" : ""}</span>`;
+    el.appendChild(head);
+    if (!matches.length) {
+      const none = document.createElement("div");
+      none.className = "md-empty";
+      none.textContent = "No symbols match your filter.";
+      el.appendChild(none);
+    } else {
+      for (const ins of matches) el.appendChild(wrow(ins));
+    }
+    setTimeout(pollPrices, 50);
+    return;
+  }
   // WATCHLIST: the active source's starred instruments, first group in the
   // sidebar, open by default; a symbol that left the source's catalog is
   // simply not shown (its star survives in the list for when it returns).
@@ -1367,6 +1403,10 @@ function renderWatchlist() {
    26px row height with room to spare, so the reveal always lands before the
    scroll reaches the end of what is rendered. */
 const WL_CHUNK = 200;
+
+/* Cap on rows shown while a sidebar filter is active. Keeps a 1-char query
+   (which can match thousands) cheap; a "+" on the count signals more exist. */
+const WL_FILTER_MAX = 300;
 
 /* Reveal the next chunk as the sidebar scroll nears the bottom. One listener
    for the whole watchlist (re-armed on each render, since renderWatchlist
@@ -10305,6 +10345,23 @@ function chartDropApply(symbol, x, y) {
     document.body.classList.remove("gt-dragging-symbol");
     chartDropApply(sym, e.clientX, e.clientY);
   });
+})();
+(function wlFilterBind() {
+  const inp = $("wl-filter");
+  if (!inp || inp.dataset.wired) return;
+  inp.dataset.wired = "1";
+  const clr = $("wl-filter-clear");
+  const sync = () => { if (clr) clr.style.visibility = state.wlFilter ? "visible" : "hidden"; };
+  inp.addEventListener("input", () => {
+    state.wlFilter = inp.value.trim();
+    sync();
+    renderWatchlist();
+  });
+  if (clr) clr.onclick = () => {
+    inp.value = ""; state.wlFilter = ""; sync();
+    renderWatchlist(); inp.focus();
+  };
+  sync();
 })();
 (function lassoBind() {
   const layer = $("lasso-layer");
