@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment 
 import { flushSync } from 'react-dom';
 import { emojiSelection } from './emojiStore';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | 'emoji' | 'note' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | 'emoji' | 'note' | 'callout' | 'priceLabel' | 'signpost' | null;
 
 // Multi-point pattern & Elliott tools: shared config (point count, node labels, connector lines, fill triangles)
 const MULTIPOINT_TOOLS: Record<string, { n: number; labels: string[]; connectors: [number, number][]; fillTris: [number, number, number][] }> = {
@@ -178,7 +178,7 @@ const ChartDrawingOverlayComponent = ({
   const clipIdRef = useRef(clipId);
   const [tempPoints, setTempPoints] = useState<PixelPoint[]>([]);
   const [previewPoint, setPreviewPoint] = useState<PixelPoint | null>(null);
-  const [textInput, setTextInput] = useState<{ x: number; y: number; value: string; kind?: 'text' | 'note' } | null>(null);
+  const [textInput, setTextInput] = useState<{ x: number; y: number; value: string; kind?: 'text' | 'note' | 'signpost' | 'callout'; anchor?: PixelPoint } | null>(null);
   const [hoveredDrawingId, setHoveredDrawingId] = useState<string | null>(null);
   // Inline text label editor state for trend, line, and rectangle drawings. labelDraft holds the current text until Enter or blur commits it.
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
@@ -1072,7 +1072,7 @@ const ChartDrawingOverlayComponent = ({
     }
 
     // Show crosshair and preview when a drawing tool is active
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'brush', 'highlighter', 'arrow', 'measure'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'callout', 'brush', 'highlighter', 'arrow', 'measure'];
     if (activeTool && drawingTools.includes(activeTool)) {
       const clampedPoint = clampToChartArea({ x, y });
 
@@ -1159,7 +1159,7 @@ const ChartDrawingOverlayComponent = ({
     // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
     // This allows placing new drawings on top of existing ones
     // Exception: brush tool should start drawing immediately in handlePointerDown
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'extendedLine', 'infoLine', 'trendAngle', 'crossline', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown', 'emoji', 'note'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'extendedLine', 'infoLine', 'trendAngle', 'crossline', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown', 'emoji', 'note', 'callout', 'priceLabel', 'signpost'];
     if (activeTool && drawingTools.includes(activeTool)) {
       return false; // Let handleClick/handleTap handle the new drawing creation
     }
@@ -1751,6 +1751,59 @@ const ChartDrawingOverlayComponent = ({
               return true;
             }
           }
+        }
+      }
+
+      // Check signpost drawing (box or pole)
+      if (drawing.type === 'signpost' && pixels.length >= 1) {
+        const p = pixels[0];
+        const fontSize = drawing.strokeWidth || 12;
+        const poleH = 38;
+        const boxW = (drawing.text?.length || 4) * fontSize * 0.6 + 14;
+        const boxH = fontSize + 8;
+        const topY = p.y - poleH;
+        const inBox = x >= p.x - 3 && x <= p.x + boxW + 3 && y >= topY - boxH - 3 && y <= topY + 3;
+        const onPole = Math.abs(x - p.x) <= 5 && y >= topY && y <= p.y;
+        if (inBox || onPole) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check price label drawing (pill box)
+      if (drawing.type === 'priceLabel' && pixels.length >= 1) {
+        const p = pixels[0];
+        const price = drawing.points[0].price;
+        const label = drawing.text && drawing.text.trim().length > 0 ? drawing.text : price.toFixed(price < 1 ? 6 : 2);
+        const boxW = label.length * 12 * 0.62 + 14;
+        const boxH = 20;
+        if (x >= p.x - 3 && x <= p.x + 6 + boxW + 3 && y >= p.y - boxH / 2 - 3 && y <= p.y + boxH / 2 + 3) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check callout drawing (label box)
+      if (drawing.type === 'callout' && pixels.length >= 2) {
+        const boxPx = pixels[1];
+        const fontSize = drawing.strokeWidth || 13;
+        const boxW = (drawing.text?.length || 4) * fontSize * 0.6 + 16;
+        const boxH = fontSize + 10;
+        if (x >= boxPx.x - 3 && x <= boxPx.x + boxW + 3 && y >= boxPx.y - 3 && y <= boxPx.y + boxH + 3) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          return true;
         }
       }
 
@@ -2482,8 +2535,36 @@ const ChartDrawingOverlayComponent = ({
       return;
     }
 
-    if (activeTool === 'text' || activeTool === 'note') {
+    if (activeTool === 'text' || activeTool === 'note' || activeTool === 'signpost') {
       setTextInput({ x, y, value: '', kind: activeTool });
+      return;
+    }
+
+    // Callout: click 1 = anchor (what it points at), click 2 = label box + text
+    if (activeTool === 'callout') {
+      if (tempPoints.length < 1) {
+        setTempPoints([{ x, y }]);
+        return;
+      }
+      setTextInput({ x, y, value: '', kind: 'callout', anchor: tempPoints[0] });
+      return;
+    }
+
+    // Price label: single click drops a pill showing the price at that point
+    if (activeTool === 'priceLabel') {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'priceLabel',
+        points: [chartPoint],
+        color: toolSettings?.color ?? '#2dd4bf',
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
       return;
     }
 
@@ -2724,29 +2805,46 @@ const ChartDrawingOverlayComponent = ({
   const handleTextSubmit = () => {
     if (!textInput || !textInput.value.trim()) {
       setTextInput(null);
+      setTempPoints([]);
       onToolSelect?.(null);
       return;
     }
 
     const chartPoint = pixelToChart({ x: textInput.x, y: textInput.y });
     if (!chartPoint) {
+      setTextInput(null);
+      setTempPoints([]);
       onToolSelect?.(null);
       return;
     }
 
+    const kind = textInput.kind ?? 'text';
+    let points: ChartPoint[] = [chartPoint];
+    if (kind === 'callout' && textInput.anchor) {
+      const anchorChart = pixelToChart(textInput.anchor);
+      if (!anchorChart) {
+        setTextInput(null);
+        setTempPoints([]);
+        onToolSelect?.(null);
+        return;
+      }
+      points = [anchorChart, chartPoint];
+    }
+
     const newDrawingId = Date.now().toString();
-    // Text uses the pre-placement color if available
+    // Annotations default to the terminal's teal accent when no custom color is set
     const newDrawing: Drawing = {
       id: newDrawingId,
-      type: (textInput.kind ?? 'text') as DrawingTool,
-      points: [chartPoint],
+      type: kind as DrawingTool,
+      points,
       text: textInput.value,
-      color: textInput.kind === 'note' ? (toolSettings?.color ?? '#2dd4bf') : getNewDrawingColor(),
+      color: kind !== 'text' ? (toolSettings?.color ?? '#2dd4bf') : getNewDrawingColor(),
       opacity: getNewDrawingOpacity(),
     };
     onDrawingsChange([...drawings, newDrawing]);
     onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
     setTextInput(null);
+    setTempPoints([]);
     onToolSelect?.(null);
   };
 
@@ -4942,6 +5040,73 @@ const ChartDrawingOverlayComponent = ({
       );
     }
 
+    if (drawing.type === 'signpost' && drawing.text) {
+      if (pixels.length < 1) return null;
+      const p = pixels[0];
+      const fontSize = drawing.strokeWidth || 12;
+      const poleH = 38;
+      const boxW = drawing.text.length * fontSize * 0.6 + 14;
+      const boxH = fontSize + 8;
+      const topY = p.y - poleH;
+      const col = drawing.color || '#2dd4bf';
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
+          <line x1={p.x} y1={p.y} x2={p.x} y2={topY} stroke={col} strokeWidth={1.5} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'stroke' }} />
+          <circle cx={p.x} cy={p.y} r={2.5} fill={col} />
+          <rect x={p.x} y={topY - boxH} width={boxW} height={boxH} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
+          <text x={p.x + 7} y={topY - boxH / 2 + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={600} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'priceLabel') {
+      if (pixels.length < 1) return null;
+      const p = pixels[0];
+      const price = drawing.points[0].price;
+      const label = drawing.text && drawing.text.trim().length > 0 ? drawing.text : price.toFixed(price < 1 ? 6 : 2);
+      const fontSize = 12;
+      const padX = 7;
+      const boxW = label.length * fontSize * 0.62 + padX * 2;
+      const boxH = fontSize + 8;
+      const col = drawing.color || '#2dd4bf';
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
+          <path d={`M ${p.x} ${p.y} L ${p.x + 6} ${p.y - 5} L ${p.x + 6} ${p.y + 5} Z`} fill={col} style={{ pointerEvents: 'all' }} />
+          <rect x={p.x + 6} y={p.y - boxH / 2} width={boxW} height={boxH} rx={4} fill="#0b0f14" fillOpacity={0.9} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
+          <text x={p.x + 6 + padX} y={p.y + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={600} style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
+          {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'callout' && drawing.text) {
+      if (pixels.length < 2) return null;
+      const anchorPx = pixels[0];
+      const boxPx = pixels[1];
+      const fontSize = drawing.strokeWidth || 13;
+      const padX = 8, padY = 5;
+      const boxW = drawing.text.length * fontSize * 0.6 + padX * 2;
+      const boxH = fontSize + padY * 2;
+      const col = drawing.color || '#2dd4bf';
+      const ccx = boxPx.x + boxW / 2;
+      const ccy = boxPx.y + boxH / 2;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
+          <line x1={ccx} y1={ccy} x2={anchorPx.x} y2={anchorPx.y} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.75} style={{ pointerEvents: 'none' }} />
+          <circle cx={anchorPx.x} cy={anchorPx.y} r={3} fill={col} style={{ pointerEvents: 'all' }} />
+          <rect x={boxPx.x} y={boxPx.y} width={boxW} height={boxH} rx={5} fill="#0b0f14" fillOpacity={0.9} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
+          <text x={boxPx.x + padX} y={boxPx.y + boxH - padY - 1} fill={col} fontSize={fontSize} fontWeight={600} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          {showHandles && isSelected && (
+            <>
+              <circle cx={anchorPx.x} cy={anchorPx.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              <circle cx={boxPx.x} cy={boxPx.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
     if (drawing.type === 'note' && drawing.text) {
       if (pixels.length < 1) return null;
       const p = pixels[0];
@@ -5666,6 +5831,16 @@ const ChartDrawingOverlayComponent = ({
       return (
         <g>
           <rect x={x0} y={y0} width={Math.abs(endPixel.x - startPixel.x)} height={Math.abs(endPixel.y - startPixel.y)} fill="none" stroke={previewColor} strokeWidth="1.25" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'callout') {
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
+          <circle cx={startPixel.x} cy={startPixel.y} r={3} fill={previewColor} opacity={previewOpacity} />
+          <rect x={endPixel.x} y={endPixel.y} width={70} height={22} rx={5} fill="none" stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
         </g>
       );
     }

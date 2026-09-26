@@ -161,7 +161,7 @@ export default function DrawingToolsPanel({
   const [selectedPitchforkTool, setSelectedPitchforkTool] = useState<'pitchfork' | 'schiff' | 'modifiedSchiff'>('pitchfork');
   const [selectedPatternTool, setSelectedPatternTool] = useState<'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives'>('xabcd');
   const [selectedElliottTool, setSelectedElliottTool] = useState<'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo'>('elliottImpulse');
-  const [selectedTextTool, setSelectedTextTool] = useState<'text' | 'note'>('text');
+  const [selectedTextTool, setSelectedTextTool] = useState<'text' | 'note' | 'callout' | 'priceLabel' | 'signpost'>('text');
   const [selectedEmoji, setSelectedEmoji] = useState<string>(emojiSelection.current);
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
@@ -274,6 +274,16 @@ export default function DrawingToolsPanel({
   const elliottLabels: Record<string, string> = {
     elliottImpulse: 'Elliott Impulse (1-5)', elliottCorrection: 'Elliott Correction (A-B-C)',
     elliottTriangle: 'Elliott Triangle (A-E)', elliottCombo: 'Elliott Combo (W-X-Y)',
+  };
+  const textIcons: Record<string, React.ReactNode> = {
+    text: <Type className="h-[18px] w-[18px]" />,
+    note: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v11l-5 5H4z" /><path d="M15 20v-5h5" /><line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="12" y2="13" /></svg>,
+    callout: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16v10h-8l-4 4v-4H4z" /><line x1="8" y1="9" x2="16" y2="9" /></svg>,
+    priceLabel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12l5-5h12v10H8z" /><line x1="12" y1="12" x2="17" y2="12" /></svg>,
+    signpost: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="7" y1="3" x2="7" y2="21" /><path d="M7 4h12l-3 3.5L19 11H7z" /></svg>,
+  };
+  const textLabels: Record<string, string> = {
+    text: 'Text', note: 'Note', callout: 'Callout', priceLabel: 'Price Label', signpost: 'Signpost / Flag',
   };
   const lineIcons: Record<string, React.ReactNode> = {
     horizontal: <Minus className="h-[18px] w-[18px]" />,
@@ -520,17 +530,16 @@ export default function DrawingToolsPanel({
             ))}
           </div>
         )}
-        {/* Text & Note Group */}
+        {/* Text & Annotations Group */}
         {renderToolGroup(
           textToolMenuOpen, setTextToolMenuOpen, selectedTextTool,
-          ['text', 'note'],
-          selectedTextTool === 'note'
-            ? <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v11l-5 5H4z" /><path d="M15 20v-5h5" /><line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="12" y2="13" /></svg>
-            : <Type className="h-[18px] w-[18px]" />,
+          ['text', 'note', 'callout', 'priceLabel', 'signpost'],
+          textIcons[selectedTextTool],
           <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Text</div>
-            <ToolMenuItem toolId="text" label="Text" icon={<Type className="h-[18px] w-[18px]" />} isActive={activeTool === 'text'} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTextTool, setTextToolMenuOpen, 'text')} onToggleFavorite={handleToggleFavorite} />
-            <ToolMenuItem toolId="note" label="Note" icon={<svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v11l-5 5H4z" /><path d="M15 20v-5h5" /><line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="12" y2="13" /></svg>} isActive={activeTool === 'note'} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTextTool, setTextToolMenuOpen, 'note')} onToggleFavorite={handleToggleFavorite} />
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Text & Notes</div>
+            {['text', 'note', 'callout', 'priceLabel', 'signpost'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={textLabels[id]} icon={textIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTextTool, setTextToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
           </div>
         )}
         {/* Emoji / Sticker Group */}
