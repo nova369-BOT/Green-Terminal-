@@ -10083,6 +10083,29 @@ document.addEventListener("dblclick", (e) => {
   focusEnter(typeof st.activePanel === "number" ? st.activePanel : 0);
 });
 if ($("focus-back")) $("focus-back").onclick = focusExit;
+
+/* ═══ Top-tools dock: Lasso + camera live in the TOPLINE (upper bar) in ══
+   normal mode and ride the fullscreen command strip in ws-fullscreen. ONE
+   pair of elements reparented on demand — ids, listeners and styles move
+   with them, so zero wiring changes. A body-class observer covers every
+   fullscreen path (toggle, pill, Esc, reset) with no in-function edits. */
+function dockTopTools() {
+  const fs = document.body.classList.contains("ws-fullscreen");
+  const lasso = $("lasso-open"), cam = $("cam-shot");
+  if (!lasso || !cam) return;
+  if (fs) {
+    const bar = $("controls");
+    if (lasso.parentElement !== bar) bar.appendChild(lasso);
+    if (cam.parentElement !== bar) bar.appendChild(cam);
+  } else {
+    const top = $("topline"), theme = $("theme-toggle");
+    if (lasso.parentElement !== top) top.insertBefore(lasso, theme);
+    if (cam.parentElement !== top) top.insertBefore(cam, theme);
+  }
+}
+new MutationObserver(() => dockTopTools())
+  .observe(document.body, { attributes: true, attributeFilter: ["class"] });
+dockTopTools();
 (function lassoBind() {
   const layer = $("lasso-layer");
   if (!layer || layer.dataset.wired) return;
