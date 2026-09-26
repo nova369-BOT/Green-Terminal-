@@ -1,7 +1,7 @@
 # Render blueprint — GREEN TERMINAL (Phase 2 chart engine) on LSE
 #
 # Deploy THIS branch (not main — main has no render.yaml):
-#   https://render.com/deploy?repo=https://github.com/nova369-BOT/Green-Terminal-/tree/arena/01a0caa0-green-terminal
+#   https://render.com/deploy?repo=https://github.com/nova369-BOT/Green-Terminal-/tree/arena/01a0dfbf-green-terminal
 #
 # Why no PYTHON_VERSION pin: pinning 3.11.2 made Render's python-env.sh fail
 # with "Python-3.11.2/bin/python3.11: No such file or directory". Let Render
@@ -16,7 +16,7 @@ services:
     name: green-terminal
     runtime: python
     region: oregon
-    branch: arena/01a0caa0-green-terminal
+    branch: arena/01a0dfbf-green-terminal
     plan: free
     autoDeploy: true
     rootDir: .
