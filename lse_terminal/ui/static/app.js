@@ -558,6 +558,24 @@ function spreadText(symbol, q) {
   return t ? `spread: ${t}` : "";
 }
 
+/* Watchlist row cells shared by the initial render (wrow) and the live paint
+   (paintBoardPrice/onTick), so a row and its repaint never disagree. */
+function baText(symbol, q) {
+  if (!q || !(q.ask > q.bid)) return "";
+  return `<span class="wbid" title="Bid (sell)">${fmt(q.bid)}</span>` +
+         `<span class="wba-sep">/</span>` +
+         `<span class="wask" title="Ask (buy)">${fmt(q.ask)}</span>`;
+}
+function chgText(symbol) {
+  const ch = state.chg && state.chg[symbol];
+  if (!ch || (ch.p == null && ch.d == null)) return "\u2014";
+  const up = (ch.p != null ? ch.p : ch.d) >= 0;
+  const parts = [];
+  if (ch.d != null) parts.push(`${ch.d > 0 ? "+" : ""}${fmt(ch.d)}`);
+  if (ch.p != null) parts.push(`${ch.p > 0 ? "+" : ""}${ch.p.toFixed(2)}%`);
+  return `<i class="${up ? "up" : "down"}">${parts.join(" ")}</i>`;
+}
+
 /* ---------- launch price cache ---------- */
 
 /* Last-known watchlist prices persist in localStorage so a fresh launch
@@ -824,23 +842,10 @@ function paintBoardPrice(r) {
     const d = ch && ch.d != null ? ch.d : (prev !== undefined ? r.price - prev : null);
     cell.classList.toggle("up", d != null ? d >= 0 : prev !== undefined && r.price >= prev);
     cell.classList.toggle("down", d != null ? d < 0 : prev !== undefined && r.price < prev);
-    const q = state.quotes[r.symbol];
-    const sc = cell.parentElement.querySelector(".wspread");
-    if (sc && q) sc.textContent = spreadText(r.symbol, q);
+    const baEl = cell.parentElement.querySelector(".wba");
+    if (baEl) baEl.innerHTML = baText(r.symbol, state.quotes[r.symbol]);
     const chEl = cell.parentElement.querySelector(".wchg");
-    if (chEl && ch) {
-      if (ch.p != null) {
-        const sign = ch.p > 0 ? "+" : "";
-        chEl.textContent = `${sign}${ch.p.toFixed(2)}%`;
-        chEl.classList.toggle("up", ch.p >= 0);
-        chEl.classList.toggle("down", ch.p < 0);
-      } else if (ch.d != null) {
-        const sign = ch.d > 0 ? "+" : "";
-        chEl.textContent = `${sign}${fmt(ch.d)}`;
-        chEl.classList.toggle("up", ch.d >= 0);
-        chEl.classList.toggle("down", ch.d < 0);
-      }
-    }
+    if (chEl) chEl.innerHTML = chgText(r.symbol);
   }
 }
 
@@ -945,9 +950,8 @@ function onTick(t) {
     cell.classList.remove("stale");
     cell.classList.toggle("up", prev !== undefined && t.price >= prev);
     cell.classList.toggle("down", prev !== undefined && t.price < prev);
-    const q = state.quotes[t.symbol];
-    const sc = cell.parentElement.querySelector(".wspread");
-    if (sc && q) sc.textContent = spreadText(t.symbol, q);
+    const baEl = cell.parentElement.querySelector(".wba");
+    if (baEl) baEl.innerHTML = baText(t.symbol, state.quotes[t.symbol]);
   }
   if (t.symbol !== state.symbol) { return; }
   refreshInstrumentBarSoon();
@@ -1308,13 +1312,8 @@ function renderWatchlist() {
           `title="Historical dataset: chartable, but no live feed">history</span></span>`
         : `<span class="wpricecol">` +
           `<span class="wprice${stale ? " stale" : ""}">${state.prices[ins.symbol] ? fmt(state.prices[ins.symbol]) : "–"}</span>` +
-          `<span class="wspread">${spreadText(ins.symbol, state.quotes[ins.symbol])}</span>` +
-          `<span class="wchg">${(() => {
-              const ch = state.chg && state.chg[ins.symbol];
-              if (!ch || ch.p == null) return "—";
-              const sign = ch.p > 0 ? "+" : "";
-              return `<i class="${ch.p >= 0 ? "up" : "down"}">${sign}${ch.p.toFixed(2)}%</i>`;
-            })()}</span>` +
+          `<span class="wba">${baText(ins.symbol, state.quotes[ins.symbol])}</span>` +
+          `<span class="wchg">${chgText(ins.symbol)}</span>` +
           `</span>`) +
       `<button class="wstar${fav ? " on" : ""}" title="${fav ? "Remove from watchlist" : "Add to watchlist"}">` +
       `${fav ? "&#9733;" : "&#9734;"}</button>`;

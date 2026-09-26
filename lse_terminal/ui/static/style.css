@@ -452,6 +452,18 @@ aside#side.collapsed #wl-search { opacity: 0; pointer-events: none; }
 .wprice.up { color: var(--up); } .wprice.down { color: var(--down); }
 /* A price seeded from the launch cache, not yet confirmed by a live update. */
 .wprice.stale { opacity: .55; }
+/* Bid / Ask line under the last price (replaces the old spread text). Bid is
+   the sell side, Ask the buy side — a depth-ladder colour convention; the
+   last-price above still carries the tick up/down colour. Points + % share
+   the .wchg line below. */
+#watchlist .wba {
+  display: flex; gap: 3px; justify-content: flex-end;
+  font: 10px/1.2 var(--mono); font-variant-numeric: tabular-nums; color: var(--dim);
+}
+#watchlist .wba:empty { display: none; }
+#watchlist .wba-sep { opacity: .5; }
+#watchlist .wbid { color: var(--down); }
+#watchlist .wask { color: var(--up); }
 /* price + live spread stack on the right of each row */
 .wpricecol { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
 /* nowrap + right text-align: a squeezed sidebar used to WRAP the spread text,
