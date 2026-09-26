@@ -2776,7 +2776,21 @@ function renderTimeframes() {
       b.disabled = true;
       b.title = `${state.symbol} was imported at ${datasetTf(state.symbol)}`;
     } else {
-      b.onclick = () => { state.timeframe = tf; renderTimeframes(); loadChart(); };
+      b.onclick = () => {
+        // Multi-chart with interval-sync off: retarget the SELECTED pane only
+        // (mirrors setSymbol's per-pane routing; the bundle persists it and
+        // the pane refetches itself). Otherwise the global pair reloads.
+        const ls = window.LSEChart && window.LSEChart.layoutStore;
+        const st = ls && ls.get ? ls.get() : null;
+        if (st && st.layout !== "1x1" && !(st.sync && st.sync.syncInterval) &&
+            typeof ls.setPanelInterval === "function") {
+          ls.setPanelInterval(st.activePanel || 0, tf);
+          status(`pane ${ (st.activePanel || 0) + 1} → ${tf}`);
+          setTimeout(() => status(""), 1500);
+          return;
+        }
+        state.timeframe = tf; renderTimeframes(); loadChart();
+      };
     }
     nav.appendChild(b);
   }
