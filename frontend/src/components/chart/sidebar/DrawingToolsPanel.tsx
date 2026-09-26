@@ -153,6 +153,7 @@ export default function DrawingToolsPanel({
   const [selectedShapeTool, setSelectedShapeTool] = useState<'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart'>('rectangle');
   const [selectedBrushTool, setSelectedBrushTool] = useState<'brush' | 'highlighter' | 'arrow'>('brush');
   const [selectedMarkerTool, setSelectedMarkerTool] = useState<'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown'>('markerArrowUp');
+  const [selectedGannTool, setSelectedGannTool] = useState<'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed'>('gannFan');
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
   const [lineToolMenuOpen, setLineToolMenuOpen] = useState(false);
@@ -160,6 +161,7 @@ export default function DrawingToolsPanel({
   const [shapeToolMenuOpen, setShapeToolMenuOpen] = useState(false);
   const [brushToolMenuOpen, setBrushToolMenuOpen] = useState(false);
   const [markerToolMenuOpen, setMarkerToolMenuOpen] = useState(false);
+  const [gannToolMenuOpen, setGannToolMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
   const handleToggleFavorite = useCallback((toolId: string) => {
@@ -275,6 +277,18 @@ export default function DrawingToolsPanel({
     markerTriangleUp: 'Triangle Up',
     markerTriangleDown: 'Triangle Down',
   };
+  const gannIcons: Record<string, React.ReactNode> = {
+    gannFan: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="3" /><line x1="3" y1="21" x2="21" y2="12" opacity="0.7" /><line x1="3" y1="21" x2="21" y2="18" opacity="0.5" /><line x1="3" y1="21" x2="12" y2="3" opacity="0.7" /></svg>,
+    gannBox: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" /><line x1="9" y1="3" x2="9" y2="21" opacity="0.5" /><line x1="15" y1="3" x2="15" y2="21" opacity="0.5" /><line x1="3" y1="9" x2="21" y2="9" opacity="0.5" /><line x1="3" y1="15" x2="21" y2="15" opacity="0.5" /></svg>,
+    gannSquare: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" /><line x1="3" y1="3" x2="21" y2="21" /><line x1="3" y1="21" x2="21" y2="3" /></svg>,
+    gannSquareFixed: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" /><line x1="4" y1="4" x2="20" y2="20" /><line x1="4" y1="20" x2="20" y2="4" /><line x1="4" y1="12" x2="20" y2="12" opacity="0.5" /><line x1="12" y1="4" x2="12" y2="20" opacity="0.5" /></svg>,
+  };
+  const gannLabels: Record<string, string> = {
+    gannFan: 'Gann Fan',
+    gannBox: 'Gann Box',
+    gannSquare: 'Gann Square',
+    gannSquareFixed: 'Gann Square Fixed',
+  };
 
   // Helper to create a tool menu item and update selected tool
   const makeSelectHandler = (setSelected: (t: any) => void, setOpen: (o: boolean) => void, tool: string) => () => {
@@ -347,6 +361,18 @@ export default function DrawingToolsPanel({
               { id: 'fibTimeZones', label: 'Fib Time Zones', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="3" x2="4" y2="21" /><line x1="9" y1="3" x2="9" y2="21" opacity="0.8" /><line x1="15" y1="3" x2="15" y2="21" opacity="0.6" /><line x1="21" y1="3" x2="21" y2="21" opacity="0.4" /></svg> },
             ].map(t => (
               <ToolMenuItem key={t.id} toolId={t.id} label={t.label} icon={t.icon} isActive={activeTool === t.id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedFibTool, setFibToolMenuOpen, t.id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
+          </div>
+        )}
+        {/* Gann Group */}
+        {renderToolGroup(
+          gannToolMenuOpen, setGannToolMenuOpen, selectedGannTool,
+          ['gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed'],
+          gannIcons[selectedGannTool],
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Gann</div>
+            {['gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={gannLabels[id]} icon={gannIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedGannTool, setGannToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
           </div>
         )}

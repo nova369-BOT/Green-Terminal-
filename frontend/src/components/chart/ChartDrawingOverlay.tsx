@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment } from 'react';
 import { flushSync } from 'react-dom';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | null;
 
 // Brush-like tools that share the same freehand drawing behavior
 const BRUSH_TOOLS: DrawingTool[] = ['brush', 'highlighter', 'arrow'];
@@ -1052,7 +1052,7 @@ const ChartDrawingOverlayComponent = ({
     }
 
     // Show crosshair and preview when a drawing tool is active
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'brush', 'highlighter', 'arrow', 'measure'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'brush', 'highlighter', 'arrow', 'measure'];
     if (activeTool && drawingTools.includes(activeTool)) {
       const clampedPoint = clampToChartArea({ x, y });
 
@@ -1139,7 +1139,7 @@ const ChartDrawingOverlayComponent = ({
     // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
     // This allows placing new drawings on top of existing ones
     // Exception: brush tool should start drawing immediately in handlePointerDown
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
     if (activeTool && drawingTools.includes(activeTool)) {
       return false; // Let handleClick/handleTap handle the new drawing creation
     }
@@ -1542,7 +1542,7 @@ const ChartDrawingOverlayComponent = ({
       }
 
       // Check fibonacci body
-      if ((drawing.type === 'fibonacci' || drawing.type === 'fibExtension' || drawing.type === 'fibFan' || drawing.type === 'fibTimeZones') && pixels.length >= 2) {
+      if ((drawing.type === 'fibonacci' || drawing.type === 'fibExtension' || drawing.type === 'fibFan' || drawing.type === 'fibTimeZones' || drawing.type === 'gannFan' || drawing.type === 'gannBox' || drawing.type === 'gannSquare' || drawing.type === 'gannSquareFixed') && pixels.length >= 2) {
         const [p1, p2] = pixels;
         const minX = Math.min(p1.x, p2.x);
         const maxX = Math.max(p1.x, p2.x);
@@ -2090,7 +2090,7 @@ const ChartDrawingOverlayComponent = ({
             // Create trend, fibonacci, or shape
             // For square/circle on touch: constrain end point so pixel w === h
             let finalEndChartTouch = endChart;
-            if (activeTool === 'square' || activeTool === 'circle') {
+            if (activeTool === 'square' || activeTool === 'circle' || activeTool === 'gannSquareFixed') {
               const sp = touchDrawing.startPoint;
               const ep = touchDrawing.currentPoint;
               const dx = Math.abs(ep.x - sp.x);
@@ -2332,7 +2332,7 @@ const ChartDrawingOverlayComponent = ({
       return;
     }
 
-    if (activeTool === 'trend' || activeTool === 'trendRay' || activeTool === 'line' || activeTool === 'fibonacci' || activeTool === 'fibExtension' || activeTool === 'fibFan' || activeTool === 'fibTimeZones' || activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart') {
+    if (activeTool === 'trend' || activeTool === 'trendRay' || activeTool === 'line' || activeTool === 'fibonacci' || activeTool === 'fibExtension' || activeTool === 'fibFan' || activeTool === 'fibTimeZones' || activeTool === 'gannFan' || activeTool === 'gannBox' || activeTool === 'gannSquare' || activeTool === 'gannSquareFixed' || activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart') {
       if (tempPoints.length === 0) {
         setTempPoints([{ x, y }]);
       } else {
@@ -2348,7 +2348,7 @@ const ChartDrawingOverlayComponent = ({
         // The preview already shows a constrained shape, but the stored chart coords
         // must also be constrained or the shape distorts on render.
         let finalEndChart = endChart;
-        if (activeTool === 'square' || activeTool === 'circle') {
+        if (activeTool === 'square' || activeTool === 'circle' || activeTool === 'gannSquareFixed') {
           const dx = Math.abs(endPixel.x - startPixel.x);
           const dy = Math.abs(endPixel.y - startPixel.y);
           const size = Math.max(dx, dy);
@@ -3839,6 +3839,110 @@ const ChartDrawingOverlayComponent = ({
       return renderPolygonShape(pts);
     }
 
+    if (drawing.type === 'gannFan') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const ux = p2.x - p1.x;
+      const uy = p2.y - p1.y;
+      const rightEdge = containerDims.width - chartBounds.priceAxisWidth;
+      const chartH = containerDims.height - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0);
+      const angles: [number, number, string][] = [[1, 1, '1x1'], [1, 2, '1x2'], [1, 3, '1x3'], [1, 4, '1x4'], [2, 1, '2x1'], [3, 1, '3x1'], [4, 1, '4x1']];
+      const clampEnd = (dirX: number, dirY: number) => {
+        if (dirX === 0 && dirY === 0) return { x: p1.x, y: p1.y };
+        const targetX = dirX >= 0 ? rightEdge : 0;
+        if (dirX !== 0) {
+          let t = (targetX - p1.x) / dirX;
+          let ey = p1.y + dirY * t;
+          if (ey < 0 && dirY !== 0) { t = (0 - p1.y) / dirY; ey = 0; }
+          else if (ey > chartH && dirY !== 0) { t = (chartH - p1.y) / dirY; ey = chartH; }
+          return { x: p1.x + dirX * t, y: ey };
+        }
+        return { x: p1.x, y: dirY >= 0 ? chartH : 0 };
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {angles.map(([tU, pU, label]) => {
+            const end = clampEnd(tU * ux, pU * uy);
+            const main = tU === 1 && pU === 1;
+            return (
+              <g key={label}>
+                <line x1={p1.x} y1={p1.y} x2={end.x} y2={end.y} stroke={drawingColor} strokeWidth={main ? 1.75 : 1} strokeDasharray={main ? undefined : '4,3'} style={{ pointerEvents: 'none' }} />
+                <text x={end.x - 18} y={end.y - 3} fill={drawingColor} fontSize="9" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{label}</text>
+              </g>
+            );
+          })}
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth={12} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'gannBox') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x);
+      const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
+      const w = x1 - x0, h = y1 - y0;
+      const fr = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
+          {fr.map((fv, i) => (
+            <g key={i}>
+              <line x1={x0} y1={y0 + h * fv} x2={x1} y2={y0 + h * fv} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
+              <line x1={x0 + w * fv} y1={y0} x2={x0 + w * fv} y2={y1} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
+            </g>
+          ))}
+          <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
+          <line x1={x0} y1={y1} x2={x1} y2={y0} stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
+          <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'gannSquare' || drawing.type === 'gannSquareFixed') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x);
+      const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
+      const w = x1 - x0, h = y1 - y0;
+      const div = 8;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
+          {Array.from({ length: div + 1 }).map((_, i) => {
+            const fv = i / div;
+            return (
+              <g key={i}>
+                <line x1={x0} y1={y0 + h * fv} x2={x1} y2={y0 + h * fv} stroke={drawingColor} strokeWidth={0.6} opacity={0.5} style={{ pointerEvents: 'none' }} />
+                <line x1={x0 + w * fv} y1={y0} x2={x0 + w * fv} y2={y1} stroke={drawingColor} strokeWidth={0.6} opacity={0.5} style={{ pointerEvents: 'none' }} />
+              </g>
+            );
+          })}
+          <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={drawingColor} strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+          <line x1={x0} y1={y1} x2={x1} y2={y0} stroke={drawingColor} strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
+          <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
     if (drawing.type === 'fibFan') {
       if (pixels.length < 2) return null;
       const [p1, p2] = pixels;
@@ -4716,6 +4820,23 @@ const ChartDrawingOverlayComponent = ({
             strokeDasharray="5,5"
             style={{ pointerEvents: 'none' }}
           />
+        </g>
+      );
+    }
+
+    if (activeTool === 'gannFan') {
+      return (
+        <g>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth="1.5" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'gannBox' || activeTool === 'gannSquare' || activeTool === 'gannSquareFixed') {
+      const x0 = Math.min(startPixel.x, endPixel.x), y0 = Math.min(startPixel.y, endPixel.y);
+      return (
+        <g>
+          <rect x={x0} y={y0} width={Math.abs(endPixel.x - startPixel.x)} height={Math.abs(endPixel.y - startPixel.y)} fill="none" stroke={previewColor} strokeWidth="1.25" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
         </g>
       );
     }
