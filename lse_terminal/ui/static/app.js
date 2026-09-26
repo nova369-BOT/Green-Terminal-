@@ -9554,9 +9554,10 @@ async function openBacktest(mode) {
   // vision simulation, whose screen map reported two pages visible at once).
   for (const id of ["optpage", "news", "mydata", "econcal", "dataviz", "nbpage", "mlpage",
                     "pyide", "wsx", "charts", "backtest", "lse-connect",
-                    "research", "guide", "scrpage"]) {
+                    "research", "guide", "scrpage", "orderflow"]) {
     $(id).classList.add("hidden");
   }
+  stopOrderFlowHost();
   closeBacktestPages();
   // Algo Development and ML run on the user's own imported files; flip the
   // source so those modes and the sidebar library inherit it. Manual backtest
@@ -10219,9 +10220,10 @@ function openDataViz() {
   // SCREENER -> DATA VISUALISATION left the screener rendered underneath).
   for (const id of ["optpage", "news", "charts", "backtest", "mydata",
                     "econcal", "nbpage", "mlpage", "pyide", "wsx", "lse-connect",
-                    "research", "guide", "scrpage"]) {
+                    "research", "guide", "scrpage", "orderflow"]) {
     $(id).classList.add("hidden");
   }
+  stopOrderFlowHost();
   closeBacktestPages();
   $("dataviz").classList.remove("hidden");
   if (window.LSEDataViz) window.LSEDataViz.mount($("dataviz-root"));
@@ -10238,9 +10240,10 @@ function openNotebooks() {
   renderSubrail("workspace", "sub-ws-notebooks");
   for (const id of ["optpage", "news", "charts", "backtest", "mydata",
                     "econcal", "dataviz", "mlpage", "pyide", "wsx",
-                    "lse-connect", "research", "guide", "scrpage"]) {
+                    "lse-connect", "research", "guide", "scrpage", "orderflow"]) {
     $(id).classList.add("hidden");
   }
+  stopOrderFlowHost();
   closeBacktestPages();
   $("nbpage").classList.remove("hidden");
   if (window.LSENotebooks) window.LSENotebooks.mount($("nb-root"));
@@ -13163,6 +13166,15 @@ function setupRail() {
   const setActive = (id) => {
     for (const b of document.querySelectorAll(".rail-btn")) b.classList.remove("active");
     $(id).classList.add("active");
+    // Leaving G-Flow for any rail tab: the #orderflow section keeps its iframe
+    // mounted (warm WS/book), so if it is not hidden it sits ON TOP of the tab
+    // you switched to. Every rail handler routes through setActive, so hiding
+    // it here fixes the whole class in one place. showOrderFlowPage does NOT
+    // call setActive, and the flow-open path clicks rail-markets first then
+    // re-shows flow, so this never hides a G-Flow the user just opened.
+    const ofSection = $("orderflow");
+    if (ofSection) ofSection.classList.add("hidden");
+    stopOrderFlowHost();
     refreshInstrumentBarSoon();
   };
   // The native title follows the active tab:
