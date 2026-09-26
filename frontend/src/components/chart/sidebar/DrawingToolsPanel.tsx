@@ -155,6 +155,8 @@ export default function DrawingToolsPanel({
   const [selectedMarkerTool, setSelectedMarkerTool] = useState<'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown'>('markerArrowUp');
   const [selectedGannTool, setSelectedGannTool] = useState<'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed'>('gannFan');
   const [selectedPitchforkTool, setSelectedPitchforkTool] = useState<'pitchfork' | 'schiff' | 'modifiedSchiff'>('pitchfork');
+  const [selectedPatternTool, setSelectedPatternTool] = useState<'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives'>('xabcd');
+  const [selectedElliottTool, setSelectedElliottTool] = useState<'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo'>('elliottImpulse');
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
   const [lineToolMenuOpen, setLineToolMenuOpen] = useState(false);
@@ -164,6 +166,8 @@ export default function DrawingToolsPanel({
   const [markerToolMenuOpen, setMarkerToolMenuOpen] = useState(false);
   const [gannToolMenuOpen, setGannToolMenuOpen] = useState(false);
   const [pitchforkToolMenuOpen, setPitchforkToolMenuOpen] = useState(false);
+  const [patternToolMenuOpen, setPatternToolMenuOpen] = useState(false);
+  const [elliottToolMenuOpen, setElliottToolMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
   const handleToggleFavorite = useCallback((toolId: string) => {
@@ -240,6 +244,28 @@ export default function DrawingToolsPanel({
     pitchfork: 'Pitchfork',
     schiff: 'Schiff Pitchfork',
     modifiedSchiff: 'Modified Schiff Pitchfork',
+  };
+  const patternIcons: Record<string, React.ReactNode> = {
+    xabcd: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,20 7,6 12,15 17,7 21,19" /></svg>,
+    cypher: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,18 8,5 13,14 18,8 21,20" opacity="0.85" /></svg>,
+    abcd: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="4,19 9,7 14,16 20,5" /></svg>,
+    headShoulders: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,18 5,12 8,15 12,5 16,15 19,12 22,18" /><line x1="5" y1="18" x2="19" y2="18" opacity="0.5" strokeDasharray="2 2" /></svg>,
+    trianglePattern: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="5" x2="21" y2="12" /><line x1="3" y1="19" x2="21" y2="12" /></svg>,
+    threeDrives: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,20 5,13 8,17 11,9 14,13 17,5 20,9" /></svg>,
+  };
+  const patternLabels: Record<string, string> = {
+    xabcd: 'XABCD Pattern', cypher: 'Cypher Pattern', abcd: 'ABCD Pattern',
+    headShoulders: 'Head & Shoulders', trianglePattern: 'Triangle Pattern', threeDrives: 'Three Drives',
+  };
+  const elliottIcons: Record<string, React.ReactNode> = {
+    elliottImpulse: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,20 6,12 9,15 13,6 16,10 21,3" /></svg>,
+    elliottCorrection: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="4,6 10,17 15,9 20,19" /></svg>,
+    elliottTriangle: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,4 20,10 5,15 18,18" /></svg>,
+    elliottCombo: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="4,7 9,17 14,8 20,16" opacity="0.9" /></svg>,
+  };
+  const elliottLabels: Record<string, string> = {
+    elliottImpulse: 'Elliott Impulse (1-5)', elliottCorrection: 'Elliott Correction (A-B-C)',
+    elliottTriangle: 'Elliott Triangle (A-E)', elliottCombo: 'Elliott Combo (W-X-Y)',
   };
   const lineIcons: Record<string, React.ReactNode> = {
     horizontal: <Minus className="h-[18px] w-[18px]" />,
@@ -414,6 +440,30 @@ export default function DrawingToolsPanel({
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Pitchforks</div>
             {['pitchfork', 'schiff', 'modifiedSchiff'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={pitchforkLabels[id]} icon={pitchforkIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedPitchforkTool, setPitchforkToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
+          </div>
+        )}
+        {/* Patterns Group */}
+        {renderToolGroup(
+          patternToolMenuOpen, setPatternToolMenuOpen, selectedPatternTool,
+          ['xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives'],
+          patternIcons[selectedPatternTool],
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Chart Patterns</div>
+            {['xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={patternLabels[id]} icon={patternIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedPatternTool, setPatternToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
+          </div>
+        )}
+        {/* Elliott Waves Group */}
+        {renderToolGroup(
+          elliottToolMenuOpen, setElliottToolMenuOpen, selectedElliottTool,
+          ['elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo'],
+          elliottIcons[selectedElliottTool],
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Elliott Waves</div>
+            {['elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={elliottLabels[id]} icon={elliottIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedElliottTool, setElliottToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
           </div>
         )}

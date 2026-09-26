@@ -1,7 +1,21 @@
 import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment } from 'react';
 import { flushSync } from 'react-dom';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | null;
+
+// Multi-point pattern & Elliott tools: shared config (point count, node labels, connector lines, fill triangles)
+const MULTIPOINT_TOOLS: Record<string, { n: number; labels: string[]; connectors: [number, number][]; fillTris: [number, number, number][] }> = {
+  xabcd: { n: 5, labels: ['X', 'A', 'B', 'C', 'D'], connectors: [[0, 2], [2, 4], [1, 3]], fillTris: [[0, 1, 2], [2, 3, 4]] },
+  cypher: { n: 5, labels: ['X', 'A', 'B', 'C', 'D'], connectors: [[0, 2], [2, 4], [1, 3]], fillTris: [[0, 1, 2], [2, 3, 4]] },
+  abcd: { n: 4, labels: ['A', 'B', 'C', 'D'], connectors: [[0, 3]], fillTris: [] },
+  headShoulders: { n: 7, labels: ['', 'LS', '', 'H', '', 'RS', ''], connectors: [[2, 4]], fillTris: [] },
+  trianglePattern: { n: 5, labels: ['1', '2', '3', '4', '5'], connectors: [[0, 2], [1, 3]], fillTris: [] },
+  threeDrives: { n: 7, labels: ['', '1', '', '2', '', '3', ''], connectors: [], fillTris: [] },
+  elliottImpulse: { n: 6, labels: ['0', '1', '2', '3', '4', '5'], connectors: [], fillTris: [] },
+  elliottCorrection: { n: 4, labels: ['0', 'A', 'B', 'C'], connectors: [], fillTris: [] },
+  elliottTriangle: { n: 6, labels: ['0', 'A', 'B', 'C', 'D', 'E'], connectors: [], fillTris: [] },
+  elliottCombo: { n: 4, labels: ['0', 'W', 'X', 'Y'], connectors: [], fillTris: [] },
+};
 
 // Brush-like tools that share the same freehand drawing behavior
 const BRUSH_TOOLS: DrawingTool[] = ['brush', 'highlighter', 'arrow'];
@@ -1057,7 +1071,7 @@ const ChartDrawingOverlayComponent = ({
     }
 
     // Show crosshair and preview when a drawing tool is active
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'brush', 'highlighter', 'arrow', 'measure'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'brush', 'highlighter', 'arrow', 'measure'];
     if (activeTool && drawingTools.includes(activeTool)) {
       const clampedPoint = clampToChartArea({ x, y });
 
@@ -1144,7 +1158,7 @@ const ChartDrawingOverlayComponent = ({
     // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
     // This allows placing new drawings on top of existing ones
     // Exception: brush tool should start drawing immediately in handlePointerDown
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'extendedLine', 'infoLine', 'trendAngle', 'crossline', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'extendedLine', 'infoLine', 'trendAngle', 'crossline', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
     if (activeTool && drawingTools.includes(activeTool)) {
       return false; // Let handleClick/handleTap handle the new drawing creation
     }
@@ -1571,6 +1585,35 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check multi-point pattern / Elliott body
+      const mpHit = MULTIPOINT_TOOLS[drawing.type];
+      if (mpHit && pixels.length >= 2) {
+        const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+          const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+          if (L2 === 0) return Math.hypot(px - ax, py - ay);
+          let t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L2;
+          t = Math.max(0, Math.min(1, t));
+          return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
+        };
+        let near = false;
+        for (let i = 0; i < pixels.length - 1; i++) {
+          if (segDist(x, y, pixels[i].x, pixels[i].y, pixels[i + 1].x, pixels[i + 1].y) < 10) { near = true; break; }
+        }
+        if (!near) {
+          for (const [i, j] of mpHit.connectors) {
+            if (i < pixels.length && j < pixels.length && segDist(x, y, pixels[i].x, pixels[i].y, pixels[j].x, pixels[j].y) < 10) { near = true; break; }
+          }
+        }
+        if (near) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
           onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
           return true;
         }
@@ -2479,6 +2522,36 @@ const ChartDrawingOverlayComponent = ({
         };
         onDrawingsChange([...drawings, newDrawing]);
         onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    // Multi-point pattern & Elliott tools (generic N-click creation)
+    if (activeTool && MULTIPOINT_TOOLS[activeTool]) {
+      const mpCfg = MULTIPOINT_TOOLS[activeTool];
+      if (tempPoints.length < mpCfg.n - 1) {
+        setTempPoints([...tempPoints, { x, y }]);
+      } else {
+        const allPix = [...tempPoints, { x, y }];
+        const chartPts = allPix.map((pp) => pixelToChart(pp));
+        if (chartPts.some((p) => !p)) return;
+        const newDrawingId = Date.now().toString();
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: activeTool,
+          points: chartPts as ChartPoint[],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+          fillColor: getNewDrawingFillColor('#2dd4bf'),
+          fillOpacity: getNewDrawingFillOpacity(),
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId);
         setTempPoints([]);
         setPreviewPoint(null);
         onToolSelect?.(null);
@@ -4315,6 +4388,38 @@ const ChartDrawingOverlayComponent = ({
       );
     }
 
+    const mpCfg = MULTIPOINT_TOOLS[drawing.type];
+    if (mpCfg) {
+      if (pixels.length < 2) return null;
+      const path = pixels.map((p) => `${p.x},${p.y}`).join(' ');
+      const mpAccent = '#2dd4bf';
+      const mpLabel = (px: number, py: number, txt: string, idx: number) => {
+        const tw = txt.length * 7 + 8;
+        return (
+          <g key={`mpl-${idx}`} style={{ pointerEvents: 'none' }}>
+            <rect x={px - tw / 2} y={py - 21} width={tw} height={14} rx={3} fill="#0b0f14" fillOpacity={0.8} stroke={mpAccent} strokeOpacity={0.45} strokeWidth={0.75} />
+            <text x={px} y={py - 11} textAnchor="middle" fill={mpAccent} fontSize="10" fontWeight="700" style={{ userSelect: 'none' }}>{txt}</text>
+          </g>
+        );
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {mpCfg.fillTris.map((tri, i) => tri.every((idx) => idx < pixels.length) ? (
+            <polygon key={`mpt-${i}`} points={tri.map((idx) => `${pixels[idx].x},${pixels[idx].y}`).join(' ')} fill={i % 2 === 0 ? '#2dd4bf' : '#22d3ee'} fillOpacity={0.06 * fillOpacityValue} stroke="none" style={{ pointerEvents: 'none' }} />
+          ) : null)}
+          <polyline points={path} fill="none" stroke="transparent" strokeWidth={12} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke' }} />
+          <polyline points={path} fill="none" stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} style={{ pointerEvents: 'none' }} />
+          {mpCfg.connectors.map(([i, j], k) => (i < pixels.length && j < pixels.length) ? (
+            <line key={`mpc-${k}`} x1={pixels[i].x} y1={pixels[i].y} x2={pixels[j].x} y2={pixels[j].y} stroke={drawingColor} strokeWidth={1} strokeOpacity={strokeOpacity * 0.55} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+          ) : null)}
+          {mpCfg.labels.map((lb, i) => (lb && i < pixels.length) ? mpLabel(pixels[i].x, pixels[i].y, lb, i) : null)}
+          {showHandles && pixels.map((p, i) => (
+            <circle key={`mph-${i}`} cx={p.x} cy={p.y} r={isSelected ? 6 : 5} fill={drawingColor} stroke={isSelected ? '#ffffff' : '#1e293b'} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+          ))}
+        </g>
+      );
+    }
+
     if (drawing.type === 'fibChannel') {
       if (pixels.length < 3) return null;
       const [a, b, p3] = pixels;
@@ -5481,6 +5586,19 @@ const ChartDrawingOverlayComponent = ({
       return (
         <g>
           <rect x={x0} y={y0} width={Math.abs(endPixel.x - startPixel.x)} height={Math.abs(endPixel.y - startPixel.y)} fill="none" stroke={previewColor} strokeWidth="1.25" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool && MULTIPOINT_TOOLS[activeTool]) {
+      const mpPts = [...tempPoints, endPixel];
+      const mpPath = mpPts.map((p) => `${p.x},${p.y}`).join(' ');
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <polyline points={mpPath} fill="none" stroke={previewColor} strokeWidth={previewStroke} strokeDasharray="4,3" opacity={previewOpacity} />
+          {tempPoints.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r={3.5} fill={previewColor} opacity={previewOpacity} />
+          ))}
         </g>
       );
     }
