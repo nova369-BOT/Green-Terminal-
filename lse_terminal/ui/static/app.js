@@ -3132,7 +3132,8 @@ async function loadInstruments(query = "") {
   }
   const items = await res.json();
   if (query) {
-    $("symbol-options").innerHTML =
+    const _so = $("symbol-options");
+    if (_so) _so.innerHTML =
       items.map((i) => `<option value="${i.symbol}">${i.name}</option>`).join("");
   } else {
     // Arrival order IS the display order: the provider contract says results
@@ -16852,10 +16853,8 @@ async function boot() {
   // (pollPrices itself skips hidden windows and stacked requests).
   setInterval(pollPrices, 1000);
 
-  $("symbol").addEventListener("input", (e) => loadInstruments(e.target.value));
-  $("symbol").addEventListener("change", (e) => {
-    if (e.target.value) { setSymbol(e.target.value.trim()); e.target.blur(); }
-  });
+  // (The old top-bar "Search symbol" box was removed; the sidebar filter is
+  // now the single search. Click a filtered row to chart it.)
 
   // Land on MARKETS: live LSE data when a key is set, otherwise the
   // connect-key form. The rail handler owns that branch.
