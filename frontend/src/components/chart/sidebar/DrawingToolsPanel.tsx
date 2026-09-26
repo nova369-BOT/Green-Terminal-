@@ -154,6 +154,7 @@ export default function DrawingToolsPanel({
   const [selectedBrushTool, setSelectedBrushTool] = useState<'brush' | 'highlighter' | 'arrow'>('brush');
   const [selectedMarkerTool, setSelectedMarkerTool] = useState<'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown'>('markerArrowUp');
   const [selectedGannTool, setSelectedGannTool] = useState<'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed'>('gannFan');
+  const [selectedPitchforkTool, setSelectedPitchforkTool] = useState<'pitchfork' | 'schiff' | 'modifiedSchiff'>('pitchfork');
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
   const [lineToolMenuOpen, setLineToolMenuOpen] = useState(false);
@@ -162,6 +163,7 @@ export default function DrawingToolsPanel({
   const [brushToolMenuOpen, setBrushToolMenuOpen] = useState(false);
   const [markerToolMenuOpen, setMarkerToolMenuOpen] = useState(false);
   const [gannToolMenuOpen, setGannToolMenuOpen] = useState(false);
+  const [pitchforkToolMenuOpen, setPitchforkToolMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
   const handleToggleFavorite = useCallback((toolId: string) => {
@@ -227,6 +229,17 @@ export default function DrawingToolsPanel({
     trendRay: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="4" /></svg>,
     parallelChannel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="18" x2="22" y2="10" /><line x1="2" y1="10" x2="22" y2="2" /></svg>,
     straightArrow: <ArrowRight className="h-[18px] w-[18px]" />,
+    flatChannel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="4" x2="22" y2="4" /><line x1="2" y1="20" x2="16" y2="6" /></svg>,
+  };
+  const pitchforkIcons: Record<string, React.ReactNode> = {
+    pitchfork: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="9" y2="12" /><line x1="9" y1="4" x2="9" y2="20" /><line x1="9" y1="4" x2="22" y2="4" /><line x1="9" y1="12" x2="22" y2="12" /><line x1="9" y1="20" x2="22" y2="20" /></svg>,
+    schiff: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="18" x2="9" y2="10" /><line x1="7" y1="3" x2="13" y2="21" /><line x1="9" y1="10" x2="22" y2="5" /><line x1="11" y1="15.5" x2="22" y2="11" /><line x1="7" y1="3" x2="20" y2="-1" /></svg>,
+    modifiedSchiff: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="14" x2="9" y2="11" /><line x1="6" y1="5" x2="12" y2="19" /><line x1="9" y1="11" x2="22" y2="6" /><line x1="10.5" y1="15" x2="22" y2="12" /></svg>,
+  };
+  const pitchforkLabels: Record<string, string> = {
+    pitchfork: 'Pitchfork',
+    schiff: 'Schiff Pitchfork',
+    modifiedSchiff: 'Modified Schiff Pitchfork',
   };
   const lineIcons: Record<string, React.ReactNode> = {
     horizontal: <Minus className="h-[18px] w-[18px]" />,
@@ -320,7 +333,7 @@ export default function DrawingToolsPanel({
         {/* Trend Lines Group */}
         {renderToolGroup(
           trendToolMenuOpen, setTrendToolMenuOpen, selectedTrendTool,
-          ['trend', 'trendRay', 'parallelChannel', 'straightArrow'],
+          ['trend', 'trendRay', 'parallelChannel', 'straightArrow', 'flatChannel'],
           trendIcons[selectedTrendTool],
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Trend Lines</div>
@@ -329,6 +342,7 @@ export default function DrawingToolsPanel({
               { id: 'trendRay', label: 'Trend Line Ray' },
               { id: 'parallelChannel', label: 'Parallel Channel' },
               { id: 'straightArrow', label: 'Arrow' },
+              { id: 'flatChannel', label: 'Flat Top/Bottom' },
             ].map(t => (
               <ToolMenuItem key={t.id} toolId={t.id} label={t.label} icon={trendIcons[t.id]} isActive={activeTool === t.id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTrendTool, setTrendToolMenuOpen, t.id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -381,6 +395,18 @@ export default function DrawingToolsPanel({
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Gann</div>
             {['gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={gannLabels[id]} icon={gannIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedGannTool, setGannToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
+          </div>
+        )}
+        {/* Pitchforks Group */}
+        {renderToolGroup(
+          pitchforkToolMenuOpen, setPitchforkToolMenuOpen, selectedPitchforkTool,
+          ['pitchfork', 'schiff', 'modifiedSchiff'],
+          pitchforkIcons[selectedPitchforkTool],
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Pitchforks</div>
+            {['pitchfork', 'schiff', 'modifiedSchiff'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={pitchforkLabels[id]} icon={pitchforkIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedPitchforkTool, setPitchforkToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
           </div>
         )}
