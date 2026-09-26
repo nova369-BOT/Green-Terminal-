@@ -4200,46 +4200,51 @@ const ChartDrawingOverlayComponent = ({
       const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
       const w = x1 - x0, h = y1 - y0;
       const ratios = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
-      const LVLC = ['#8a8f99', '#ff9800', '#26c6da', '#26a69a', '#26c6da', '#2962ff', '#8a8f99'];
+      // Green Terminal cohesive palette (slate -> teal -> emerald), distinct from TradingView
+      const LVLC = ['#64748b', '#22d3ee', '#2dd4bf', '#34d399', '#2dd4bf', '#22d3ee', '#64748b'];
+      const gbPill = (lx: number, ly: number, txt: string, c: string, anchor: 'start' | 'middle' | 'end') => {
+        const tw = txt.length * 6.2 + 8;
+        const rx = anchor === 'end' ? lx - tw : anchor === 'middle' ? lx - tw / 2 : lx;
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <rect x={rx} y={ly - 8} width={tw} height={13} rx={3} fill="#0b0f14" fillOpacity={0.72} stroke={c} strokeOpacity={0.35} strokeWidth={0.75} />
+            <text x={anchor === 'end' ? lx - 4 : anchor === 'middle' ? lx : lx + 4} y={ly + 2} textAnchor={anchor} fill={c} fontSize="9.5" fontWeight="700" style={{ userSelect: 'none' }}>{txt}</text>
+          </g>
+        );
+      };
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
-          {/* Horizontal (price) translucent bands */}
           {ratios.slice(0, -1).map((fv, i) => {
             const yA = y0 + h * fv, yB = y0 + h * ratios[i + 1];
-            return <rect key={`gb-hb-${i}`} x={x0} y={Math.min(yA, yB)} width={w} height={Math.abs(yB - yA)} fill={LVLC[i]} fillOpacity={0.10} style={{ pointerEvents: 'none' }} />;
+            return <rect key={`gb-hb-${i}`} x={x0} y={Math.min(yA, yB)} width={w} height={Math.abs(yB - yA)} fill={LVLC[i]} fillOpacity={0.055} style={{ pointerEvents: 'none' }} />;
           })}
-          {/* Vertical (time) translucent bands -> plaid overlap */}
           {ratios.slice(0, -1).map((fv, i) => {
             const xA = x0 + w * fv, xB = x0 + w * ratios[i + 1];
-            return <rect key={`gb-vb-${i}`} x={Math.min(xA, xB)} y={y0} width={Math.abs(xB - xA)} height={h} fill={LVLC[i]} fillOpacity={0.07} style={{ pointerEvents: 'none' }} />;
+            return <rect key={`gb-vb-${i}`} x={Math.min(xA, xB)} y={y0} width={Math.abs(xB - xA)} height={h} fill={LVLC[i]} fillOpacity={0.04} style={{ pointerEvents: 'none' }} />;
           })}
-          {/* Price (horizontal) level lines + left & right ratio labels */}
           {ratios.map((fv, i) => {
             const yl = y0 + h * fv;
             const c = LVLC[i];
             return (
               <g key={`gb-p-${i}`}>
                 <line x1={x0} y1={yl} x2={x1} y2={yl} stroke={c} strokeWidth={1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
-                <text x={x0 - 6} y={yl + 3} textAnchor="end" fill={c} fontSize="10" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}</text>
-                <text x={x1 + 6} y={yl + 3} fill={c} fontSize="10" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}</text>
+                {gbPill(x0 - 6, yl, String(fv), c, 'end')}
+                {gbPill(x1 + 6, yl, String(fv), c, 'start')}
               </g>
             );
           })}
-          {/* Time (vertical) level lines + top & bottom ratio labels */}
           {ratios.map((fv, i) => {
             const xl = x0 + w * fv;
             const c = LVLC[i];
             return (
               <g key={`gb-t-${i}`}>
                 <line x1={xl} y1={y0} x2={xl} y2={y1} stroke={c} strokeWidth={1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
-                <text x={xl} y={y0 - 6} textAnchor="middle" fill={c} fontSize="10" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}</text>
-                <text x={xl} y={y1 + 14} textAnchor="middle" fill={c} fontSize="10" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}</text>
+                {gbPill(xl, y0 - 6, String(fv), c, 'middle')}
+                {gbPill(xl, y1 + 15, String(fv), c, 'middle')}
               </g>
             );
           })}
-          {/* Outer frame */}
-          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={LVLC[6]} strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
-          {/* Drag hit area */}
+          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeOpacity={0.8} style={{ pointerEvents: 'none' }} />
           <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
           {(isHovered || isSelected) && (
             <>
@@ -4259,18 +4264,19 @@ const ChartDrawingOverlayComponent = ({
       const w = x1 - x0, h = y1 - y0;
       const ox = p1.x, oy = p1.y;
       const dx = p2.x - p1.x, dy = p2.y - p1.y;
-      const gsTeal = '#26a69a', gsCyan = '#26c6da', gsBlue = '#2962ff', gsOrange = '#ff9800', gsGrey = '#8a8f99';
+      // Green Terminal cohesive palette
+      const gsTeal = '#34d399', gsCyan = '#22d3ee', gsIndigo = '#818cf8', gsAmber = '#fbbf24', gsGrey = '#64748b';
       const gsDiv = 8;
       const fans: { ex: number; ey: number; c: string; sw: number }[] = [
-        { ex: ox + dx, ey: oy + dy, c: gsGrey, sw: 1.6 },
+        { ex: ox + dx, ey: oy + dy, c: '#e2e8f0', sw: 1.6 },
         { ex: ox + dx, ey: oy + dy * 0.5, c: gsTeal, sw: 1 },
         { ex: ox + dx * 0.5, ey: oy + dy, c: gsTeal, sw: 1 },
-        { ex: ox + dx, ey: oy + dy * 0.25, c: gsBlue, sw: 1 },
-        { ex: ox + dx * 0.25, ey: oy + dy, c: gsBlue, sw: 1 },
-        { ex: ox + dx, ey: oy + dy * 0.125, c: gsOrange, sw: 1 },
-        { ex: ox + dx * 0.125, ey: oy + dy, c: gsOrange, sw: 1 },
+        { ex: ox + dx, ey: oy + dy * 0.25, c: gsCyan, sw: 1 },
+        { ex: ox + dx * 0.25, ey: oy + dy, c: gsCyan, sw: 1 },
+        { ex: ox + dx, ey: oy + dy * 0.125, c: gsIndigo, sw: 1 },
+        { ex: ox + dx * 0.125, ey: oy + dy, c: gsIndigo, sw: 1 },
       ];
-      const arcFracs: [number, string][] = [[0.25, gsOrange], [0.382, gsCyan], [0.5, gsTeal], [0.618, gsCyan], [0.75, gsBlue], [1, gsGrey]];
+      const arcFracs: [number, string][] = [[0.25, gsAmber], [0.382, gsCyan], [0.5, gsTeal], [0.618, gsCyan], [0.75, gsIndigo], [1, '#e2e8f0']];
       const arcPts = (frac: number) => {
         const pts: string[] = [];
         for (let k = 0; k <= 20; k++) {
@@ -4281,29 +4287,23 @@ const ChartDrawingOverlayComponent = ({
       };
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
-          {/* Grid */}
           {Array.from({ length: gsDiv + 1 }).map((_, i) => {
             const fv = i / gsDiv;
             return (
               <g key={`gs-grid-${i}`}>
-                <line x1={x0} y1={y0 + h * fv} x2={x1} y2={y0 + h * fv} stroke={gsTeal} strokeWidth={0.5} opacity={0.35} style={{ pointerEvents: 'none' }} />
-                <line x1={x0 + w * fv} y1={y0} x2={x0 + w * fv} y2={y1} stroke={gsTeal} strokeWidth={0.5} opacity={0.35} style={{ pointerEvents: 'none' }} />
+                <line x1={x0} y1={y0 + h * fv} x2={x1} y2={y0 + h * fv} stroke={gsTeal} strokeWidth={0.5} opacity={0.28} style={{ pointerEvents: 'none' }} />
+                <line x1={x0 + w * fv} y1={y0} x2={x0 + w * fv} y2={y1} stroke={gsTeal} strokeWidth={0.5} opacity={0.28} style={{ pointerEvents: 'none' }} />
               </g>
             );
           })}
-          {/* Concentric arcs from origin corner */}
           {arcFracs.map(([frac, c], i) => (
             <polyline key={`gs-arc-${i}`} points={arcPts(frac)} fill="none" stroke={c} strokeWidth={1.1} strokeOpacity={0.85} style={{ pointerEvents: 'none' }} />
           ))}
-          {/* Fan lines from origin corner */}
           {fans.map((fn, i) => (
             <line key={`gs-fan-${i}`} x1={ox} y1={oy} x2={fn.ex} y2={fn.ey} stroke={fn.c} strokeWidth={fn.sw} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
           ))}
-          {/* Anti-diagonal */}
           <line x1={ox + dx} y1={oy} x2={ox} y2={oy + dy} stroke={gsGrey} strokeWidth={1} strokeOpacity={0.5} style={{ pointerEvents: 'none' }} />
-          {/* Outer frame */}
-          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={gsGrey} strokeWidth={1.5} style={{ pointerEvents: 'none' }} />
-          {/* Drag hit area */}
+          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeOpacity={0.8} style={{ pointerEvents: 'none' }} />
           <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
           {(isHovered || isSelected) && (
             <>
