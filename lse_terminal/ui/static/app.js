@@ -9594,8 +9594,6 @@ async function openBacktest(mode) {
    here as the sections get built. */
 const SUBRAIL = {
   markets: [
-    { id: "sub-mk-charts", label: "PRICE & CHARTS",
-      go: () => $("rail-markets").click() },
     { id: "sub-mk-flow", label: "G-FLOW",
       go: () => { $("rail-markets").click(); showOrderFlowPage(); } },
     { id: "sub-mk-options", label: "OPTIONS",
@@ -13212,7 +13210,9 @@ function setupRail() {
     setSidebar(true);
     // Sub-bar renders before the no-key early return below so the OPTIONS
     // sub-tab is reachable even while the connect form is up.
-    renderSubrail("markets", "sub-mk-charts");
+    // PRICE & CHARTS is the base MARKETS view (this tab itself), so it is no
+    // longer a menu entry — nothing to highlight when it is showing.
+    renderSubrail("markets", null);
     $("optpage").classList.add("hidden");
     $("scrpage").classList.add("hidden");
     $("news").classList.add("hidden");
