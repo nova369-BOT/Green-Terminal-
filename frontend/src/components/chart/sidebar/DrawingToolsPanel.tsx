@@ -12,6 +12,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { emojiSelection } from "../emojiStore";
+
+// Curated sticker set for the emoji drawing tool
+const EMOJI_LIST = ['📈','📉','🚀','💰','🔥','⭐','✅','❌','⚠️','🎯','💎','🐂','🐻','👀','🤑','😱','🟢','🔴','⏰','📌','💡','🏆','❤️','👍'];
 import {
   Star, Plus, X, Minus, Type, Square, RectangleHorizontal, Paintbrush,
   ArrowUpCircle, ArrowDownCircle, Trash2, Lock, Unlock, Eye, EyeOff, Ruler, Keyboard,
@@ -157,6 +161,8 @@ export default function DrawingToolsPanel({
   const [selectedPitchforkTool, setSelectedPitchforkTool] = useState<'pitchfork' | 'schiff' | 'modifiedSchiff'>('pitchfork');
   const [selectedPatternTool, setSelectedPatternTool] = useState<'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives'>('xabcd');
   const [selectedElliottTool, setSelectedElliottTool] = useState<'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo'>('elliottImpulse');
+  const [selectedTextTool, setSelectedTextTool] = useState<'text' | 'note'>('text');
+  const [selectedEmoji, setSelectedEmoji] = useState<string>(emojiSelection.current);
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
   const [lineToolMenuOpen, setLineToolMenuOpen] = useState(false);
@@ -168,6 +174,8 @@ export default function DrawingToolsPanel({
   const [pitchforkToolMenuOpen, setPitchforkToolMenuOpen] = useState(false);
   const [patternToolMenuOpen, setPatternToolMenuOpen] = useState(false);
   const [elliottToolMenuOpen, setElliottToolMenuOpen] = useState(false);
+  const [textToolMenuOpen, setTextToolMenuOpen] = useState(false);
+  const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
   const handleToggleFavorite = useCallback((toolId: string) => {
@@ -512,17 +520,49 @@ export default function DrawingToolsPanel({
             ))}
           </div>
         )}
-        {/* Text tool */}
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'text' ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'text' ? null : 'text')}>
-                <Type className="h-[18px] w-[18px]" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Text</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* Text & Note Group */}
+        {renderToolGroup(
+          textToolMenuOpen, setTextToolMenuOpen, selectedTextTool,
+          ['text', 'note'],
+          selectedTextTool === 'note'
+            ? <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v11l-5 5H4z" /><path d="M15 20v-5h5" /><line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="12" y2="13" /></svg>
+            : <Type className="h-[18px] w-[18px]" />,
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Text</div>
+            <ToolMenuItem toolId="text" label="Text" icon={<Type className="h-[18px] w-[18px]" />} isActive={activeTool === 'text'} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTextTool, setTextToolMenuOpen, 'text')} onToggleFavorite={handleToggleFavorite} />
+            <ToolMenuItem toolId="note" label="Note" icon={<svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v11l-5 5H4z" /><path d="M15 20v-5h5" /><line x1="8" y1="9" x2="16" y2="9" /><line x1="8" y1="13" x2="12" y2="13" /></svg>} isActive={activeTool === 'note'} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTextTool, setTextToolMenuOpen, 'note')} onToggleFavorite={handleToggleFavorite} />
+          </div>
+        )}
+        {/* Emoji / Sticker Group */}
+        <Popover open={emojiMenuOpen} onOpenChange={setEmojiMenuOpen}>
+          <div className="relative">
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'emoji' ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => { if (activeTool === 'emoji') { onToolSelect(null); } else { emojiSelection.current = selectedEmoji; onToolSelect('emoji' as DrawingTool); } }}>
+                    <span className="text-lg leading-none">{selectedEmoji}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="text-xs lg:text-sm">Emoji / Sticker</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <PopoverTrigger asChild>
+              <button className="absolute -right-1 top-1/2 -translate-y-1/2 w-5 h-10 flex items-center justify-center text-muted-foreground/30 hover:text-muted-foreground transition-colors" onClick={(e) => { e.stopPropagation(); setEmojiMenuOpen(!emojiMenuOpen); }}>
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            </PopoverTrigger>
+          </div>
+          <PopoverContent side="right" align="start" className="drawing-tool-menu w-auto p-2 bg-card border border-border shadow-xl rounded-lg z-50" sideOffset={8}>
+            <div className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Stickers</div>
+            <div className="grid grid-cols-6 gap-1">
+              {EMOJI_LIST.map((em) => (
+                <button key={em} className={`h-8 w-8 flex items-center justify-center rounded text-lg transition-colors hover:bg-black/10 dark:hover:bg-white/10 ${selectedEmoji === em ? 'bg-black/10 dark:bg-white/10 ring-1 ring-teal-400/50' : ''}`} onClick={() => { emojiSelection.current = em; setSelectedEmoji(em); onToolSelect('emoji' as DrawingTool); setEmojiMenuOpen(false); }}>
+                  {em}
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
         {/* Long Position */}
         <TooltipProvider delayDuration={300}>
           <Tooltip>
