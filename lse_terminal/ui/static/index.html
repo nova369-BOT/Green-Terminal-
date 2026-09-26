@@ -307,6 +307,13 @@ def my_ind(df, length=20):
       <span class="air-exp-chev">&#187;</span>
       <span class="air-exp-label">Watchlist</span>
     </button>
+    <!-- Sidebar tabs: WATCHLIST (the user's named lists) vs ALL SYMBOLS
+         (the provider's full catalog). Toggles what #watchlist renders;
+         see state.wlTab in app.js. Shown only for a live source. -->
+    <div id="wl-tabs" class="hidden">
+      <button id="wl-tab-watchlist" type="button" class="active" data-tab="watchlist">Watchlist</button>
+      <button id="wl-tab-all" type="button" data-tab="all">All symbols</button>
+    </div>
     <!-- Filter box: type-to-filter the live instrument list. Outside
          #watchlist so it survives re-renders and keeps focus while typing;
          shown only for a live source (toggled in renderWatchlist). -->
@@ -1389,7 +1396,7 @@ def my_ind(df, length=20):
   <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
   <!-- BUILD stamp: bump the number on every UI push so a stale
        build/cache is visible at a glance in the status strip. -->
-  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">15-watchlists</span></span>
+  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">16-wltabs</span></span>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
 <script src="./app.js"></script>

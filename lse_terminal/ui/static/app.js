@@ -25,7 +25,7 @@ const state = {
   groupShown: {},                  // rows revealed so far per opened folder
   hosted: false,                   // hosted web terminal: no local subprocesses
   symbol: null, timeframe: "1h", chartType: "candles", wlFilter: "",
-  wlSets: {}, wlView: "list", wlShowChange: true, wlExpanded: {},
+  wlSets: {}, wlView: "list", wlShowChange: true, wlExpanded: {}, wlTab: "watchlist",
   activeIndicators: [],            // [{name}] params use registry defaults
   favoriteIndicators: [],          // registry names starred in the picker; float to the top
   instruments: [], ws: null, lastBar: null, prices: {}, quotes: {}, candleData: [],
@@ -1268,8 +1268,8 @@ function wlToggleFav(sym) {
   wlPersist(); renderWatchlist();
 }
 /* View / display prefs live in localStorage (device-local, not the session). */
-function wlPersistPrefs() { try { localStorage.setItem("gt-wl-prefs", JSON.stringify({ view: state.wlView, showChange: state.wlShowChange })); } catch (_) {} }
-function wlLoadPrefs() { try { const p = JSON.parse(localStorage.getItem("gt-wl-prefs") || "{}"); if (p.view) state.wlView = p.view; if (typeof p.showChange === "boolean") state.wlShowChange = p.showChange; } catch (_) {} }
+function wlPersistPrefs() { try { localStorage.setItem("gt-wl-prefs", JSON.stringify({ view: state.wlView, showChange: state.wlShowChange, tab: state.wlTab })); } catch (_) {} }
+function wlLoadPrefs() { try { const p = JSON.parse(localStorage.getItem("gt-wl-prefs") || "{}"); if (p.view) state.wlView = p.view; if (typeof p.showChange === "boolean") state.wlShowChange = p.showChange; if (p.tab) state.wlTab = p.tab; } catch (_) {} }
 
 /* ── Drag helpers shared by the list drop targets ── */
 function wlHasSym(e) { try { return Array.from(e.dataTransfer.types || []).indexOf("text/gt-symbol") !== -1; } catch (_) { return false; } }
@@ -1409,6 +1409,8 @@ function renderWatchlist() {
   // Hidden by default; shown only on the live-instrument path below.
   const wlSearch = $("wl-search");
   if (wlSearch) wlSearch.classList.add("hidden");
+  const wlTabsTop = $("wl-tabs");
+  if (wlTabsTop) wlTabsTop.classList.add("hidden");
   el.classList.toggle("tiles", state.wlView === "tiles");
   el.classList.toggle("nochg", state.wlShowChange === false);
   // Keyless / waiting: no synthetic rows. Honest empty state only.
@@ -1454,6 +1456,18 @@ function renderWatchlist() {
   // pass; state.groupsOpen remembers what the user opened until the
   // provider changes.
   if (wlSearch) wlSearch.classList.remove("hidden");
+  // Sidebar tabs (WATCHLIST / ALL SYMBOLS) only make sense for a live source.
+  const wlTabs = $("wl-tabs");
+  if (wlTabs) {
+    wlTabs.classList.remove("hidden");
+    const tw = $("wl-tab-watchlist"), ta = $("wl-tab-all");
+    if (tw) tw.classList.toggle("active", state.wlTab !== "all");
+    if (ta) ta.classList.toggle("active", state.wlTab === "all");
+  }
+  // New-list and settings belong to the WATCHLIST tab only.
+  const nlBtn = $("wl-newlist"), stBtn = $("wl-settings");
+  if (nlBtn) nlBtn.classList.toggle("hidden", state.wlTab === "all");
+  if (stBtn) stBtn.classList.toggle("hidden", state.wlTab === "all");
   const groups = [];
   for (const ins of state.instruments) {
     const cat = ins.category || "Other";
@@ -1558,12 +1572,19 @@ function renderWatchlist() {
     setTimeout(pollPrices, 50);
     return;
   }
-  // User watchlists: one or many named lists rendered as collapsible groups
-  // above the category folders. The ACTIVE list is where the star and quick
-  // add land; drag a row between lists to move it (see renderWlLists).
-  {
+  // WATCHLIST tab: only the user's named lists (plus a create button). The
+  // ALL SYMBOLS tab below renders the provider's full catalog as folders.
+  if (state.wlTab !== "all") {
     const bySymW = new Map(state.instruments.map((i) => [i.symbol, i]));
     renderWlLists(el, wrow, bySymW);
+    const create = document.createElement("button");
+    create.type = "button";
+    create.className = "wl-createbtn";
+    create.textContent = "+ Create new watchlist";
+    create.onclick = () => { const n = prompt("New watchlist name:", "My list"); if (n != null && n.trim()) wlCreate(n.trim()); };
+    el.appendChild(create);
+    setTimeout(pollPrices, 50);
+    return;
   }
   for (const g of groups) {
     const open = !!state.groupsOpen[g.cat];
@@ -10565,6 +10586,10 @@ function chartDropApply(symbol, x, y) {
   if (nl && !nl.dataset.wired) { nl.dataset.wired = "1"; nl.onclick = () => { const n = prompt("New watchlist name:", "My list"); if (n != null && n.trim()) wlCreate(n.trim()); }; }
   const st = $("wl-settings");
   if (st && !st.dataset.wired) { st.dataset.wired = "1"; st.onclick = (e) => { e.stopPropagation(); wlSettingsMenu(st); }; }
+  const tw = $("wl-tab-watchlist");
+  if (tw && !tw.dataset.wired) { tw.dataset.wired = "1"; tw.onclick = () => { state.wlTab = "watchlist"; wlPersistPrefs(); renderWatchlist(); }; }
+  const ta = $("wl-tab-all");
+  if (ta && !ta.dataset.wired) { ta.dataset.wired = "1"; ta.onclick = () => { state.wlTab = "all"; wlPersistPrefs(); renderWatchlist(); }; }
 })();
 (function lassoBind() {
   const layer = $("lasso-layer");

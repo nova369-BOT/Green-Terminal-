@@ -465,6 +465,25 @@ aside#side.collapsed #wl-search { opacity: 0; pointer-events: none; }
 #watchlist .wbid { color: var(--down); }
 #watchlist .wask { color: var(--up); }
 
+/* ── Sidebar tabs: WATCHLIST / ALL SYMBOLS ── */
+#wl-tabs { display: flex; padding: 0 8px; border-bottom: 1px solid var(--edge); }
+#wl-tabs.hidden { display: none; }
+#wl-tabs button {
+  flex: 1; background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--dim); font-size: 11px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; padding: 10px 4px; cursor: pointer; transition: color .12s;
+}
+#wl-tabs button:hover { color: var(--text); }
+#wl-tabs button.active { color: var(--text); border-bottom-color: var(--accent-bar); }
+#wl-newlist.hidden, #wl-settings.hidden { display: none; }
+/* full-width create-list button at the foot of the WATCHLIST tab */
+.wl-createbtn {
+  display: block; width: calc(100% - 20px); margin: 10px; padding: 9px 0;
+  background: none; border: 1px dashed var(--edge); border-radius: 6px;
+  color: var(--dim); font-size: 12px; cursor: pointer; transition: color .12s, border-color .12s;
+}
+.wl-createbtn:hover { color: var(--text); border-color: var(--dim); }
+
 /* ── Multiple named watchlists, tiles, detail card, drag targets ── */
 .wgroup-list { display: flex; align-items: center; gap: 4px; }
 .wgroup-list .wcaret { cursor: pointer; flex: none; }
