@@ -4200,15 +4200,23 @@ const ChartDrawingOverlayComponent = ({
       const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
       const w = x1 - x0, h = y1 - y0;
       const fr = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
+      const gbC1 = drawing.points[0], gbC2 = drawing.points[1];
+      const gbPriceAt = (yy: number) => (p2.y === p1.y ? gbC1.price : gbC1.price + (gbC2.price - gbC1.price) * (yy - p1.y) / (p2.y - p1.y));
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
           <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
-          {fr.map((fv, i) => (
+          {fr.map((fv, i) => {
+            const yl = y0 + h * fv;
+            const xl = x0 + w * fv;
+            return (
             <g key={i}>
-              <line x1={x0} y1={y0 + h * fv} x2={x1} y2={y0 + h * fv} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
-              <line x1={x0 + w * fv} y1={y0} x2={x0 + w * fv} y2={y1} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
+              <line x1={x0} y1={yl} x2={x1} y2={yl} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
+              <line x1={xl} y1={y0} x2={xl} y2={y1} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
+              <text x={x1 + 4} y={yl + 3} fill={drawingColor} fontSize="9" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv} ({gbPriceAt(yl).toFixed(2)})</text>
+              <text x={xl} y={y0 - 4} textAnchor="middle" fill={drawingColor} fontSize="9" fontWeight="600" opacity={0.85} style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}</text>
             </g>
-          ))}
+            );
+          })}
           <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
           <line x1={x0} y1={y1} x2={x1} y2={y0} stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
           <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
@@ -4229,15 +4237,19 @@ const ChartDrawingOverlayComponent = ({
       const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
       const w = x1 - x0, h = y1 - y0;
       const div = 8;
+      const gsC1 = drawing.points[0], gsC2 = drawing.points[1];
+      const gsPriceAt = (yy: number) => (p2.y === p1.y ? gsC1.price : gsC1.price + (gsC2.price - gsC1.price) * (yy - p1.y) / (p2.y - p1.y));
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
           <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
           {Array.from({ length: div + 1 }).map((_, i) => {
             const fv = i / div;
+            const yl = y0 + h * fv;
             return (
               <g key={i}>
-                <line x1={x0} y1={y0 + h * fv} x2={x1} y2={y0 + h * fv} stroke={drawingColor} strokeWidth={0.6} opacity={0.5} style={{ pointerEvents: 'none' }} />
+                <line x1={x0} y1={yl} x2={x1} y2={yl} stroke={drawingColor} strokeWidth={0.6} opacity={0.5} style={{ pointerEvents: 'none' }} />
                 <line x1={x0 + w * fv} y1={y0} x2={x0 + w * fv} y2={y1} stroke={drawingColor} strokeWidth={0.6} opacity={0.5} style={{ pointerEvents: 'none' }} />
+                <text x={x1 + 4} y={yl + 3} fill={drawingColor} fontSize="9" fontWeight="600" opacity={0.9} style={{ pointerEvents: 'none', userSelect: 'none' }}>{gsPriceAt(yl).toFixed(2)}</text>
               </g>
             );
           })}
