@@ -4136,6 +4136,14 @@ body.ws-fullscreen #ind-panel,
 body.ws-fullscreen #ind-cfg,
 body.ws-fullscreen #tpl-panel { z-index: 95; }
 body.ws-fullscreen [data-radix-popper-content-wrapper] { z-index: 95 !important; }
+/* Multi-grid active pane: the bundle marks it with an inline brass 1px
+   border — escalate to the professional 2px + glow treatment. (Only the
+   active pane carries --accent-bar in its style attribute.) */
+#chart-pro div[style*="--accent-bar"] {
+  border: 2px solid var(--accent-bar) !important;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(176, 141, 87, .35), 0 0 18px rgba(176, 141, 87, .18) !important;
+}
 /* Pro analysis toolbar: the bundle's drawing rail, tailored. Scoped under
    #chart-pro (higher specificity than the bundle's own rules, so no
    source edits to the minified build). */
