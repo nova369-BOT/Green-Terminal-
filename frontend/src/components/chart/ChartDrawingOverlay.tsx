@@ -66,6 +66,7 @@ export type Drawing = {
   stopLossPointIndex?: number;
   strokeWidth?: number;
   lineStyle?: 'solid' | 'dashed' | 'dotted';
+  locked?: boolean;  // Per-object lock: prevents moving/resizing this drawing
   // Inline text-label styling for drawings that carry a `text` payload (trend, line, rectangle). Separate from the type='text' drawing, which reuses strokeWidth as fontSize.
   textFontSize?: number;
   textBold?: boolean;
@@ -467,6 +468,10 @@ const ChartDrawingOverlayComponent = ({
 
   // Helper to start dragging
   const startDragging = (id: string) => {
+    // Per-object lock: a locked drawing can still be selected (to unlock it)
+    // but must not start a move/resize drag.
+    const target = drawings.find((d) => d.id === id);
+    if (target?.locked) return;
     isDraggingRef.current = true; // Set synchronously to prevent brush additions
     setDraggingId(id);
     onDraggingStateChange?.(true);

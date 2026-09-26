@@ -5,7 +5,7 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 // BoxSelect is this icon's name in the terminal's lucide version; upstream
 // renamed it SquareDashed in a later release.
-import { Trash2, GripVertical, Square, BoxSelect as SquareDashed, Activity, Plus, X, Type, Edit3 } from 'lucide-react';
+import { Trash2, GripVertical, Square, BoxSelect as SquareDashed, Activity, Plus, X, Type, Edit3, Copy, Lock, Unlock, MoreHorizontal, ArrowUpToLine, ArrowDownToLine } from 'lucide-react';
 import { Drawing } from './ChartDrawingOverlay';
 import { AdvancedColorPicker } from './AdvancedColorPicker';
 
@@ -14,6 +14,9 @@ interface DrawingEditToolbarProps {
   onUpdateDrawing: (id: string, updates: Partial<Drawing>) => void;
   onDeleteDrawing: (id: string) => void;
   onClose: () => void;
+  onCloneDrawing?: (id: string) => void;
+  onBringToFront?: (id: string) => void;
+  onSendToBack?: (id: string) => void;
   // Viewport coords of the click that selected the drawing. The toolbar snaps next to this point on each new selection, clamped to the viewport. Without it the toolbar falls back to a stored or default position.
   anchorPosition?: { x: number; y: number } | null;
 }
@@ -64,6 +67,9 @@ export const DrawingEditToolbar = ({
   onUpdateDrawing,
   onDeleteDrawing,
   onClose,
+  onCloneDrawing,
+  onBringToFront,
+  onSendToBack,
   anchorPosition,
 }: DrawingEditToolbarProps) => {
   const [strokeWidth, setStrokeWidth] = useState(drawing.strokeWidth || 2);
@@ -771,6 +777,64 @@ export const DrawingEditToolbar = ({
           </Popover>
         </>
       )}
+
+      <div className="w-px h-5 bg-border/40 mx-0.5" />
+
+      {/* Clone / Duplicate */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+        title="Clone"
+        onClick={() => onCloneDrawing?.(drawing.id)}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </Button>
+
+      {/* Per-object Lock / Unlock */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className={`h-7 w-7 p-0 hover:bg-muted ${drawing.locked ? 'text-yellow-400 hover:text-yellow-400' : 'text-muted-foreground hover:text-foreground'}`}
+        title={drawing.locked ? 'Unlock' : 'Lock'}
+        onClick={() => onUpdateDrawing(drawing.id, { locked: !drawing.locked })}
+      >
+        {drawing.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+      </Button>
+
+      {/* More menu: z-order */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+            title="More"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-44 p-1" side="top" align="center">
+          <button
+            className="w-full flex items-center gap-2 h-8 px-2 rounded text-[13px] text-popover-foreground hover:bg-muted transition-colors"
+            onClick={() => onBringToFront?.(drawing.id)}
+          >
+            <ArrowUpToLine className="h-3.5 w-3.5" /> Bring to Front
+          </button>
+          <button
+            className="w-full flex items-center gap-2 h-8 px-2 rounded text-[13px] text-popover-foreground hover:bg-muted transition-colors"
+            onClick={() => onSendToBack?.(drawing.id)}
+          >
+            <ArrowDownToLine className="h-3.5 w-3.5" /> Send to Back
+          </button>
+          <button
+            className="w-full flex items-center gap-2 h-8 px-2 rounded text-[13px] text-popover-foreground hover:bg-muted transition-colors"
+            onClick={() => onCloneDrawing?.(drawing.id)}
+          >
+            <Copy className="h-3.5 w-3.5" /> Duplicate
+          </button>
+        </PopoverContent>
+      </Popover>
 
       <div className="w-px h-5 bg-border/40 mx-0.5" />
 

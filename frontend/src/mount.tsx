@@ -26,6 +26,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import ProChart from '@/components/chart/ProChart';
 import { ChartDrawingOverlay, type Drawing, type DrawingTool } from '@/components/chart/ChartDrawingOverlay';
 import DrawingToolsPanel from '@/components/chart/sidebar/DrawingToolsPanel';
+import { DrawingEditToolbar } from '@/components/chart/DrawingEditToolbar';
 import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from '@/components/chart/IndicatorSettings';
 import { getDefaultColors, type Candle, type ChartType } from '@/components/chart/core/types';
 import { transformSeries } from '@/engine/transforms';
@@ -121,6 +122,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const [converter, setConverter] = useState<Converter | null>(null);
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
+  const [toolbarAnchor, setToolbarAnchor] = useState<{ x: number; y: number } | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [indicators, setIndicators] = useState<IndicatorConfig>(DEFAULT_INDICATOR_CONFIG);
   const [drawingsLocked, setDrawingsLocked] = useState(false);
@@ -342,6 +344,12 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     }
   }, [instrumentKey]);
 
+  const handleSelectDrawing = useCallback((id: string | null, pos?: { x: number; y: number }) => {
+    setSelectedDrawingId(id);
+    if (!id) { setToolbarAnchor(null); return; }
+    if (pos) setToolbarAnchor(pos);
+  }, []);
+
   const handleIndicatorsChange = useCallback((next: IndicatorConfig) => {
     setIndicators(next);
     if (loadedKeyRef.current === instrumentKey) {
@@ -362,6 +370,37 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const deleteDrawing = useCallback((id: string) => {
     handleDrawingsChange(drawings.filter((d) => d.id !== id));
     setSelectedDrawingId(null);
+    setToolbarAnchor(null);
+  }, [drawings, handleDrawingsChange]);
+
+  const cloneDrawing = useCallback((id: string) => {
+    const src = drawings.find((d) => d.id === id);
+    if (!src) return;
+    const base = src.points[0]?.price ?? 0;
+    const pOff = (Math.abs(base) || 1) * 0.01;
+    const tOff = src.points.length >= 2 ? Math.abs(src.points[1].time - src.points[0].time) * 0.15 : 0;
+    const newId = Date.now().toString();
+    const copy: Drawing = {
+      ...src,
+      id: newId,
+      locked: false,
+      points: src.points.map((p) => ({ time: p.time + tOff, price: p.price - pOff })),
+      ...(src.stopLoss ? { stopLoss: { time: src.stopLoss.time + tOff, price: src.stopLoss.price - pOff } } : {}),
+    };
+    handleDrawingsChange([...drawings, copy]);
+    setSelectedDrawingId(newId);
+  }, [drawings, handleDrawingsChange]);
+
+  const bringDrawingToFront = useCallback((id: string) => {
+    const d = drawings.find((x) => x.id === id);
+    if (!d) return;
+    handleDrawingsChange([...drawings.filter((x) => x.id !== id), d]);
+  }, [drawings, handleDrawingsChange]);
+
+  const sendDrawingToBack = useCallback((id: string) => {
+    const d = drawings.find((x) => x.id === id);
+    if (!d) return;
+    handleDrawingsChange([d, ...drawings.filter((x) => x.id !== id)]);
   }, [drawings, handleDrawingsChange]);
 
   // Python indicators from the engine ride in as precomputed customIndicators,
@@ -659,7 +698,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           drawings={drawings}
           onDrawingsChange={handleDrawingsChange}
           selectedDrawingId={selectedDrawingId}
-          onSelectDrawing={setSelectedDrawingId}
+          onSelectDrawing={handleSelectDrawing}
           converter={converter}
           scrollSyncRef={scrollSyncRef}
           scrollOffsetRef={scrollOffsetRef}
@@ -675,6 +714,21 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
         />
         </>)}
       </div>
+
+      {/* Drawing edit toolbar: floats next to a selected drawing (color, width,
+          line style, fill, clone, per-object lock, z-order, delete). */}
+      {selectedDrawingId && drawings.find((d) => d.id === selectedDrawingId) && (
+        <DrawingEditToolbar
+          drawing={drawings.find((d) => d.id === selectedDrawingId)!}
+          anchorPosition={toolbarAnchor}
+          onUpdateDrawing={(id, updates) => handleDrawingsChange(drawings.map((d) => d.id === id ? { ...d, ...updates } : d))}
+          onDeleteDrawing={(id) => { handleDrawingsChange(drawings.filter((d) => d.id !== id)); setSelectedDrawingId(null); setToolbarAnchor(null); }}
+          onClose={() => { setSelectedDrawingId(null); setToolbarAnchor(null); }}
+          onCloneDrawing={cloneDrawing}
+          onBringToFront={bringDrawingToFront}
+          onSendToBack={sendDrawingToBack}
+        />
+      )}
 
       {/* The built-in indicator dialog is retired: the indicator library is
           Python, so the rail's indicator button opens the SHELL's browser
