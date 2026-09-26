@@ -10106,6 +10106,74 @@ function dockTopTools() {
 new MutationObserver(() => dockTopTools())
   .observe(document.body, { attributes: true, attributeFilter: ["class"] });
 dockTopTools();
+
+/* ═══ Pane badges: every grid pane wears its pair (SYM · TF) + a focus ═══
+   button. Makes per-pane state VISIBLE and focus mode DISCOVERABLE.
+   Shell overlay only: geometry read from the grid, pairs resolved exactly
+   as the panes resolve them (see focusPanePair). */
+function paneGrid() {
+  const host = $("chart-pro");
+  if (!host) return null;
+  const grids = host.querySelectorAll('div[style*="grid-template-columns"]');
+  for (const g of grids) {
+    if (g.style.display === "grid" && g.children.length > 1) return g;
+  }
+  return null;
+}
+function paneBadgesUpdate() {
+  let wrap = $("pane-badges");
+  const ls = window.LSEChart && window.LSEChart.layoutStore;
+  const st = ls && ls.get ? ls.get() : null;
+  const grid = paneGrid();
+  const show = !!(grid && st && st.layout && st.layout !== "1x1" && !focus.on &&
+    !$("charts").classList.contains("hidden"));
+  if (!show) { if (wrap) wrap.classList.add("hidden"); return; }
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "pane-badges";
+    document.body.appendChild(wrap);
+  }
+  wrap.classList.remove("hidden");
+  wrap.innerHTML = "";
+  const kids = Array.from(grid.children);
+  for (let i = 0; i < kids.length; i++) {
+    const r = kids[i].getBoundingClientRect();
+    if (r.width < 40 || r.height < 40) continue;
+    const { sym, tf } = focusPanePair(i);
+    const b = document.createElement("div");
+    b.className = "pane-badge" + (st.activePanel === i ? " active" : "");
+    b.style.left = (r.left + 6) + "px";
+    b.style.top = (r.top + 6) + "px";
+    const label = document.createElement("button");
+    label.type = "button"; label.className = "pb-label";
+    label.textContent = `${sym} · ${tf}`;
+    label.title = `Select pane ${i + 1}`;
+    label.onclick = (e) => { e.stopPropagation(); if (ls.setActivePanel) ls.setActivePanel(i); };
+    const exp = document.createElement("button");
+    exp.type = "button"; exp.className = "pb-expand";
+    exp.textContent = "⤢"; exp.title = `Focus pane ${i + 1} solo (double-click works too)`;
+    exp.onclick = (e) => { e.stopPropagation(); focusEnter(i); };
+    b.appendChild(label); b.appendChild(exp);
+    wrap.appendChild(b);
+  }
+}
+(function paneBadgesBind() {
+  const ls = window.LSEChart && window.LSEChart.layoutStore;
+  if (ls && ls.subscribe && !paneBadgesBind.done) {
+    paneBadgesBind.done = true;
+    ls.subscribe(() => paneBadgesUpdate());
+  }
+  let tick = 0;
+  const soon = () => { clearTimeout(tick); tick = setTimeout(paneBadgesUpdate, 120); };
+  window.addEventListener("resize", soon);
+  window.addEventListener("scroll", soon, true);
+  const host = $("chart-pro");
+  if (host && !host.dataset.pbWired) {
+    host.dataset.pbWired = "1";
+    new MutationObserver(soon).observe(host, { childList: true, subtree: false });
+  }
+  setTimeout(paneBadgesUpdate, 800);
+})();
 (function lassoBind() {
   const layer = $("lasso-layer");
   if (!layer || layer.dataset.wired) return;
