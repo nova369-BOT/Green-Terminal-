@@ -766,6 +766,9 @@ function updateWindowTitle() {
 }
 
 async function loadChart() {
+  // Any explicit (re)load returns us to the live tail: drop the History
+  // Navigator's history pin so streaming resumes normally.
+  state.historyPinned = false;
   if (!state.provider || !state.symbol) {
     // Keyless / no instrument: stay in the honest waiting state.
     if (!state.provider || state.dataWaiting) {
@@ -983,6 +986,10 @@ function onTick(t) {
   }
   if (t.symbol !== state.symbol) { return; }
   refreshInstrumentBarSoon();
+  // History Navigator pinned an old window on screen: keep quotes/board live
+  // (done above) but do NOT append or reshape bars, or a 2026 tick would graft
+  // a phantom bar onto a 2023 view. reloadLatest() clears this.
+  if (state.historyPinned) return;
   if (state.timeframe === "tick") {
     // No lastBar guard here: a quiet symbol can open with an EMPTY tick
     // history (nothing in the replay window), and the tape must still
@@ -3445,6 +3452,33 @@ function setupLayouts() {
         }));
       } catch (_) { return []; }
     },
+    // Phase 2 (History Navigator): "Go to date/range" past the loaded window.
+    // Pages a REAL candle window [startSec, endSec] from the engine and shows
+    // it, pinning history so live ticks don't graft a bar onto an old view.
+    // Returns the number of bars loaded (0 = nothing served → caller keeps its
+    // current data rather than blanking the chart).
+    loadHistoryWindow: async (startSec, endSec) => {
+      if (!state.provider || !state.symbol) return 0;
+      try {
+        const startISO = new Date(Math.max(0, startSec) * 1000).toISOString();
+        const endISO = new Date(Math.max(0, endSec) * 1000).toISOString();
+        const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
+          `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
+          `&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}&limit=5000`;
+        const res = await fetch(url);
+        if (!res.ok) return 0;
+        const data = await res.json();
+        const rows = (data.candles || []).map(([t, o, h, l, c, v]) =>
+          ({ time: t, open: o, high: h, low: l, close: c, volume: v }));
+        if (!rows.length) return 0;
+        state.candleData = rows;
+        state.historyPinned = true;   // browsing history: pause live bar-forming
+        pushToChart();
+        return rows.length;
+      } catch (e) { return 0; }
+    },
+    // Return to the live tail (Navigator "Latest"): unpin and reload recent.
+    reloadLatest: () => { state.historyPinned = false; loadChart(); },
     layouts: () => layoutsZone.rows.map((r) => ({ id: r.id, name: r.name })),
     applyLayout: (id) => {
       const row = layoutsZone.rows.find((r) => r.id === id);
@@ -18955,6 +18989,15 @@ try {
         );
       }
     } catch (e) { console.error("bar-type selector", e); }
+    // Phase 2: History Navigator (quick ranges + Go to date/range) over the
+    // time axis. Reads the loaded candles and drives the chart viewport; the
+    // "Go to" older-than-loaded path calls back into loadHistoryWindow above.
+    try {
+      const gnEl = document.getElementById("goto-nav-slot");
+      if (gnEl && typeof window.LSEChart.mountGoToNavigator === "function") {
+        window.LSEChart.mountGoToNavigator(gnEl);
+      }
+    } catch (e) { console.error("goto navigator", e); }
   } else {
     setTimeout(mountLayoutBtn, 250);
   }

@@ -36,6 +36,7 @@ import { AppearancePanel, ChartSettingsPanel } from '@/components/chart/InlineCh
 import MultiTimeframeLayoutSelector from '@/components/chart/MultiTimeframeLayoutSelector';
 import TerminalMultiGrid from '@/components/chart/TerminalMultiGrid';
 import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
+import GoToNavigator from '@/components/chart/GoToNavigator';
 import { type BarSelection } from '@/engine/barTypes';
 import { layoutStore, useLayoutState } from '@/lib/layoutStore';
 import { setEngineContext } from '@/lib/localEngine';
@@ -93,6 +94,9 @@ export interface ChartProps {
   onPositionModify?: (id: string, sl?: number, tp?: number) => void;
   onPositionClose?: (id: string) => void;
   autoSelectPositionId?: string | null;
+  // History Navigator viewport commands (LSEChart.goToIndex / fitIndexRange).
+  scrollToIndex?: number;
+  fitRange?: { startIndex: number; endIndex: number; nonce: number } | null;
 }
 
 interface TerminalChartProps extends ChartProps {
@@ -120,7 +124,7 @@ const ctxRow: React.CSSProperties = {
 const onCtxRowIn = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'var(--hover)'; };
 const onCtxRowOut = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'transparent'; };
 
-function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null }: TerminalChartProps) {
+function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null, scrollToIndex, fitRange = null }: TerminalChartProps) {
   const [converter, setConverter] = useState<Converter | null>(null);
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
@@ -693,6 +697,8 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           onLoadMore={loadMoreHistory}
           isLoadingMore={isLoadingMore}
           prependShift={prependShift}
+          scrollToIndex={scrollToIndex}
+          fitRange={fitRange}
         />
         <ChartDrawingOverlay
           activeTool={activeTool}
@@ -1595,6 +1601,33 @@ const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
     if (next.chartType) cur = { ...cur, chartType: CHART_TYPE_ALIASES[next.chartType] ?? cur.chartType };
     draw();
   };
+};
+// ── History Navigator (Phase 2: Go to date / range + quick ranges) ──────────
+// The bottom navigator reads the loaded candles for its overview sparkline and
+// index maths, and drives the chart viewport imperatively (no data round-trip
+// for in-range jumps). Times in props.candles are ms (see normalise()).
+(LSEChart as any).getLoadedCandles = () => props.candles || [];
+(LSEChart as any).currentSeries = () => ({
+  provider: props.provider, symbol: props.symbol, timeframe: props.timeframe,
+});
+// Position a single candle near the right edge ("Go to date").
+(LSEChart as any).goToIndex = (index: number) => {
+  LSEChart.update({ scrollToIndex: Math.max(0, Math.floor(index)) });
+};
+// Frame an index range to fill the viewport ("Go to range" + quick ranges).
+(LSEChart as any).fitIndexRange = (startIndex: number, endIndex: number) => {
+  LSEChart.update({
+    fitRange: {
+      startIndex: Math.max(0, Math.floor(startIndex)),
+      endIndex: Math.max(0, Math.floor(endIndex)),
+      nonce: Date.now(),
+    },
+  });
+};
+(LSEChart as any).mountGoToNavigator = (el: HTMLElement): (() => void) => {
+  const r = createRoot(el);
+  r.render(<GoToNavigator />);
+  return () => r.unmount();
 };
 (LSEChart as any).layoutStore = layoutStore;
 

@@ -123,6 +123,10 @@ export interface ProChartProps {
   syncedViewportTime?: number | null; // Synced time to scroll to
   disableAutoFollow?: boolean;
   scrollToIndex?: number; // When set, scroll so this index is visible (near right edge)
+  // When its nonce changes, frame candles [startIndex..endIndex] to fill the
+  // viewport (History Navigator quick-ranges / "Go to range"). Additive: unset
+  // leaves scroll/zoom under the user's control.
+  fitRange?: { startIndex: number; endIndex: number; nonce: number } | null;
   chartType?: ChartType;
   onScrollingChange?: (isScrolling: boolean) => void; // Notify parent when scroll state changes
   onScrollSync?: () => void; // Called on each scroll frame for drawing sync (ref-based, no state updates)

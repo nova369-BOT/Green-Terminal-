@@ -114,6 +114,7 @@ const ProChart: React.FC<ProChartProps> = ({
   syncedViewportTime,
   disableAutoFollow = false,
   scrollToIndex,
+  fitRange,
   chartType = 'candlestick',
   onScrollingChange,
   onScrollSync,
@@ -7632,6 +7633,27 @@ const ProChart: React.FC<ProChartProps> = ({
     const newStartIndex = Math.max(0, clampedIndex - targetPosition);
     setViewState(prev => ({ ...prev, startIndex: newStartIndex, autoFollowLatest: false }));
   }, [scrollToIndex, candles.length, dimensions.width, viewState.candleWidth]);
+
+  // Frame an index range so it fills the viewport (History Navigator quick
+  // ranges + "Go to range"). Re-applies only when the nonce changes, so ordinary
+  // candle/dimension updates never yank the user's manual zoom.
+  const lastFitNonceRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!fitRange || candles.length === 0) return;
+    if (lastFitNonceRef.current === fitRange.nonce) return;
+    lastFitNonceRef.current = fitRange.nonce;
+
+    const chartWidth = dimensions.width - PRICE_AXIS_WIDTH;
+    if (chartWidth <= 0) return;
+    const startIndex = Math.max(0, Math.min(fitRange.startIndex, candles.length - 1));
+    const endIndex = Math.max(startIndex, Math.min(fitRange.endIndex, candles.length - 1));
+    const count = Math.max(1, endIndex - startIndex + 1);
+    // Leave ~8% breathing room on the right so the newest bar isn't hard against
+    // the price axis, matching the feel of a manual fit.
+    let cw = (chartWidth * 0.92) / (count * (1 + CANDLE_GAP_RATIO));
+    cw = Math.min(MAX_CANDLE_WIDTH, Math.max(MIN_CANDLE_WIDTH, cw));
+    setViewState(prev => ({ ...prev, startIndex, candleWidth: cw, autoFollowLatest: false }));
+  }, [fitRange, candles.length, dimensions.width]);
 
   useEffect(() => {
     // Skip during active scroll: the scroll RAF (wheelRAFRef) already calls

@@ -365,6 +365,10 @@ def my_ind(df, length=20):
            host for the lightweight-charts instance that backs the backtest
            equity curve; it draws no price data. -->
       <div id="chart-pro"></div>
+      <!-- Phase 2: History Navigator (quick ranges + Go to date/range). Mounted
+           by the chart bundle (LSEChart.mountGoToNavigator). pointer-events:none
+           keeps the chart underneath interactive; the strip re-enables its own. -->
+      <div id="goto-nav-slot" style="position:absolute; right:14px; bottom:12px; z-index:30; pointer-events:none;"></div>
       <div id="chart" class="hidden"></div>
       <!-- Phase-3 correction: honest empty state — NO demo BTC/GOLD fallback.
            Shown when no live source is connected (LSE key required). -->
