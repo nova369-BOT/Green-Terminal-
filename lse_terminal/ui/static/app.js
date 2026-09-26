@@ -3069,6 +3069,18 @@ function renderTimeframes() {
     }
     nav.appendChild(b);
   }
+  syncBarTypeSelector();
+}
+
+/* Keeps the cTrader-style timeframe/bar-type mega-selector (mounted into
+   #bar-type-slot by the chart bundle) showing the shell's current timeframe
+   and chart type. No-ops until the bundle has mounted the selector and handed
+   back its updater, so it is safe to call from the early boot render passes. */
+function syncBarTypeSelector() {
+  if (typeof window.__btSelUpdate === "function") {
+    try { window.__btSelUpdate({ timeframe: state.timeframe, chartType: state.chartType }); }
+    catch (e) { /* selector not ready */ }
+  }
 }
 
 /* The resolution a dataset was imported at ("30m"), or "" for anything not in
@@ -16803,6 +16815,7 @@ async function boot() {
     state.chartType = e.target.value;
     pushToChart();
     saveShellState();
+    syncBarTypeSelector();
   };
 
   // Chart colours & settings: opens the appearance dialog inside the mounted
@@ -18882,6 +18895,28 @@ try {
     // Title follows the selected pane: re-derive it whenever the layout,
     // selection, or a pane's symbol changes.
     try { window.LSEChart.layoutStore.subscribe(() => { try { updateWindowTitle(); } catch (e) { /* pre-init */ } }); } catch (e) { /* bundle without layoutStore */ }
+    // cTrader-style timeframe / bar-type mega-selector, mounted beside the
+    // timeframe rail. Its onChange drives the shell's own state (and keeps the
+    // rail + chart-type <select> in step); __btSelUpdate lets those controls
+    // push their changes back to the button label. Non-fatal if unavailable.
+    try {
+      const btEl = document.getElementById("bar-type-slot");
+      if (btEl && typeof window.LSEChart.mountTimeframeSelector === "function") {
+        window.__btSelUpdate = window.LSEChart.mountTimeframeSelector(
+          btEl,
+          { timeframe: state.timeframe, chartType: state.chartType },
+          (sel) => {
+            state.timeframe = sel.timeframe;
+            state.chartType = sel.chartType;
+            const ct = document.getElementById("chart-type");
+            if (ct) ct.value = sel.chartType;
+            renderTimeframes();
+            loadChart();
+            saveShellState();
+          }
+        );
+      }
+    } catch (e) { console.error("bar-type selector", e); }
   } else {
     setTimeout(mountLayoutBtn, 250);
   }

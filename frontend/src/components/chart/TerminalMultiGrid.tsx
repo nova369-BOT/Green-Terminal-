@@ -10,6 +10,12 @@
 //                  syncedCrosshairTime prop, same as the site)
 //   syncTime     - viewport scroll position mirrors (syncedViewportTime)
 //
+// Each panel now carries its own header (cTrader-style): a symbol picker and a
+// timeframe/bar-type mega-selector, so the pair AND the timeframe/bar type can
+// be changed directly on the pane. Changing a pane's symbol or timeframe while
+// the matching sync is on turns that sync off (you asked for independent panes),
+// so the change is actually visible.
+//
 // Data: the site's panels fetch through ProCandlestickChart; here each panel
 // fetches through the terminal's local engine (fetchLocalCandles) and
 // refreshes its tail on a short timer, so panes stay live without the shell
@@ -17,8 +23,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ProChart from '@/components/chart/ProChart';
 import { DEFAULT_INDICATOR_CONFIG } from '@/components/chart/IndicatorSettings';
-import { getDefaultColors, type Candle } from '@/components/chart/core/types';
+import { getDefaultColors, type Candle, type ChartType } from '@/components/chart/core/types';
 import { type LayoutType, type SyncSettings } from '@/components/chart/MultiTimeframeLayoutSelector';
+import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
+import PanelSymbolPicker from '@/components/chart/PanelSymbolPicker';
+import { type BarSelection } from '@/engine/barTypes';
+import { transformSeries } from '@/engine/transforms';
 import { fetchLocalCandles } from '@/lib/localEngine';
 import { layoutStore, useLayoutState } from '@/lib/layoutStore';
 import { useChartSettings } from '@/contexts/ChartSettingsContext';
@@ -41,12 +51,16 @@ const LAYOUTS: Record<LayoutType, { count: number; cols: number; rows: number }>
 const STAGGER = ['1h', '4h', '1d', '15m', '5m', '1w', '30m', '1m'];
 
 function Panel({
-  symbol, timeframe, colors, active, onActivate,
+  symbol, timeframe, chartType, colors, active, onActivate,
+  onSymbolChange, onBarChange, suggestions,
   syncedCrosshairTime, onCrosshairMove, syncedViewportTime, onViewportTimeChange,
   quote,
 }: {
-  symbol: string; timeframe: string; colors: any; active: boolean;
+  symbol: string; timeframe: string; chartType: ChartType; colors: any; active: boolean;
   onActivate: () => void;
+  onSymbolChange: (sym: string) => void;
+  onBarChange: (sel: BarSelection) => void;
+  suggestions: string[];
   syncedCrosshairTime: number | null;
   onCrosshairMove: (t: number | null) => void;
   syncedViewportTime: number | null;
@@ -85,41 +99,61 @@ function Panel({
     return () => { cancelled = true; clearInterval(t); };
   }, [symbol, timeframe]);
 
+  // Display-only series transform (Heikin Ashi / Renko), exactly as the main
+  // chart does it in mount.tsx: source candles stay raw, ProChart draws the
+  // transformed series for its matching branch. Identity for candlestick.
+  const displayCandles = useMemo(
+    () => transformSeries(candles as any, chartType) as unknown as Candle[],
+    [candles, chartType],
+  );
+
   return (
     <div
       onMouseDown={onActivate}
       style={{
         position: 'relative', minWidth: 0, minHeight: 0, overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
         // Selected pane: the shell's own selected-element color (--accent-bar:
         // charcoal on light, light gray on dark), same as active tabs and rows.
-        // The old var(--accent) fallback resolved to a blue no shell rule allows.
         border: active ? '1px solid var(--accent-bar, #888)' : '1px solid var(--edge, #2a2e39)',
       }}
     >
-      {/* No symbol/timeframe overlay on the pane: it sat on top of the
-          OHLC legend and looked wrong. The SELECTED pane's name
-          shows in the window title instead, and a sidebar/search pick
-          retargets the selected pane; ProChart's own legend covers values. */}
-      {candles.length > 0 && (
-        <ProChart
-          candles={candles}
-          symbol={symbol}
-          timeframe={timeframe}
-          chartType="candlestick"
-          livePrice={candles[candles.length - 1]?.close ?? null}
-          rightOffset={6}
-          colors={colors}
-          indicators={DEFAULT_INDICATOR_CONFIG}
-          timezone={chartSettings?.data?.timezone || 'local'}
-          syncedCrosshairTime={syncedCrosshairTime ?? undefined}
-          onCrosshairMove={onCrosshairMove}
-          syncedViewportTime={syncedViewportTime ?? undefined}
-          onViewportTimeChange={onViewportTimeChange}
-          showBidAskSpread={!!quote}
-          brokerBid={quote?.bid ?? null}
-          brokerAsk={quote?.ask ?? null}
-        />
-      )}
+      {/* Per-pane header: change the instrument and the timeframe/bar type
+          right here, cTrader-style. */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 6, padding: '3px 6px', flex: '0 0 auto',
+          background: 'var(--panel, #1b1d22)',
+          borderBottom: '1px solid var(--edge, #2a2e39)',
+        }}
+      >
+        <PanelSymbolPicker value={symbol} onChange={onSymbolChange} suggestions={suggestions} compact />
+        <TimeframeMegaSelector value={{ timeframe, chartType }} onChange={onBarChange} compact />
+      </div>
+
+      <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>
+        {displayCandles.length > 0 && (
+          <ProChart
+            candles={displayCandles}
+            symbol={symbol}
+            timeframe={timeframe}
+            chartType={chartType}
+            livePrice={candles[candles.length - 1]?.close ?? null}
+            rightOffset={6}
+            colors={colors}
+            indicators={DEFAULT_INDICATOR_CONFIG}
+            timezone={chartSettings?.data?.timezone || 'local'}
+            syncedCrosshairTime={syncedCrosshairTime ?? undefined}
+            onCrosshairMove={onCrosshairMove}
+            syncedViewportTime={syncedViewportTime ?? undefined}
+            onViewportTimeChange={onViewportTimeChange}
+            showBidAskSpread={!!quote}
+            brokerBid={quote?.bid ?? null}
+            brokerAsk={quote?.ask ?? null}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -137,7 +171,7 @@ export default function TerminalMultiGrid({
   const cfg = LAYOUTS[layout] || LAYOUTS['2x2'];
   // Selection and per-panel symbols live in layoutStore, not local state: the
   // shell reads them to name the window title and to retarget symbol picks.
-  const { activePanel, panelSymbols, panelIntervals } = useLayoutState();
+  const { activePanel, panelSymbols, panelIntervals, panelChartTypes } = useLayoutState();
   const active = Math.min(activePanel, cfg.count - 1);
   const [panelTfs, setPanelTfs] = useState<string[]>([]);
   const [crossT, setCrossT] = useState<number | null>(null);
@@ -161,30 +195,63 @@ export default function TerminalMultiGrid({
     if (syncSettings.syncTime) setViewT(t);
   }, [syncSettings.syncTime]);
 
+  // Instruments offered in every pane's symbol picker: the shell's charted pair
+  // plus whatever the other panes are already showing (deduped, uppercased).
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    return [pair, ...panelSymbols]
+      .map((s) => (s || '').toUpperCase().trim())
+      .filter((s) => s && !seen.has(s) && (seen.add(s), true));
+  }, [pair, panelSymbols]);
+
   return (
     <div style={{
       display: 'grid', width: '100%', height: '100%', gap: 2,
       gridTemplateColumns: `repeat(${cfg.cols}, 1fr)`,
       gridTemplateRows: `repeat(${cfg.rows}, 1fr)`,
     }}>
-      {Array.from({ length: cfg.count }, (_, i) => (
-        <Panel
-          key={i}
-          symbol={syncSettings.syncSymbol ? pair : (panelSymbols[i] || pair)}
-          // Per-pane timeframe precedence (matches the shell's timeframe rail
-          // + focusPanePair): interval-sync forces the global tf; otherwise an
-          // explicit store override wins, then the staggered local default.
-          timeframe={syncSettings.syncInterval ? timeframe : (panelIntervals[i] || panelTfs[i] || timeframe)}
-          colors={base}
-          active={i === active}
-          onActivate={() => layoutStore.setActivePanel(i)}
-          syncedCrosshairTime={syncSettings.syncCrosshair ? crossT : null}
-          onCrosshairMove={onCross}
-          syncedViewportTime={syncSettings.syncTime ? viewT : null}
-          onViewportTimeChange={onView}
-          quote={quote}
-        />
-      ))}
+      {Array.from({ length: cfg.count }, (_, i) => {
+        const sym = syncSettings.syncSymbol ? pair : (panelSymbols[i] || pair);
+        // Per-pane timeframe precedence (matches the shell's timeframe rail +
+        // focusPanePair): interval-sync forces the global tf; otherwise an
+        // explicit store override wins, then the staggered local default.
+        const tf = syncSettings.syncInterval ? timeframe : (panelIntervals[i] || panelTfs[i] || timeframe);
+        const ct = (panelChartTypes[i] as ChartType) || 'candlestick';
+        return (
+          <Panel
+            key={i}
+            symbol={sym}
+            timeframe={tf}
+            chartType={ct}
+            colors={base}
+            active={i === active}
+            suggestions={suggestions}
+            onActivate={() => layoutStore.setActivePanel(i)}
+            onSymbolChange={(next) => {
+              layoutStore.setActivePanel(i);
+              layoutStore.setPanelSymbol(i, next);
+              // A per-pane symbol edit means the panes are no longer locked to
+              // one instrument — otherwise the change would be invisible.
+              if (syncSettings.syncSymbol) {
+                layoutStore.setSync({ ...syncSettings, syncSymbol: false });
+              }
+            }}
+            onBarChange={(sel) => {
+              layoutStore.setActivePanel(i);
+              layoutStore.setPanelInterval(i, sel.timeframe);
+              layoutStore.setPanelChartType(i, sel.chartType);
+              if (syncSettings.syncInterval) {
+                layoutStore.setSync({ ...syncSettings, syncInterval: false });
+              }
+            }}
+            syncedCrosshairTime={syncSettings.syncCrosshair ? crossT : null}
+            onCrosshairMove={onCross}
+            syncedViewportTime={syncSettings.syncTime ? viewT : null}
+            onViewportTimeChange={onView}
+            quote={quote}
+          />
+        );
+      })}
     </div>
   );
 }

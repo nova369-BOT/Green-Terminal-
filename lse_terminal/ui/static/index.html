@@ -122,6 +122,10 @@ document.documentElement.setAttribute("data-theme",
     <option value="heikinAshi">Heikin Ashi</option>
     <option value="renko">Renko</option>
   </select>
+  <!-- cTrader-style timeframe + bar-type mega-selector. Mounted here by the
+       chart bundle (LSEChart.mountTimeframeSelector); it drives the same
+       state.timeframe / state.chartType the rail and the <select> above do. -->
+  <span id="bar-type-slot" title="Timeframe & bar type"></span>
   <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
   <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for
        an instant dossier of the real candles inside. Same ids the boot path

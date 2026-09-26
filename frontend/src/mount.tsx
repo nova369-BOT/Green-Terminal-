@@ -35,6 +35,8 @@ import { ChartSettingsProvider, useChartSettings, useHasSavedAppearance } from '
 import { AppearancePanel, ChartSettingsPanel } from '@/components/chart/InlineChartSettings';
 import MultiTimeframeLayoutSelector from '@/components/chart/MultiTimeframeLayoutSelector';
 import TerminalMultiGrid from '@/components/chart/TerminalMultiGrid';
+import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
+import { type BarSelection } from '@/engine/barTypes';
 import { layoutStore, useLayoutState } from '@/lib/layoutStore';
 import { setEngineContext } from '@/lib/localEngine';
 import { isMarketOpenForPair } from '@/lib/marketHours';
@@ -1543,6 +1545,56 @@ declare global {
 // this; run it before committing any bundle.
 (LSEChart as any).mountLayoutButton = (el: HTMLElement) => {
   createRoot(el).render(<LayoutButton />);
+};
+
+// Reverse of CHART_TYPE_ALIASES: engine ChartType → the shell <select> value,
+// so the mega-selector's onChange reports back in the vocabulary that app.js's
+// state.chartType speaks ('candles', not 'candlestick').
+const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
+  candlestick: 'candles',
+  bars: 'bars',
+  line: 'line',
+  area: 'area',
+  heikinAshi: 'heikinAshi',
+  renko: 'renko',
+};
+
+// The main-chart timeframe / bar-type mega-selector (cTrader-style, the same
+// control the multi-grid panels use). The shell mounts it beside its timeframe
+// rail and drives state.timeframe / state.chartType from the onChange. Returns
+// an updater the shell calls to keep the button label in step when the rail,
+// the chart-type <select>, or a workspace load change things elsewhere.
+(LSEChart as any).mountTimeframeSelector = (
+  el: HTMLElement,
+  initial: { timeframe: string; chartType: string },
+  onChange: (sel: { timeframe: string; chartType: string }) => void,
+): ((next: { timeframe?: string; chartType?: string }) => void) => {
+  const r = createRoot(el);
+  let cur: BarSelection = {
+    timeframe: initial.timeframe || '1h',
+    chartType: CHART_TYPE_ALIASES[initial.chartType] ?? 'candlestick',
+  };
+  const draw = () => {
+    r.render(
+      <TimeframeMegaSelector
+        value={cur}
+        onChange={(sel) => {
+          cur = sel;
+          draw();
+          onChange({
+            timeframe: sel.timeframe,
+            chartType: CHART_TYPE_TO_SHELL[sel.chartType] ?? 'candles',
+          });
+        }}
+      />,
+    );
+  };
+  draw();
+  return (next) => {
+    if (next.timeframe) cur = { ...cur, timeframe: next.timeframe };
+    if (next.chartType) cur = { ...cur, chartType: CHART_TYPE_ALIASES[next.chartType] ?? cur.chartType };
+    draw();
+  };
 };
 (LSEChart as any).layoutStore = layoutStore;
 
