@@ -4219,6 +4219,22 @@ body.ws-fullscreen #lasso-layer { z-index: 90; }
 #lasso-card .lz-note { color: var(--dim); font-size: 11px; line-height: 1.5; }
 #lasso-open { display: inline-flex; align-items: center; gap: 5px; }
 #lasso-open.active { color: #0a0f0c; background: var(--accent-bar); border-color: transparent; }
+/* Top-tools dock: in normal mode Lasso + camera live in the topline's
+   right cluster (ahead of the theme toggle) as quiet ghost pills. */
+#topline #lasso-open, #topline #cam-shot {
+  flex: none; align-self: center;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 11px; border-radius: 7px;
+  background: transparent; border: 1px solid transparent;
+  color: var(--dim); font-size: 12px; white-space: nowrap;
+}
+#topline #cam-shot { padding: 0 8px; }
+#topline #lasso-open:hover, #topline #cam-shot:hover {
+  color: var(--text); border-color: var(--edge); background: var(--hover);
+}
+#topline #lasso-open.active {
+  color: #0a0f0c; background: var(--accent-bar); border-color: transparent;
+}
 body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 62px; z-index: 80; background: var(--bg); }
 body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
 body.ws-fullscreen #term-status { z-index: 90; }
