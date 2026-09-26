@@ -10159,19 +10159,34 @@ function paneBadgesUpdate() {
   }
 }
 (function paneBadgesBind() {
+  let tick = 0;
+  const soon = () => { clearTimeout(tick); tick = setTimeout(paneBadgesUpdate, 120); };
+  // React renders the grid ASYNCHRONOUSLY, so a single check right after a
+  // layout change runs before the new panes exist in the DOM. That is why the
+  // badges vanished after EXITING a multi-window layout and ENTERING it again:
+  // layoutStore.subscribe fires synchronously on setLayout, the update found no
+  // grid yet and hid the badges, and nothing re-checked once the panes mounted.
+  // Re-check a few times so the badges reappear as soon as the grid is there.
+  const soonRetry = () => {
+    soon();
+    setTimeout(paneBadgesUpdate, 350);
+    setTimeout(paneBadgesUpdate, 700);
+  };
   const ls = window.LSEChart && window.LSEChart.layoutStore;
   if (ls && ls.subscribe && !paneBadgesBind.done) {
     paneBadgesBind.done = true;
-    ls.subscribe(() => paneBadgesUpdate());
+    ls.subscribe(soonRetry);
   }
-  let tick = 0;
-  const soon = () => { clearTimeout(tick); tick = setTimeout(paneBadgesUpdate, 120); };
   window.addEventListener("resize", soon);
   window.addEventListener("scroll", soon, true);
   const host = $("chart-pro");
   if (host && !host.dataset.pbWired) {
     host.dataset.pbWired = "1";
-    new MutationObserver(soon).observe(host, { childList: true, subtree: false });
+    // subtree:true — the grid swaps DEEP inside #chart-pro, not as a direct
+    // child, so the old shallow observer never saw the layout change. childList
+    // only fires on node add/remove and the update is debounced, so this stays
+    // cheap. (Badges live on document.body, so this never observes itself.)
+    new MutationObserver(soon).observe(host, { childList: true, subtree: true });
   }
   setTimeout(paneBadgesUpdate, 800);
 })();
