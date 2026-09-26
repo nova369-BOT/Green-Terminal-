@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment } from 'react';
 import { flushSync } from 'react-dom';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | null;
 
 // Brush-like tools that share the same freehand drawing behavior
 const BRUSH_TOOLS: DrawingTool[] = ['brush', 'highlighter', 'arrow'];
@@ -1052,7 +1052,7 @@ const ChartDrawingOverlayComponent = ({
     }
 
     // Show crosshair and preview when a drawing tool is active
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'brush', 'highlighter', 'arrow', 'measure'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'brush', 'highlighter', 'arrow', 'measure'];
     if (activeTool && drawingTools.includes(activeTool)) {
       const clampedPoint = clampToChartArea({ x, y });
 
@@ -1139,7 +1139,7 @@ const ChartDrawingOverlayComponent = ({
     // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
     // This allows placing new drawings on top of existing ones
     // Exception: brush tool should start drawing immediately in handlePointerDown
-    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
     if (activeTool && drawingTools.includes(activeTool)) {
       return false; // Let handleClick/handleTap handle the new drawing creation
     }
@@ -1542,7 +1542,7 @@ const ChartDrawingOverlayComponent = ({
       }
 
       // Check fibonacci body
-      if ((drawing.type === 'fibonacci' || drawing.type === 'fibExtension') && pixels.length >= 2) {
+      if ((drawing.type === 'fibonacci' || drawing.type === 'fibExtension' || drawing.type === 'fibFan' || drawing.type === 'fibTimeZones') && pixels.length >= 2) {
         const [p1, p2] = pixels;
         const minX = Math.min(p1.x, p2.x);
         const maxX = Math.max(p1.x, p2.x);
@@ -2332,7 +2332,7 @@ const ChartDrawingOverlayComponent = ({
       return;
     }
 
-    if (activeTool === 'trend' || activeTool === 'trendRay' || activeTool === 'line' || activeTool === 'fibonacci' || activeTool === 'fibExtension' || activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart') {
+    if (activeTool === 'trend' || activeTool === 'trendRay' || activeTool === 'line' || activeTool === 'fibonacci' || activeTool === 'fibExtension' || activeTool === 'fibFan' || activeTool === 'fibTimeZones' || activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart') {
       if (tempPoints.length === 0) {
         setTempPoints([{ x, y }]);
       } else {
@@ -3839,6 +3839,74 @@ const ChartDrawingOverlayComponent = ({
       return renderPolygonShape(pts);
     }
 
+    if (drawing.type === 'fibFan') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const fanLevels = [0, 0.382, 0.5, 0.618, 1];
+      const rightEdge = containerDims.width - chartBounds.priceAxisWidth;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {fanLevels.map((level) => {
+            const yLevel = p1.y + (p2.y - p1.y) * level;
+            const dx = p2.x - p1.x;
+            const dy = yLevel - p1.y;
+            let ex = p2.x, ey = yLevel;
+            if (dx !== 0) {
+              const far = rightEdge > p1.x ? rightEdge : p1.x + Math.abs(dx) * 30;
+              ey = p1.y + (dy * (far - p1.x)) / dx;
+              ex = far;
+            }
+            const solid = level === 0 || level === 1;
+            return (
+              <g key={level}>
+                <line x1={p1.x} y1={p1.y} x2={ex} y2={ey} stroke={drawingColor} strokeWidth={solid ? 1.5 : 1} strokeDasharray={solid ? undefined : '4,3'} style={{ pointerEvents: 'none' }} />
+                <text x={p2.x + 4} y={yLevel - 2} fill={drawingColor} fontSize="10" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{(level * 100).toFixed(1)}%</text>
+              </g>
+            );
+          })}
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth={12} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibTimeZones') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const dx = p2.x - p1.x;
+      const chartH = containerDims.height - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0);
+      const rightEdge = containerDims.width - chartBounds.priceAxisWidth;
+      const fibSeq = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {fibSeq.map((nn, idx) => {
+            const zx = p1.x + dx * nn;
+            if (dx > 0 && zx > rightEdge + 4) return null;
+            if (dx < 0 && zx < -4) return null;
+            const solid = idx === 0 || idx === 1;
+            return (
+              <g key={nn}>
+                <line x1={zx} y1={0} x2={zx} y2={chartH} stroke={drawingColor} strokeWidth={1} strokeDasharray={solid ? undefined : '4,3'} style={{ pointerEvents: 'none' }} />
+                <text x={zx + 3} y={12} fill={drawingColor} fontSize="10" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{nn}</text>
+              </g>
+            );
+          })}
+          <rect x={Math.min(p1.x, p2.x)} y={0} width={Math.abs(dx)} height={chartH} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
     if (drawing.type === 'fibonacci' || drawing.type === 'fibExtension') {
       if (pixels.length < 2) return null;
       const [p1, p2] = pixels;
@@ -4648,6 +4716,23 @@ const ChartDrawingOverlayComponent = ({
             strokeDasharray="5,5"
             style={{ pointerEvents: 'none' }}
           />
+        </g>
+      );
+    }
+
+    if (activeTool === 'fibFan') {
+      return (
+        <g>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth="1.5" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'fibTimeZones') {
+      return (
+        <g>
+          <line x1={startPixel.x} y1={0} x2={startPixel.x} y2={9999} stroke={previewColor} strokeWidth="1" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+          <line x1={endPixel.x} y1={0} x2={endPixel.x} y2={9999} stroke={previewColor} strokeWidth="1" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
         </g>
       );
     }
