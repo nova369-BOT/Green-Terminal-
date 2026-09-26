@@ -3849,7 +3849,7 @@ const ChartDrawingOverlayComponent = ({
             <line x1={P0.x} y1={P0.y} x2={O.x} y2={O.y} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.5} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
           )}
           <line x1={P1.x} y1={P1.y} x2={P2.x} y2={P2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
-          <line x1={O.x} y1={O.y} x2={medEnd.x} y2={medEnd.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={O.x} y1={O.y} x2={medEnd.x} y2={medEnd.y} stroke={col} strokeWidth={drawingStrokeWidth + 1} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
           <line x1={P1.x} y1={P1.y} x2={e1.x} y2={e1.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity * 0.85} style={{ pointerEvents: 'none' }} />
           <line x1={P2.x} y1={P2.y} x2={e2.x} y2={e2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity * 0.85} style={{ pointerEvents: 'none' }} />
           {showHandles && (
@@ -4199,26 +4199,42 @@ const ChartDrawingOverlayComponent = ({
       const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x);
       const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
       const w = x1 - x0, h = y1 - y0;
-      const fr = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
+      const ratios = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
+      const gbMain = (v: number) => v === 0 || v === 0.5 || v === 1;
+      const gbGreen = '#26a69a', gbRed = '#ef5350';
       const gbC1 = drawing.points[0], gbC2 = drawing.points[1];
       const gbPriceAt = (yy: number) => (p2.y === p1.y ? gbC1.price : gbC1.price + (gbC2.price - gbC1.price) * (yy - p1.y) / (p2.y - p1.y));
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
-          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
-          {fr.map((fv, i) => {
+          {/* Alternating translucent price bands (TradingView Gann Box look) */}
+          {ratios.slice(0, -1).map((fv, i) => {
+            const yA = y0 + h * fv, yB = y0 + h * ratios[i + 1];
+            return <rect key={`gb-band-${i}`} x={x0} y={Math.min(yA, yB)} width={w} height={Math.abs(yB - yA)} fill={i % 2 === 0 ? gbGreen : gbRed} fillOpacity={0.06} style={{ pointerEvents: 'none' }} />;
+          })}
+          {/* Outer frame */}
+          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke={gbGreen} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
+          {/* Price (horizontal) levels + ratio & price labels */}
+          {ratios.map((fv, i) => {
             const yl = y0 + h * fv;
-            const xl = x0 + w * fv;
+            const col = gbMain(fv) ? gbGreen : gbRed;
             return (
-            <g key={i}>
-              <line x1={x0} y1={yl} x2={x1} y2={yl} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
-              <line x1={xl} y1={y0} x2={xl} y2={y1} stroke={drawingColor} strokeWidth={0.75} strokeDasharray="3,3" opacity={0.7} style={{ pointerEvents: 'none' }} />
-              <text x={x1 + 4} y={yl + 3} fill={drawingColor} fontSize="9" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv} ({gbPriceAt(yl).toFixed(2)})</text>
-              <text x={xl} y={y0 - 4} textAnchor="middle" fill={drawingColor} fontSize="9" fontWeight="600" opacity={0.85} style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}</text>
-            </g>
+              <g key={`gb-p-${i}`}>
+                <line x1={x0} y1={yl} x2={x1} y2={yl} stroke={col} strokeWidth={gbMain(fv) ? 1.1 : 0.7} strokeDasharray={gbMain(fv) ? undefined : '3,3'} opacity={gbMain(fv) ? 0.95 : 0.65} style={{ pointerEvents: 'none' }} />
+                <text x={x1 + 5} y={yl + 3} fill={col} fontSize="9" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}  {gbPriceAt(yl).toFixed(2)}</text>
+              </g>
             );
           })}
-          <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
-          <line x1={x0} y1={y1} x2={x1} y2={y0} stroke={drawingColor} strokeWidth={1.25} style={{ pointerEvents: 'none' }} />
+          {/* Time (vertical) levels + ratio labels */}
+          {ratios.map((fv, i) => {
+            const xl = x0 + w * fv;
+            const col = gbMain(fv) ? gbGreen : gbRed;
+            return (
+              <g key={`gb-t-${i}`}>
+                <line x1={xl} y1={y0} x2={xl} y2={y1} stroke={col} strokeWidth={gbMain(fv) ? 1.1 : 0.7} strokeDasharray={gbMain(fv) ? undefined : '3,3'} opacity={gbMain(fv) ? 0.95 : 0.65} style={{ pointerEvents: 'none' }} />
+                <text x={xl} y={y0 - 5} textAnchor="middle" fill={col} fontSize="9" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{fv}</text>
+              </g>
+            );
+          })}
           <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
           {(isHovered || isSelected) && (
             <>
