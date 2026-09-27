@@ -903,6 +903,17 @@ const ChartDrawingOverlayComponent = ({
           return { ...d, strokeWidth: newFs };
         });
         scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex === 971) {
+        // Marker resize: scale icon size (strokeWidth) from the anchor centre
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || !isMarkerTool(d.type)) return d;
+          const center = chartToPixel(d.points[0]);
+          if (!center) return d;
+          const half = Math.max(Math.abs(x - center.x), Math.abs(y - center.y));
+          const newSize = Math.round(Math.max(10, Math.min(120, (half / 12) * 16)));
+          return { ...d, strokeWidth: newSize };
+        });
+        scheduleRAFUpdate(updatedDrawings);
       } else if (dragPointIndex >= 980 && dragPointIndex <= 988) {
         // Long/short position corner handles and line drags
         const updatedDrawings = drawings.map((d) => {
@@ -2183,7 +2194,18 @@ const ChartDrawingOverlayComponent = ({
       // Check marker drawing (click within the icon bounding box)
       if (isMarkerTool(drawing.type) && pixels.length >= 1) {
         const p = pixels[0];
-        if (Math.abs(x - p.x) <= 12 && Math.abs(y - p.y) <= 12) {
+        const ext = ((drawing.strokeWidth || 16) / 16) * 12;
+        // Resize handle (bottom-right) takes priority when this marker is selected
+        if (selectedDrawingId === drawing.id) {
+          const hx = p.x + ext + 2, hy = p.y + ext + 2;
+          if (Math.sqrt((x - hx) ** 2 + (y - hy) ** 2) < 10) {
+            hitAnyDrawing = true;
+            startDragging(drawing.id);
+            setDragPointIndex(971);
+            return true;
+          }
+        }
+        if (Math.abs(x - p.x) <= ext && Math.abs(y - p.y) <= ext) {
           hitAnyDrawing = true;
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
@@ -2962,7 +2984,8 @@ const ChartDrawingOverlayComponent = ({
         id: newDrawingId,
         type: activeTool,
         points: [chartPoint],
-        color: toolSettings?.color ?? '#2962ff',
+        color: toolSettings?.color ?? '#2dd4bf',
+        strokeWidth: 16,
         opacity: getNewDrawingOpacity(),
       };
       onDrawingsChange([...drawings, newDrawing]);
@@ -5589,8 +5612,11 @@ const ChartDrawingOverlayComponent = ({
     if (isMarkerTool(drawing.type)) {
       if (pixels.length < 1) return null;
       const mp = pixels[0];
-      const mCol = drawing.color || '#2962ff';
+      const mCol = drawing.color || '#2dd4bf';
       const cx = mp.x, cy = mp.y;
+      const mSize = drawing.strokeWidth || 16;
+      const mScale = mSize / 16;
+      const mExt = mScale * 12;
       const starPts = (ox: number, oy: number, outer: number, inner: number) => {
         const pts: string[] = [];
         for (let i = 0; i < 10; i++) {
@@ -5639,10 +5665,11 @@ const ChartDrawingOverlayComponent = ({
           onMouseLeave={() => setHoveredDrawingId(null)}
           style={{ cursor: 'move', pointerEvents: 'all' }}
         >
-          {shape}
+          {mScale === 1 ? shape : <g transform={`translate(${cx} ${cy}) scale(${mScale}) translate(${-cx} ${-cy})`}>{shape}</g>}
           {mSelected && (
-            <circle cx={cx} cy={cy} r={14} fill="none" stroke="#2962ff" strokeWidth={1} strokeDasharray="3 3" />
+            <circle cx={cx} cy={cy} r={mExt + 2} fill="none" stroke="#2dd4bf" strokeWidth={1} strokeDasharray="3 3" />
           )}
+          {showHandles && mSelected && <rect x={cx + mExt - 2} y={cy + mExt - 2} width={8} height={8} rx={2} fill="#2dd4bf" stroke="#0b0f14" strokeWidth={1} style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />}
         </g>
       );
     }

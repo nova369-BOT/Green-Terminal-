@@ -140,6 +140,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const hasText = TEXT_TYPES.has(type) || INLINE_LABEL_TYPES.has(type);
   const isLevelTool = LEVEL_TYPES.has(type);
   const isEmoji = type === 'emoji';
+  const isMarker = ['markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'].includes(type);
   const isFib = type === 'fibonacci' || type === 'fibExtension';
   const isGannBox = type === 'gannBox';
   const canExtendLine = LINE_EXTEND_TYPES.has(type);
@@ -343,6 +344,20 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                   <span className="w-9 text-right font-mono text-[11px] text-slate-400">{opacity}%</span>
                 </Row>
                 <p className="mt-2 text-[10.5px] leading-relaxed text-slate-500">Tip: drag the teal handle at the emoji's corner to resize it directly on the chart.</p>
+              </>
+            ) : isMarker ? (
+              <>
+                {/* Marker is a single-anchor icon: colour, size and opacity are the
+                    only meaningful controls (no thickness / line-style / fill). */}
+                <SectionTitle>Marker</SectionTitle>
+                <Row label="Color">
+                  <ColorSwatch value={color} onChange={(v) => update({ color: v })} showOpacity opacity={opacity} onOpacityChange={(v) => update({ opacity: v })} title="Marker color" />
+                </Row>
+                <Row label="Size">
+                  <Slider value={[strokeWidth || 16]} min={10} max={120} step={2} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
+                  <span className="w-8 text-right font-mono text-[11px] text-slate-400">{strokeWidth || 16}</span>
+                </Row>
+                <p className="mt-2 text-[10.5px] leading-relaxed text-slate-500">Tip: drag the teal handle at the marker's corner to resize it on the chart.</p>
               </>
             ) : (
             <>
