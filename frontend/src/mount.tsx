@@ -336,13 +336,37 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     return () => { alive = false; };
   }, [instrumentKey]);
 
+  // Debounced persistence: the UI state updates instantly (setDrawings), but the
+  // network/disk write is coalesced so a slider drag or resize (which commits at
+  // ~60fps) writes ONCE after the interaction settles instead of 60x/second.
+  const persistTimerRef = useRef<number | null>(null);
+  const pendingPersistRef = useRef<{ key: string; data: Drawing[] } | null>(null);
+  const flushPersist = useCallback(() => {
+    if (persistTimerRef.current !== null) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; }
+    const p = pendingPersistRef.current;
+    if (p) { pendingPersistRef.current = null; void api.setDrawings(p.key, p.data); }
+  }, []);
+
   const handleDrawingsChange = useCallback((next: Drawing[]) => {
-    setDrawings(next);
-    // Fire-and-forget: persistence must never block the drawing interaction.
+    setDrawings(next); // instant, never blocked by persistence
     if (loadedKeyRef.current === instrumentKey) {
-      void api.setDrawings(instrumentKey, next);
+      pendingPersistRef.current = { key: instrumentKey, data: next };
+      if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = window.setTimeout(() => {
+        persistTimerRef.current = null;
+        const p = pendingPersistRef.current;
+        if (p) { pendingPersistRef.current = null; void api.setDrawings(p.key, p.data); }
+      }, 450);
     }
   }, [instrumentKey]);
+
+  // Never lose the last edit: flush pending writes on symbol switch, unmount,
+  // and tab close.
+  useEffect(() => {
+    const onHide = () => flushPersist();
+    window.addEventListener('beforeunload', onHide);
+    return () => { window.removeEventListener('beforeunload', onHide); flushPersist(); };
+  }, [instrumentKey, flushPersist]);
 
   const handleSelectDrawing = useCallback((id: string | null, pos?: { x: number; y: number }) => {
     setSelectedDrawingId(id);
