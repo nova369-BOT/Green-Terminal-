@@ -114,7 +114,9 @@ const ProChart: React.FC<ProChartProps> = ({
   syncedViewportTime,
   disableAutoFollow = false,
   scrollToIndex,
+  scrollNonce,
   fitRange,
+  followLatest,
   chartType = 'candlestick',
   onScrollingChange,
   onScrollSync,
@@ -745,6 +747,10 @@ const ProChart: React.FC<ProChartProps> = ({
 
   const MIN_CANDLE_WIDTH = 1;
   const MAX_CANDLE_WIDTH = 50;
+  // Fit operations (History Navigator "All"/wide ranges) may go below the
+  // manual zoom floor so an entire span fits; the renderer switches to a price
+  // line when candles get this thin.
+  const FIT_MIN_CANDLE_WIDTH = 0.04;
 
   // TradingView-style discrete zoom levels (~40 steps from min to max)
   // Using exponential scale for natural feel: each step is ~10% change
@@ -1790,8 +1796,27 @@ const ProChart: React.FC<ProChartProps> = ({
     const candleBodyWidth = Math.max(currentCandleWidth * 0.7, 3);
     const wickWidth = Math.max(1, candleBodyWidth * 0.15);
 
+    // Overview fallback: a "fit" that framed thousands of bars (History
+    // Navigator "All"/wide ranges) drives the candle width below 1px, where the
+    // 3px-minimum bodies would overlap into a solid block AND the old 1px floor
+    // could only show the oldest slice — both read as "blank". Below the manual
+    // zoom floor, draw the close-price line so the whole span reads cleanly.
+    const isDiscreteType = chartType === 'bars' || chartType === 'candlestick'
+      || chartType === 'heikinAshi' || chartType === 'renko';
+    if (isDiscreteType && currentCandleWidth < MIN_CANDLE_WIDTH) {
+      ctx.strokeStyle = colors.bullish;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const y = mainPriceToY(candle.close);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
     // Phase 2: OHLC bars — real open/high/low/close ticks (not a label swap).
-    if (chartType === 'bars') {
+    } else if (chartType === 'bars') {
       visible.candles.forEach((candle, i) => {
         const x = indexToX(visible.startIndex + i, visible.startIndex);
         const isBullish = candle.close >= candle.open;
@@ -7608,20 +7633,31 @@ const ProChart: React.FC<ProChartProps> = ({
     prevPrependShiftRef.current = prependShift;
   }, [prependShift]);
 
-  // Scroll to specific index when requested (for replay mode)
+  // Scroll to specific index when requested ("Go to date" + replay mode).
+  const lastScrollNonceRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (scrollToIndex === undefined || scrollToIndex === null) {
       lastScrolledIndexRef.current = undefined;
+      lastScrollNonceRef.current = undefined;
       return;
     }
     if (candles.length === 0) return;
 
-    // Only scroll if this is a NEW scroll request (not just a dependency change)
-    if (lastScrolledIndexRef.current === scrollToIndex) return;
+    // Only scroll on a NEW request. When a nonce rides along (History
+    // Navigator) key off it, so jumping to the SAME index twice — or
+    // Latest -> a date -> the same date again — still moves. Fall back to the
+    // raw value for the legacy replay caller that passes no nonce.
+    const key = scrollNonce !== undefined ? scrollNonce : scrollToIndex;
+    if (lastScrollNonceRef.current === key) return;
+    lastScrollNonceRef.current = key;
     lastScrolledIndexRef.current = scrollToIndex;
 
     const chartWidth = dimensions.width - PRICE_AXIS_WIDTH;
-    const candleSpacing = viewState.candleWidth * (1 + CANDLE_GAP_RATIO);
+    // A date jump should land on real candles. If we're coming from a sub-pixel
+    // "All"/wide fit (line overview), restore a normal candle width so the user
+    // sees bars around the target instead of a zoomed-out line.
+    const effCandleWidth = viewState.candleWidth < MIN_CANDLE_WIDTH ? 6 : viewState.candleWidth;
+    const candleSpacing = effCandleWidth * (1 + CANDLE_GAP_RATIO);
     const visibleCount = Math.floor(chartWidth / candleSpacing);
 
     // Clamp scrollToIndex to valid range
@@ -7631,8 +7667,8 @@ const ProChart: React.FC<ProChartProps> = ({
     // This ensures the "current" replay position is visible at the right
     const targetPosition = Math.floor(visibleCount * 0.9);
     const newStartIndex = Math.max(0, clampedIndex - targetPosition);
-    setViewState(prev => ({ ...prev, startIndex: newStartIndex, autoFollowLatest: false }));
-  }, [scrollToIndex, candles.length, dimensions.width, viewState.candleWidth]);
+    setViewState(prev => ({ ...prev, startIndex: newStartIndex, candleWidth: effCandleWidth, autoFollowLatest: false }));
+  }, [scrollToIndex, scrollNonce, candles.length, dimensions.width, viewState.candleWidth]);
 
   // Frame an index range so it fills the viewport (History Navigator quick
   // ranges + "Go to range"). Re-applies only when the nonce changes, so ordinary
@@ -7651,9 +7687,28 @@ const ProChart: React.FC<ProChartProps> = ({
     // Leave ~8% breathing room on the right so the newest bar isn't hard against
     // the price axis, matching the feel of a manual fit.
     let cw = (chartWidth * 0.92) / (count * (1 + CANDLE_GAP_RATIO));
-    cw = Math.min(MAX_CANDLE_WIDTH, Math.max(MIN_CANDLE_WIDTH, cw));
+    // A framed range must show the WHOLE span, not just its oldest slice. The
+    // manual zoom floor (1px) caps the view at ~780 bars, so "All"/wide ranges
+    // used to render only the oldest bars with the recent price off-screen —
+    // reading as a blank chart. Let a fit go sub-pixel down to FIT_MIN so the
+    // entire range lands on screen; the renderer draws a price line instead of
+    // candles once bars get thinner than 1px (see drawChart).
+    cw = Math.min(MAX_CANDLE_WIDTH, Math.max(FIT_MIN_CANDLE_WIDTH, cw));
     setViewState(prev => ({ ...prev, startIndex, candleWidth: cw, autoFollowLatest: false }));
   }, [fitRange, candles.length, dimensions.width]);
+
+  // Return to the live tail and resume auto-follow (History Navigator "Latest").
+  // A jump clears autoFollowLatest; without this the chart would reload recent
+  // candles but stay frozen wherever the last jump left it. Setting the flag
+  // hands the new candles to the anchoring effect, which pins them to the right.
+  const lastFollowNonceRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!followLatest) return;
+    if (lastFollowNonceRef.current === followLatest.nonce) return;
+    lastFollowNonceRef.current = followLatest.nonce;
+    if (disableAutoFollow) return; // replay owns its own position
+    setViewState(prev => ({ ...prev, autoFollowLatest: true }));
+  }, [followLatest, disableAutoFollow]);
 
   useEffect(() => {
     // Skip during active scroll: the scroll RAF (wheelRAFRef) already calls

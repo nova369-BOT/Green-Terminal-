@@ -94,9 +94,12 @@ export interface ChartProps {
   onPositionModify?: (id: string, sl?: number, tp?: number) => void;
   onPositionClose?: (id: string) => void;
   autoSelectPositionId?: string | null;
-  // History Navigator viewport commands (LSEChart.goToIndex / fitIndexRange).
+  // History Navigator viewport commands (LSEChart.goToIndex / fitIndexRange /
+  // goToLatest).
   scrollToIndex?: number;
+  scrollNonce?: number;
   fitRange?: { startIndex: number; endIndex: number; nonce: number } | null;
+  followLatest?: { nonce: number } | null;
 }
 
 interface TerminalChartProps extends ChartProps {
@@ -124,7 +127,7 @@ const ctxRow: React.CSSProperties = {
 const onCtxRowIn = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'var(--hover)'; };
 const onCtxRowOut = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'transparent'; };
 
-function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null, scrollToIndex, fitRange = null }: TerminalChartProps) {
+function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null, scrollToIndex, scrollNonce, fitRange = null, followLatest = null }: TerminalChartProps) {
   const [converter, setConverter] = useState<Converter | null>(null);
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
@@ -698,7 +701,9 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           isLoadingMore={isLoadingMore}
           prependShift={prependShift}
           scrollToIndex={scrollToIndex}
+          scrollNonce={scrollNonce}
           fitRange={fitRange}
+          followLatest={followLatest}
         />
         <ChartDrawingOverlay
           activeTool={activeTool}
@@ -1610,9 +1615,14 @@ const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
 (LSEChart as any).currentSeries = () => ({
   provider: props.provider, symbol: props.symbol, timeframe: props.timeframe,
 });
-// Position a single candle near the right edge ("Go to date").
+// Position a single candle near the right edge ("Go to date"). The nonce makes
+// a repeat jump to the same index (or Latest -> date -> same date) fire again.
 (LSEChart as any).goToIndex = (index: number) => {
-  LSEChart.update({ scrollToIndex: Math.max(0, Math.floor(index)) });
+  LSEChart.update({ scrollToIndex: Math.max(0, Math.floor(index)), scrollNonce: Date.now() });
+};
+// Return to the live tail and resume auto-follow (History Navigator "Latest").
+(LSEChart as any).goToLatest = () => {
+  LSEChart.update({ followLatest: { nonce: Date.now() } });
 };
 // Frame an index range to fill the viewport ("Go to range" + quick ranges).
 (LSEChart as any).fitIndexRange = (startIndex: number, endIndex: number) => {

@@ -292,18 +292,36 @@ export default function GoToNavigator() {
     if (tab === 'date') {
       if (!isFinite(targetMs)) return;
       const cs = await ensureCovered(targetMs, targetMs);
-      if (!cs.length) return;
+      if (!cs.length) { setNote('No candles available for this instrument.'); return; }
+      // Older than any history we can load at this timeframe: don't dead-end on
+      // a silent no-op — frame the earliest real bar and say so plainly.
+      if (targetMs < cs[0].t) {
+        fit(0, Math.min(cs.length - 1, 240));
+        setActivePreset(null);
+        setNote(`Only data back to ${fmtDate(cs[0].t)} at ${meta.timeframe} — jumped to the earliest loaded bar.`);
+        return; // keep the panel open so the note is read
+      }
       const idx = nearest(cs, targetMs);
       goIdx(idx);
       const diff = Math.abs(cs[idx].t - targetMs);
-      setNote(diff > tfSeconds(meta.timeframe) * 1000 ? `Snapped to nearest bar: ${fmtDate(cs[idx].t)} ${fmtTime(cs[idx].t)}` : '');
+      if (diff > tfSeconds(meta.timeframe) * 1000) {
+        setActivePreset(null);
+        setNote(`Snapped to nearest bar: ${fmtDate(cs[idx].t)} ${fmtTime(cs[idx].t)}`);
+        return; // keep open to show the snap note
+      }
+      setNote('');
     } else {
       if (!isFinite(lo) || !isFinite(hi)) return;
       const cs = await ensureCovered(lo, hi);
-      if (!cs.length) return;
+      if (!cs.length) { setNote('No candles available for this instrument.'); return; }
       const a = lowerBound(cs, lo);
       const b = Math.min(cs.length - 1, lowerBound(cs, hi));
       fit(Math.min(a, b), Math.max(a, b));
+      if (lo < cs[0].t) {
+        setActivePreset(null);
+        setNote(`Only data back to ${fmtDate(cs[0].t)} at ${meta.timeframe} — framed from the earliest loaded bar.`);
+        return; // keep open so the note is read
+      }
       setNote('');
     }
     setActivePreset(null);
@@ -322,12 +340,16 @@ export default function GoToNavigator() {
     setOpen(false);
   };
   const latest = () => {
+    // Resume live auto-follow first (so freshly reloaded bars pin to the right
+    // edge), then page the recent tail back in.
+    if (typeof chart().goToLatest === 'function') chart().goToLatest();
     if (typeof shell().reloadLatest === 'function') shell().reloadLatest();
-    else {
+    else if (typeof chart().goToLatest !== 'function') {
       const cs = getCandles();
       if (cs.length) fit(Math.max(0, cs.length - 160), cs.length - 1);
     }
     setActivePreset(null);
+    setNote('');
     setOpen(false);
   };
   const today = () => {
