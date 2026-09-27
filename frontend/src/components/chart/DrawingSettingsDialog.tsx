@@ -44,6 +44,7 @@ const FILL_TYPES = new Set<string>([
   'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram',
   'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge',
   'heart', 'parallelChannel', 'flatChannel', 'splitChannel', 'long', 'short', 'gannBox',
+  'pitchfork', 'schiff', 'modifiedSchiff', 'innerFork',
 ]);
 const INLINE_LABEL_TYPES = new Set<string>(['trend', 'line', 'rectangle']);
 const TEXT_TYPES = new Set<string>(['text', 'note', 'callout', 'signpost', 'priceLabel']);
@@ -141,6 +142,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const isFib = type === 'fibonacci' || type === 'fibExtension';
   const isGannBox = type === 'gannBox';
   const canExtendLine = LINE_EXTEND_TYPES.has(type);
+  const isParallelChannel = type === 'parallelChannel';
   const isFreehand = (drawing.points?.length || 0) > 6 || type === 'brush' || type === 'highlighter';
 
   // Snapshot for Cancel/revert.
@@ -248,7 +250,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         showLabels: s.showLabels, locked: s.locked, points: s.points,
         reverse: s.reverse, extendLeft: s.extendLeft, extendRight: s.extendRight,
         topLabels: s.topLabels, bottomLabels: s.bottomLabels, gannAngles: s.gannAngles,
-        fibLabelMode: s.fibLabelMode,
+        fibLabelMode: s.fibLabelMode, showMiddleLine: s.showMiddleLine,
       });
     }
     onOpenChange(false);
@@ -417,6 +419,15 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                 <SectionTitle>Line options</SectionTitle>
                 <Row label="Extend left"><Switch checked={!!drawing.extendLeft} onCheckedChange={(c) => update({ extendLeft: c })} /></Row>
                 <Row label="Extend right"><Switch checked={!!drawing.extendRight} onCheckedChange={(c) => update({ extendRight: c })} /></Row>
+              </>
+            )}
+
+            {isParallelChannel && (
+              <>
+                <SectionTitle>Channel options</SectionTitle>
+                <Row label="Extend left"><Switch checked={!!drawing.extendLeft} onCheckedChange={(c) => update({ extendLeft: c })} /></Row>
+                <Row label="Extend right"><Switch checked={!!drawing.extendRight} onCheckedChange={(c) => update({ extendRight: c })} /></Row>
+                <Row label="Middle line"><Switch checked={drawing.showMiddleLine !== false} onCheckedChange={(c) => update({ showMiddleLine: c })} /></Row>
               </>
             )}
           </ScrollArea>

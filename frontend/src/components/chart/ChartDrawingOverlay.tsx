@@ -93,6 +93,7 @@ export type Drawing = {
   bottomLabels?: boolean; // Gann Box: labels along the bottom edge (default true).
   gannAngles?: boolean;   // Gann Box: draw diagonal angle lines.
   fibLabelMode?: 'percent' | 'price' | 'both'; // Fib label content.
+  showMiddleLine?: boolean; // Parallel channel: show/hide the median dashed line (default true).
   // Inline text-label styling for drawings that carry a `text` payload (trend, line, rectangle). Separate from the type='text' drawing, which reuses strokeWidth as fontSize.
   textFontSize?: number;
   textBold?: boolean;
@@ -4542,7 +4543,17 @@ const ChartDrawingOverlayComponent = ({
       const dx = p3.x - p1.x;
       const dy = p3.y - p1.y;
       const q3 = { x: p2.x + dx, y: p2.y + dy };
-      const fillPoints = `${p1.x},${p1.y} ${p2.x},${p2.y} ${q3.x},${q3.y} ${p3.x},${p3.y}`;
+      const cdx = p2.x - p1.x, cdy = p2.y - p1.y;
+      const clen = Math.hypot(cdx, cdy) || 1;
+      const cux = cdx / clen, cuy = cdy / clen;
+      const CEXT = 6000;
+      const ceL = !!drawing.extendLeft, ceR = !!drawing.extendRight;
+      const a1 = { x: ceL ? p1.x - cux * CEXT : p1.x, y: ceL ? p1.y - cuy * CEXT : p1.y };
+      const a2 = { x: ceR ? p2.x + cux * CEXT : p2.x, y: ceR ? p2.y + cuy * CEXT : p2.y };
+      const b1 = { x: ceL ? p3.x - cux * CEXT : p3.x, y: ceL ? p3.y - cuy * CEXT : p3.y };
+      const b2 = { x: ceR ? q3.x + cux * CEXT : q3.x, y: ceR ? q3.y + cuy * CEXT : q3.y };
+      const showMid = drawing.showMiddleLine !== false;
+      const fillPoints = `${a1.x},${a1.y} ${a2.x},${a2.y} ${b2.x},${b2.y} ${b1.x},${b1.y}`;
 
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
@@ -4556,27 +4567,29 @@ const ChartDrawingOverlayComponent = ({
             onMouseLeave={() => setHoveredDrawingId(null)}
             style={{ cursor: 'move', pointerEvents: 'all' }}
           />
-          {/* Base trend line (p1 to p2) */}
-          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+          {/* Base trend line */}
+          <line x1={a1.x} y1={a1.y} x2={a2.x} y2={a2.y}
             stroke={drawingColor} strokeWidth={drawingStrokeWidth}
             strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
             strokeOpacity={strokeOpacity}
             style={{ pointerEvents: 'none' }}
           />
-          {/* Parallel line (p3 to q3) */}
-          <line x1={p3.x} y1={p3.y} x2={q3.x} y2={q3.y}
+          {/* Parallel line */}
+          <line x1={b1.x} y1={b1.y} x2={b2.x} y2={b2.y}
             stroke={drawingColor} strokeWidth={drawingStrokeWidth}
             strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
             strokeOpacity={strokeOpacity}
             style={{ pointerEvents: 'none' }}
           />
           {/* Middle dashed line */}
-          <line x1={(p1.x + p3.x) / 2} y1={(p1.y + p3.y) / 2} x2={(p2.x + q3.x) / 2} y2={(p2.y + q3.y) / 2}
+          {showMid && (
+          <line x1={(a1.x + b1.x) / 2} y1={(a1.y + b1.y) / 2} x2={(a2.x + b2.x) / 2} y2={(a2.y + b2.y) / 2}
             stroke={drawingColor} strokeWidth={1}
             strokeDasharray="4,4"
             strokeOpacity={strokeOpacity * 0.4}
             style={{ pointerEvents: 'none' }}
           />
+          )}
           {showHandles && (
             <>
               <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
