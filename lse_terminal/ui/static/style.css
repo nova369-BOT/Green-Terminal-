@@ -2032,7 +2032,13 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
   background: var(--accent-bar); border: none; cursor: pointer;
   opacity: .85; transition: opacity .18s ease;
 }
-#dockzone:hover #dock-handle, #dockzone:focus-within #dock-handle { opacity: 0; }
+/* Only a DIRECT hover of the brass handle itself (or the already-open pill, or
+   keyboard focus) melts the handle away. Hovering merely NEAR the zone no
+   longer counts — the collapsed pill used to occupy invisible space above the
+   handle, so being close popped G-FLOW open. Gated on #dock-handle:hover now. */
+#dockzone:has(#dock-handle:hover) #dock-handle,
+#dockzone:has(#subrail:hover) #dock-handle,
+#dockzone:focus-within #dock-handle { opacity: 0; }
 #subrail {
   display: flex; justify-content: center; gap: 4px;
   margin: 0 0 8px; padding: 6px 8px;
@@ -2046,7 +2052,12 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
   opacity: 0; transform: translateY(8px) scale(.97); pointer-events: none;
   transition: opacity .18s ease .12s, transform .18s ease .12s;
 }
-#dockzone:hover #subrail, #dockzone:focus-within #subrail {
+/* Open the pill on a direct handle hover; keep it open while the pointer is
+   inside the pill itself (the .12s close delay above covers the tiny gap the
+   pointer crosses travelling from the handle up into the pill). */
+#dockzone:has(#dock-handle:hover) #subrail,
+#subrail:hover,
+#dockzone:focus-within #subrail {
   opacity: 1; transform: none; pointer-events: auto;
   transition-delay: 0s;
 }
