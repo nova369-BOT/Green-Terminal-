@@ -5,9 +5,10 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 // BoxSelect is this icon's name in the terminal's lucide version; upstream
 // renamed it SquareDashed in a later release.
-import { Trash2, GripVertical, Square, BoxSelect as SquareDashed, Activity, Plus, X, Type, Edit3, Copy, Lock, Unlock, MoreHorizontal, ArrowUpToLine, ArrowDownToLine } from 'lucide-react';
+import { Trash2, GripVertical, Square, BoxSelect as SquareDashed, Activity, Plus, X, Type, Edit3, Copy, Lock, Unlock, MoreHorizontal, ArrowUpToLine, ArrowDownToLine, Settings } from 'lucide-react';
 import { Drawing } from './ChartDrawingOverlay';
 import { AdvancedColorPicker } from './AdvancedColorPicker';
+import { DrawingSettingsDialog } from './DrawingSettingsDialog';
 
 interface DrawingEditToolbarProps {
   drawing: Drawing;
@@ -86,6 +87,7 @@ export const DrawingEditToolbar = ({
       setPosition(clampToViewport({ x: anchorPosition.x + 16, y: anchorPosition.y + 16 }));
     }
   }, [drawing.id]); // intentionally only on drawing change, not on anchorPosition itself
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [textValue, setTextValue] = useState(drawing.text || '');
   const [isEditingText, setIsEditingText] = useState(false);
@@ -802,6 +804,17 @@ export const DrawingEditToolbar = ({
         {drawing.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
       </Button>
 
+      {/* Full settings panel (Style / Coordinates / Visibility) */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+        title="Settings"
+        onClick={() => setSettingsOpen(true)}
+      >
+        <Settings className="h-3.5 w-3.5" />
+      </Button>
+
       {/* More menu: z-order */}
       <Popover>
         <PopoverTrigger asChild>
@@ -851,6 +864,13 @@ export const DrawingEditToolbar = ({
       >
         <Trash2 className="h-3.5 w-3.5" />
       </Button>
+
+      <DrawingSettingsDialog
+        drawing={drawing}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onUpdateDrawing={onUpdateDrawing}
+      />
     </div>
   );
 };
