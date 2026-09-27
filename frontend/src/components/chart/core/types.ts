@@ -25,10 +25,19 @@ export interface Candle {
 export type ChartType =
   | 'candlestick'  // filled bodies
   | 'bars'         // OHLC bars (open-left, close-right ticks)
+  | 'hollowCandle' // hollow if close>open; colour vs previous close
+  | 'volumeCandle' // candle body width scaled by volume
   | 'line'
+  | 'lineMarkers'  // line with a dot at every close
+  | 'stepLine'     // staircase of closes (horizontal then vertical)
   | 'area'
+  | 'hlcArea'      // filled high-low band + close line
+  | 'baseline'     // close line, green above / red below a reference level
   | 'heikinAshi'   // transformed OHLC (engine/transforms)
-  | 'renko';
+  | 'renko'        // price bricks (time-independent)
+  | 'lineBreak'    // three-line-break bricks (time-independent)
+  | 'kagi'         // yin/yang reversal line (time-independent)
+  | 'pointFigure'; // X/O columns (time-independent)
 
 // Ratio of gap between candles relative to candle width.
 // A value of 0.2 means the gap is 20% of the candle body width, so total

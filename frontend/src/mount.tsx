@@ -36,6 +36,7 @@ import { AppearancePanel, ChartSettingsPanel } from '@/components/chart/InlineCh
 import MultiTimeframeLayoutSelector from '@/components/chart/MultiTimeframeLayoutSelector';
 import TerminalMultiGrid from '@/components/chart/TerminalMultiGrid';
 import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
+import ChartTypeMenu from '@/components/chart/ChartTypeMenu';
 import GoToNavigator from '@/components/chart/GoToNavigator';
 import { type BarSelection } from '@/engine/barTypes';
 import { layoutStore, useLayoutState } from '@/lib/layoutStore';
@@ -1228,6 +1229,16 @@ const CHART_TYPE_ALIASES: Record<string, ChartType> = {
   heikin: 'heikinAshi',
   ha: 'heikinAshi',
   renko: 'renko',
+  // Advanced bar-style menu (feature 2): each new engine type is its own key.
+  hollowCandle: 'hollowCandle',
+  volumeCandle: 'volumeCandle',
+  lineMarkers: 'lineMarkers',
+  stepLine: 'stepLine',
+  hlcArea: 'hlcArea',
+  baseline: 'baseline',
+  lineBreak: 'lineBreak',
+  kagi: 'kagi',
+  pointFigure: 'pointFigure',
 };
 
 // Any timestamp below this is far too small to be milliseconds (it would be
@@ -1568,6 +1579,15 @@ const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
   area: 'area',
   heikinAshi: 'heikinAshi',
   renko: 'renko',
+  hollowCandle: 'hollowCandle',
+  volumeCandle: 'volumeCandle',
+  lineMarkers: 'lineMarkers',
+  stepLine: 'stepLine',
+  hlcArea: 'hlcArea',
+  baseline: 'baseline',
+  lineBreak: 'lineBreak',
+  kagi: 'kagi',
+  pointFigure: 'pointFigure',
 };
 
 // The main-chart timeframe / bar-type mega-selector (cTrader-style, the same
@@ -1589,6 +1609,7 @@ const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
     r.render(
       <TimeframeMegaSelector
         value={cur}
+        showChartType={false}
         onChange={(sel) => {
           cur = sel;
           draw();
@@ -1607,6 +1628,40 @@ const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
     draw();
   };
 };
+// The main chart's dedicated advanced Bar-style menu (feature 2). It lives in
+// its own toolbar slot (#chart-type-slot) and drives only state.chartType — the
+// timeframe stays with the ⋮ mega-selector. Returns an updater the shell calls
+// to keep the trigger label in step when the type changes elsewhere (workspace
+// load, hidden <select>, syncBarTypeSelector).
+(LSEChart as any).mountChartTypeMenu = (
+  el: HTMLElement,
+  initial: string,
+  onChange: (chartType: string) => void,
+): ((next: string) => void) => {
+  const r = createRoot(el);
+  let cur: ChartType = CHART_TYPE_ALIASES[initial] ?? 'candlestick';
+  const draw = () => {
+    r.render(
+      <ChartTypeMenu
+        value={cur}
+        onChange={(ct) => {
+          cur = ct;
+          draw();
+          onChange(CHART_TYPE_TO_SHELL[ct] ?? 'candles');
+        }}
+      />,
+    );
+  };
+  draw();
+  return (next) => {
+    const mapped = CHART_TYPE_ALIASES[next];
+    if (mapped) {
+      cur = mapped;
+      draw();
+    }
+  };
+};
+
 // ── History Navigator (Phase 2: Go to date / range + quick ranges) ──────────
 // The bottom navigator reads the loaded candles for its overview sparkline and
 // index maths, and drives the chart viewport imperatively (no data round-trip

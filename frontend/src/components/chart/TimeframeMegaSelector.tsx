@@ -25,6 +25,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { ChevronDown, MoreVertical, Plus, X } from 'lucide-react';
 import type { ChartType } from '@/components/chart/core/types';
+import { ChartTypeGlyph } from '@/components/chart/ChartTypeIcons';
 import {
   CHART_TYPES,
   TF_GROUPS,
@@ -43,60 +44,6 @@ import {
 const EMERALD = '#0f9d58';
 const GOLD = '#d4af37';
 
-// Minimal, crisp glyphs for the chart-type picker (stroke = currentColor so the
-// active/inactive colour flows from the tile). One per ChartType we expose.
-function ChartTypeGlyph({ type }: { type: ChartType }) {
-  const s = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none' as const,
-    stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const };
-  switch (type) {
-    case 'candlestick':
-    case 'heikinAshi':
-      return (
-        <svg {...s}>
-          <line x1="8" y1="3" x2="8" y2="21" />
-          <rect x="5.5" y="7" width="5" height="9" rx="1" fill="currentColor" stroke="none" />
-          <line x1="16" y1="4" x2="16" y2="20" />
-          <rect x="13.5" y="9" width="5" height="7" rx="1" fill="none" />
-        </svg>
-      );
-    case 'bars':
-      return (
-        <svg {...s}>
-          <line x1="8" y1="4" x2="8" y2="20" />
-          <line x1="4.5" y1="8" x2="8" y2="8" />
-          <line x1="8" y1="15" x2="11.5" y2="15" />
-          <line x1="16" y1="5" x2="16" y2="19" />
-          <line x1="12.5" y1="10" x2="16" y2="10" />
-          <line x1="16" y1="13" x2="19.5" y2="13" />
-        </svg>
-      );
-    case 'line':
-      return (
-        <svg {...s}>
-          <polyline points="3,16 8,10 12,13 16,6 21,9" />
-        </svg>
-      );
-    case 'area':
-      return (
-        <svg {...s}>
-          <polyline points="3,16 8,10 12,13 16,6 21,9" />
-          <path d="M3 16 L8 10 L12 13 L16 6 L21 9 L21 20 L3 20 Z" fill="currentColor" stroke="none" opacity="0.22" />
-        </svg>
-      );
-    case 'renko':
-      return (
-        <svg {...s}>
-          <rect x="4" y="13" width="5" height="5" rx="0.5" fill="currentColor" stroke="none" />
-          <rect x="9.5" y="9" width="5" height="5" rx="0.5" fill="currentColor" stroke="none" />
-          <rect x="15" y="5" width="5" height="5" rx="0.5" fill="none" />
-        </svg>
-      );
-    default:
-      return <svg {...s} />;
-  }
-}
-
 interface Props {
   value: BarSelection;
   onChange: (sel: BarSelection) => void;
@@ -104,9 +51,12 @@ interface Props {
   compact?: boolean;
   /** Optional side the popover opens toward (default 'bottom'). */
   side?: 'bottom' | 'top';
+  /** Show the chart-type grid inside this popover (default true). The main
+   *  chart hides it because it has a dedicated Bar-style menu of its own. */
+  showChartType?: boolean;
 }
 
-export default function TimeframeMegaSelector({ value, onChange, compact, side = 'bottom' }: Props) {
+export default function TimeframeMegaSelector({ value, onChange, compact, side = 'bottom', showChartType = true }: Props) {
   const [open, setOpen] = useState(false);
   const [customs, setCustoms] = useState<string[]>([]);
   const [amount, setAmount] = useState('');
@@ -301,22 +251,27 @@ export default function TimeframeMegaSelector({ value, onChange, compact, side =
           }}
         >
           <div style={{ overflowY: 'auto', padding: '10px 12px 12px' }}>
-            {/* Chart type — one clean icon grid */}
-            <div style={{ ...groupLabelStyle, marginTop: 0 }}>Chart type</div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 6,
-              }}
-            >
-              {CHART_TYPES.map((b) => chartTypeTile(b.label, b.chartType))}
-            </div>
+            {/* Chart type — one clean icon grid (hidden on the main chart, which
+                has its own dedicated Bar-style menu). */}
+            {showChartType && (
+              <>
+                <div style={{ ...groupLabelStyle, marginTop: 0 }}>Chart type</div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: 6,
+                  }}
+                >
+                  {CHART_TYPES.map((b) => chartTypeTile(b.label, b.chartType))}
+                </div>
+              </>
+            )}
 
             {/* Timeframe groups */}
-            {TF_GROUPS.map((g) => (
+            {TF_GROUPS.map((g, gi) => (
               <div key={g.label}>
-                <div style={groupLabelStyle}>{g.label}</div>
+                <div style={gi === 0 && !showChartType ? { ...groupLabelStyle, marginTop: 0 } : groupLabelStyle}>{g.label}</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {g.tfs.map((tf) => tfButton(tf))}
                 </div>

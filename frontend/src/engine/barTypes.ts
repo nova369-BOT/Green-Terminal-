@@ -46,14 +46,67 @@ export const RENDER_STYLES: BarType[] = [
 // Unified chart-type picker (one clean icon grid instead of the old
 // segmented-toggle-plus-outlined-pills split). Order mirrors the pro terminals:
 // the OHLC family first, then the derived styles.
-export const CHART_TYPES: BarType[] = [
-  { label: 'Candles', chartType: 'candlestick' },
-  { label: 'Bars', chartType: 'bars' },
-  { label: 'Line', chartType: 'line' },
-  { label: 'Area', chartType: 'area' },
-  { label: 'Heikin Ashi', chartType: 'heikinAshi' },
-  { label: 'Renko', chartType: 'renko' },
+export interface ChartTypeInfo {
+  chartType: ChartType;
+  label: string;
+  short: string;   // trigger-button prefix vocabulary
+  desc: string;    // one-line explainer for the picker's description strip
+}
+
+export interface ChartTypeGroup {
+  label: string;
+  types: ChartTypeInfo[];
+}
+
+// The full, grouped chart-type catalogue for the dedicated Bar-style menu.
+// Every entry is a real render mode (see ProChart.drawChart + engine/priceCharts).
+export const CHART_TYPE_GROUPS: ChartTypeGroup[] = [
+  {
+    label: 'Bar charts',
+    types: [
+      { chartType: 'bars', label: 'Bars', short: 'OHLC ', desc: 'OHLC bars — a vertical high–low line with left open and right close ticks.' },
+      { chartType: 'candlestick', label: 'Candles', short: '', desc: 'Classic Japanese candlesticks — open, high, low and close per bar.' },
+      { chartType: 'hollowCandle', label: 'Hollow candles', short: 'HC ', desc: 'Body is hollow when the close is above the open; colour reflects close vs previous close.' },
+      { chartType: 'volumeCandle', label: 'Volume candles', short: 'VC ', desc: 'Candles whose body width scales with the bar’s traded volume.' },
+    ],
+  },
+  {
+    label: 'Line charts',
+    types: [
+      { chartType: 'line', label: 'Line', short: 'LN ', desc: 'Closing prices joined by a single clean line.' },
+      { chartType: 'lineMarkers', label: 'Line with markers', short: 'LM ', desc: 'A close line with a dot marking every bar.' },
+      { chartType: 'stepLine', label: 'Step line', short: 'ST ', desc: 'Closes joined by horizontal then vertical segments — a staircase.' },
+    ],
+  },
+  {
+    label: 'Area charts',
+    types: [
+      { chartType: 'area', label: 'Area', short: 'AR ', desc: 'A close line with the space beneath it shaded.' },
+      { chartType: 'hlcArea', label: 'HLC area', short: 'HL ', desc: 'A shaded band between each bar’s high and low, with the close as a line.' },
+      { chartType: 'baseline', label: 'Baseline', short: 'BL ', desc: 'Close line shaded green above / red below a reference level.' },
+    ],
+  },
+  {
+    label: 'Japanese / price action',
+    types: [
+      { chartType: 'heikinAshi', label: 'Heikin Ashi', short: 'HA ', desc: 'Averaged candles that smooth noise to reveal the underlying trend.' },
+      { chartType: 'renko', label: 'Renko', short: 'RK ', desc: 'Fixed-size price bricks that ignore time and filter small moves.' },
+      { chartType: 'lineBreak', label: 'Line break', short: 'LB ', desc: 'Three-line break: a reversal prints only when the close breaks the prior 3 lines.' },
+      { chartType: 'kagi', label: 'Kagi', short: 'KG ', desc: 'A line that flips on a set reversal, switching thick (yang) / thin (yin).' },
+      { chartType: 'pointFigure', label: 'Point & Figure', short: 'PF ', desc: 'Columns of X (up) and O (down) that ignore time and small moves.' },
+    ],
+  },
 ];
+
+// Flat list + lookups derived from the groups (search, labels, prefixes, descriptions).
+export const CHART_TYPES: BarType[] = CHART_TYPE_GROUPS.flatMap((g) =>
+  g.types.map((t) => ({ label: t.label, chartType: t.chartType })),
+);
+const CHART_TYPE_INFO: Record<string, ChartTypeInfo> = Object.fromEntries(
+  CHART_TYPE_GROUPS.flatMap((g) => g.types.map((t) => [t.chartType, t])),
+);
+export const chartTypeLabel = (ct: ChartType): string => CHART_TYPE_INFO[ct]?.label ?? 'Candles';
+export const chartTypeDesc = (ct: ChartType): string => CHART_TYPE_INFO[ct]?.desc ?? '';
 
 export interface TfGroup {
   label: string;
@@ -146,14 +199,7 @@ export function tfShort(tf: string): string {
 }
 
 function chartPrefix(ct: ChartType): string {
-  switch (ct) {
-    case 'heikinAshi': return 'HA ';
-    case 'renko': return 'RK ';
-    case 'line': return 'LN ';
-    case 'area': return 'AR ';
-    case 'bars': return 'OHLC ';
-    default: return '';
-  }
+  return CHART_TYPE_INFO[ct]?.short ?? '';
 }
 
 /** Label for the trigger button, e.g. 'H1', 'HA 15M', 'RK 1M'. */

@@ -535,6 +535,7 @@ function setupWsControls() {
         renderTimeframes();
         loadChart();
       }
+      syncBarTypeSelector();
       status("workspace loaded");
       setTimeout(() => status(""), 1500);
     } catch (e) { status("load failed"); }
@@ -548,6 +549,7 @@ function setupWsControls() {
     if (full) { full.classList.remove("active"); full.textContent = "Fullscreen"; }
     renderActiveIndicators();
     pushToChart();
+    syncBarTypeSelector();
     if (typeof saveShellState === "function") saveShellState();
     status("workspace reset");
     setTimeout(() => status(""), 1500);
@@ -3112,6 +3114,11 @@ function syncBarTypeSelector() {
   if (typeof window.__btSelUpdate === "function") {
     try { window.__btSelUpdate({ timeframe: state.timeframe, chartType: state.chartType }); }
     catch (e) { /* selector not ready */ }
+  }
+  // Keep the dedicated Bar-style menu's trigger label in step too (feature 2).
+  if (typeof window.__ctMenuUpdate === "function") {
+    try { window.__ctMenuUpdate(state.chartType); }
+    catch (e) { /* menu not ready */ }
   }
 }
 
@@ -18989,6 +18996,28 @@ try {
         );
       }
     } catch (e) { console.error("bar-type selector", e); }
+    // Feature 2: dedicated advanced Bar-style menu (15 types, 4 groups, search
+    // + live descriptions) in its own toolbar slot. It drives ONLY the chart
+    // type (timeframe stays with the ⋮ menu): a change re-renders in place via
+    // pushToChart (no data round-trip). __ctMenuUpdate keeps its trigger label
+    // in step when the type changes elsewhere (syncBarTypeSelector).
+    try {
+      const ctEl = document.getElementById("chart-type-slot");
+      if (ctEl && typeof window.LSEChart.mountChartTypeMenu === "function") {
+        window.__ctMenuUpdate = window.LSEChart.mountChartTypeMenu(
+          ctEl,
+          state.chartType,
+          (chartType) => {
+            state.chartType = chartType;
+            const ct = document.getElementById("chart-type");
+            if (ct) ct.value = chartType;
+            pushToChart();
+            saveShellState();
+            syncBarTypeSelector();
+          }
+        );
+      }
+    } catch (e) { console.error("chart-type menu", e); }
     // Phase 2: History Navigator (quick ranges + Go to date/range) over the
     // time axis. Reads the loaded candles and drives the chart viewport; the
     // "Go to" older-than-loaded path calls back into loadHistoryWindow above.

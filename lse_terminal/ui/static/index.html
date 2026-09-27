@@ -120,9 +120,13 @@ document.documentElement.setAttribute("data-theme",
        including custom / monthly resolutions, and drives state.timeframe /
        state.chartType. -->
   <span id="bar-type-slot" title="Timeframe & bar type"></span>
-  <!-- Chart-type control folded into the ⋮ menu above. Kept in the DOM (hidden)
-       so the shell's existing read/write of its .value stays a no-op source of
-       truth for workspace load/save. -->
+  <!-- Dedicated advanced Bar-style menu (feature 2): 15 chart types across 4
+       groups, with search + live descriptions. Mounted by the chart bundle
+       (LSEChart.mountChartTypeMenu); drives state.chartType only. -->
+  <span id="chart-type-slot" title="Chart / bar style"></span>
+  <!-- Hidden <select> kept in the DOM as the workspace load/save source of
+       truth for the chart type. The Bar-style menu writes its .value and fires
+       change; the shell reads it on save/restore. -->
   <select id="chart-type" title="Chart type" style="display:none">
     <option value="candles">Candles</option>
     <option value="bars">OHLC</option>
@@ -130,6 +134,16 @@ document.documentElement.setAttribute("data-theme",
     <option value="area">Area</option>
     <option value="heikinAshi">Heikin Ashi</option>
     <option value="renko">Renko</option>
+    <!-- Advanced Bar-style types (values match engine ChartType keys). -->
+    <option value="hollowCandle">Hollow candles</option>
+    <option value="volumeCandle">Volume candles</option>
+    <option value="lineMarkers">Line with markers</option>
+    <option value="stepLine">Step line</option>
+    <option value="hlcArea">HLC area</option>
+    <option value="baseline">Baseline</option>
+    <option value="lineBreak">Line break</option>
+    <option value="kagi">Kagi</option>
+    <option value="pointFigure">Point &amp; Figure</option>
   </select>
   <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
   <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for

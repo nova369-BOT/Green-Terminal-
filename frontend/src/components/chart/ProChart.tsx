@@ -45,6 +45,7 @@ import type { Drawing } from './ChartDrawingOverlay';
 // to avoid duplication and enable sharing across chart components
 import { type Candle, type ChartType, type ProChartProps, getDefaultColors, CANDLE_GAP_RATIO } from './core/types';
 import { transformSeries } from '@/engine/transforms';
+import { toLineBreak, toKagi, toPointFigure } from '@/engine/priceCharts';
 import { renderGenericSubplots, renderPhase2Overlays, renderSubplotSelectionDots, type SubplotRenderContext } from "./renderers/subplotRenderer";
 import { renderOptionsPdfHeatmap, renderOrderBookHeatmap, renderL2DepthOverlay, type HeatmapRenderContext } from "./renderers/heatmapRenderer";
 import { renderPositionLines, renderSelectedPositionSLTP, type PositionRenderContext } from "./renderers/positionRenderer";
@@ -1802,6 +1803,7 @@ const ProChart: React.FC<ProChartProps> = ({
     // could only show the oldest slice — both read as "blank". Below the manual
     // zoom floor, draw the close-price line so the whole span reads cleanly.
     const isDiscreteType = chartType === 'bars' || chartType === 'candlestick'
+      || chartType === 'hollowCandle' || chartType === 'volumeCandle'
       || chartType === 'heikinAshi' || chartType === 'renko';
     if (isDiscreteType && currentCandleWidth < MIN_CANDLE_WIDTH) {
       ctx.strokeStyle = colors.bullish;
@@ -1961,6 +1963,282 @@ const ProChart: React.FC<ProChartProps> = ({
         }
       });
       ctx.stroke();
+    } else if (chartType === 'hollowCandle') {
+      // Hollow candles: body is hollow when close>open (up bar), filled when
+      // close<open (down bar). Colour reflects direction vs the PREVIOUS close
+      // (green if close>=prevClose, red otherwise) — 4 visual combinations.
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const prevIdx = visible.startIndex + i - 1;
+        const prevClose = prevIdx >= 0 ? candles[prevIdx].close : candle.open;
+        const upVsPrev = candle.close >= prevClose;
+        const hollow = candle.close >= candle.open;
+        const col = upVsPrev ? colors.bullish : colors.bearish;
+        const border = upVsPrev ? colors.bullishBorder : colors.bearishBorder;
+        const openY = mainPriceToY(candle.open);
+        const closeY = mainPriceToY(candle.close);
+        const highY = mainPriceToY(candle.high);
+        const lowY = mainPriceToY(candle.low);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = wickWidth;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, highY);
+        ctx.lineTo(x, lowY);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        if (hollow) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.4;
+          ctx.strokeRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
+        } else {
+          ctx.fillStyle = col;
+          ctx.fillRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
+          ctx.strokeStyle = border;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
+        }
+      });
+    } else if (chartType === 'volumeCandle') {
+      // Volume candles: standard candles whose BODY WIDTH is proportional to
+      // the bar's traded volume (relative to the max volume in view).
+      let maxVol = 0;
+      for (const c of visible.candles) maxVol = Math.max(maxVol, c.volume || 0);
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const isBullish = candle.close >= candle.open;
+        const vFrac = maxVol > 0 ? (candle.volume || 0) / maxVol : 0.5;
+        const bw = Math.max(2, candleBodyWidth * (0.25 + 0.75 * vFrac));
+        const openY = mainPriceToY(candle.open);
+        const closeY = mainPriceToY(candle.close);
+        const highY = mainPriceToY(candle.high);
+        const lowY = mainPriceToY(candle.low);
+        ctx.strokeStyle = isBullish ? colors.bullishWick : colors.bearishWick;
+        ctx.lineWidth = wickWidth;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, highY);
+        ctx.lineTo(x, lowY);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        ctx.fillStyle = isBullish ? colors.bullish : colors.bearish;
+        ctx.fillRect(x - bw / 2, bodyTop, bw, bodyHeight);
+        ctx.strokeStyle = isBullish ? colors.bullishBorder : colors.bearishBorder;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - bw / 2, bodyTop, bw, bodyHeight);
+      });
+    } else if (chartType === 'lineMarkers') {
+      // Close line with a dot marker on every bar (markers hidden when dense).
+      ctx.strokeStyle = colors.bullish;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const y = mainPriceToY(candle.close);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      if (candleBodyWidth >= 3) {
+        const r = Math.min(3.5, Math.max(1.5, candleBodyWidth * 0.28));
+        ctx.fillStyle = colors.bullish;
+        visible.candles.forEach((candle, i) => {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          const y = mainPriceToY(candle.close);
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+    } else if (chartType === 'stepLine') {
+      // Staircase: horizontal hold at the previous close, then a vertical
+      // jump to the current close.
+      ctx.strokeStyle = colors.bullish;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'miter';
+      ctx.beginPath();
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const y = mainPriceToY(candle.close);
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          const prevY = mainPriceToY(visible.candles[i - 1].close);
+          ctx.lineTo(x, prevY);
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+    } else if (chartType === 'hlcArea') {
+      // Filled band between high and low, with the close drawn as a line.
+      if (visible.candles.length > 0) {
+        ctx.beginPath();
+        visible.candles.forEach((candle, i) => {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          const y = mainPriceToY(candle.high);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        for (let i = visible.candles.length - 1; i >= 0; i--) {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          ctx.lineTo(x, mainPriceToY(visible.candles[i].low));
+        }
+        ctx.closePath();
+        ctx.save();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = colors.bullish;
+        ctx.fill();
+        ctx.restore();
+        ctx.strokeStyle = colors.bullish;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        visible.candles.forEach((candle, i) => {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          const y = mainPriceToY(candle.close);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+    } else if (chartType === 'baseline') {
+      // Close line with a reference level (first visible close): area/line is
+      // green above the baseline, red below it.
+      if (visible.candles.length > 0) {
+        const base = visible.candles[0].close;
+        const baseY = mainPriceToY(base);
+        const pts = visible.candles.map((c, i) => ({
+          x: indexToX(visible.startIndex + i, visible.startIndex),
+          y: mainPriceToY(c.close),
+        }));
+        const areaPath = () => {
+          ctx.beginPath();
+          pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+          ctx.lineTo(pts[pts.length - 1].x, baseY);
+          ctx.lineTo(pts[0].x, baseY);
+          ctx.closePath();
+        };
+        // Green region above the baseline
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, chartWidth, Math.max(0, baseY));
+        ctx.clip();
+        areaPath();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = colors.bullish;
+        ctx.fill();
+        ctx.restore();
+        // Red region below the baseline
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, baseY, chartWidth, Math.max(0, mainChartHeight - baseY));
+        ctx.clip();
+        areaPath();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = colors.bearish;
+        ctx.fill();
+        ctx.restore();
+        // Close line, coloured per segment by its side of the baseline
+        ctx.lineWidth = 2;
+        for (let i = 1; i < pts.length; i++) {
+          const mid = (visible.candles[i - 1].close + visible.candles[i].close) / 2;
+          ctx.strokeStyle = mid >= base ? colors.bullish : colors.bearish;
+          ctx.beginPath();
+          ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+          ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.stroke();
+        }
+        // Dashed baseline
+        ctx.save();
+        ctx.strokeStyle = colors.textDim;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, baseY);
+        ctx.lineTo(chartWidth, baseY);
+        ctx.stroke();
+        ctx.restore();
+      }
+    } else if (chartType === 'lineBreak') {
+      // Three-line break: time-independent lines derived from closes, packed
+      // left→right and right-anchored (computed from the visible window so the
+      // price axis stays consistent).
+      const lines = toLineBreak(visible.candles.map((c) => c.close), 3);
+      const bw = Math.max(3, candleBodyWidth);
+      const step = bw * 1.25;
+      const fit = Math.max(1, Math.floor(chartWidth / step));
+      const startI = Math.max(0, lines.length - fit);
+      for (let idx = startI; idx < lines.length; idx++) {
+        const l = lines[idx];
+        const x = chartWidth - (lines.length - idx) * step;
+        const top = mainPriceToY(l.top);
+        const bot = mainPriceToY(l.bottom);
+        const h = Math.max(1, bot - top);
+        ctx.fillStyle = l.up ? colors.bullish : colors.bearish;
+        ctx.fillRect(x, top, bw, h);
+        ctx.strokeStyle = l.up ? colors.bullishBorder : colors.bearishBorder;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, top, bw, h);
+      }
+    } else if (chartType === 'kagi') {
+      // Kagi: time-independent zig-zag; thick (yang) when price is rising above
+      // the prior high, thin (yin) when falling below the prior low.
+      const { vertices, thick } = toKagi(visible.candles.map((c) => c.close));
+      const n = vertices.length;
+      if (n >= 2) {
+        const step = chartWidth / Math.max(1, n - 1);
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+        for (let v = 1; v < n; v++) {
+          const x0 = (v - 1) * step;
+          const x1 = v * step;
+          const y0 = mainPriceToY(vertices[v - 1]);
+          const y1 = mainPriceToY(vertices[v]);
+          ctx.strokeStyle = thick[v - 1] ? colors.bullish : colors.bearish;
+          ctx.lineWidth = thick[v - 1] ? 3 : 1.4;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        }
+      }
+    } else if (chartType === 'pointFigure') {
+      // Point & Figure: columns of X (rising) and O (falling), packed
+      // left→right and right-anchored.
+      const { columns, box } = toPointFigure(visible.candles, undefined, 3);
+      const bw = Math.max(6, candleBodyWidth * 1.2);
+      const step = bw * 1.3;
+      const fit = Math.max(1, Math.floor(chartWidth / step));
+      const startI = Math.max(0, columns.length - fit);
+      const refClose = visible.candles[0]?.close || box;
+      const boxPx = Math.abs(mainPriceToY(refClose) - mainPriceToY(refClose + box));
+      const half = (Math.min(bw, boxPx) / 2) * 0.8;
+      ctx.lineWidth = 1.8;
+      for (let ci = startI; ci < columns.length; ci++) {
+        const col = columns[ci];
+        const x = (ci - startI) * step + bw / 2;
+        ctx.strokeStyle = col.up ? colors.bullish : colors.bearish;
+        for (const price of col.boxes) {
+          const cy = mainPriceToY(price);
+          if (col.up) {
+            ctx.beginPath();
+            ctx.moveTo(x - half, cy - half);
+            ctx.lineTo(x + half, cy + half);
+            ctx.moveTo(x + half, cy - half);
+            ctx.lineTo(x - half, cy + half);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.ellipse(x, cy, half, half, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+      }
     } else if (chartType === 'renko') {
       // Calculate Renko bricks
       const renkoSize = priceRange.range * 0.02; // 2% of visible range as brick size
