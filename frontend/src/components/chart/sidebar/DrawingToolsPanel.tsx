@@ -151,14 +151,14 @@ export default function DrawingToolsPanel({
   const [showLoginForFavorites, setShowLoginForFavorites] = useState(false);
   const [drawingFavorites, setDrawingFavorites] = useState<string[]>(getDrawingFavorites);
   // Track which sub-tool is selected for each group's primary button display
-  const [selectedTrendTool, setSelectedTrendTool] = useState<'trend' | 'trendRay' | 'parallelChannel' | 'straightArrow' | 'flatChannel' | 'regressionTrend'>('trend');
+  const [selectedTrendTool, setSelectedTrendTool] = useState<'trend' | 'trendRay' | 'parallelChannel' | 'straightArrow' | 'flatChannel' | 'regressionTrend' | 'splitChannel'>('trend');
   const [selectedLineTool, setSelectedLineTool] = useState<'horizontal' | 'horizontalRay' | 'vertical' | 'line' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline'>('horizontal');
   const [selectedFibTool, setSelectedFibTool] = useState<'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime'>('fibonacci');
   const [selectedShapeTool, setSelectedShapeTool] = useState<'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart'>('rectangle');
   const [selectedBrushTool, setSelectedBrushTool] = useState<'brush' | 'highlighter' | 'arrow'>('brush');
   const [selectedMarkerTool, setSelectedMarkerTool] = useState<'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown'>('markerArrowUp');
   const [selectedGannTool, setSelectedGannTool] = useState<'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed'>('gannFan');
-  const [selectedPitchforkTool, setSelectedPitchforkTool] = useState<'pitchfork' | 'schiff' | 'modifiedSchiff'>('pitchfork');
+  const [selectedPitchforkTool, setSelectedPitchforkTool] = useState<'pitchfork' | 'schiff' | 'modifiedSchiff' | 'innerFork'>('pitchfork');
   const [selectedPatternTool, setSelectedPatternTool] = useState<'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives'>('xabcd');
   const [selectedElliottTool, setSelectedElliottTool] = useState<'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo'>('elliottImpulse');
   const [selectedTextTool, setSelectedTextTool] = useState<'text' | 'note' | 'callout' | 'priceLabel' | 'signpost'>('text');
@@ -178,7 +178,7 @@ export default function DrawingToolsPanel({
   const [textToolMenuOpen, setTextToolMenuOpen] = useState(false);
   const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
   const [volumeToolMenuOpen, setVolumeToolMenuOpen] = useState(false);
-  const [selectedCycleTool, setSelectedCycleTool] = useState<'cyclicLines' | 'sineLine'>('cyclicLines');
+  const [selectedCycleTool, setSelectedCycleTool] = useState<'cyclicLines' | 'sineLine' | 'timeArcs'>('cyclicLines');
   const [cycleToolMenuOpen, setCycleToolMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
@@ -247,8 +247,10 @@ export default function DrawingToolsPanel({
     straightArrow: <ArrowRight className="h-[18px] w-[18px]" />,
     flatChannel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="4" x2="22" y2="4" /><line x1="2" y1="20" x2="16" y2="6" /></svg>,
     regressionTrend: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="19" x2="21" y2="6" /><circle cx="7" cy="16" r="1.1" fill="currentColor" stroke="none" /><circle cx="11" cy="15" r="1.1" fill="currentColor" stroke="none" /><circle cx="15" cy="9" r="1.1" fill="currentColor" stroke="none" /><circle cx="19" cy="9" r="1.1" fill="currentColor" stroke="none" /></svg>,
+    splitChannel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="15" x2="22" y2="7" /><line x1="2" y1="21" x2="22" y2="16" /></svg>,
   };
   const pitchforkIcons: Record<string, React.ReactNode> = {
+    innerFork: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="9" y2="12" /><line x1="9" y1="4" x2="9" y2="20" /><line x1="9" y1="4" x2="22" y2="4" /><line x1="9" y1="12" x2="22" y2="12" /><line x1="9" y1="20" x2="22" y2="20" /><line x1="9" y1="8" x2="22" y2="8" strokeWidth="1" opacity="0.55" strokeDasharray="2 2" /><line x1="9" y1="16" x2="22" y2="16" strokeWidth="1" opacity="0.55" strokeDasharray="2 2" /></svg>,
     pitchfork: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="9" y2="12" /><line x1="9" y1="4" x2="9" y2="20" /><line x1="9" y1="4" x2="22" y2="4" /><line x1="9" y1="12" x2="22" y2="12" /><line x1="9" y1="20" x2="22" y2="20" /></svg>,
     schiff: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="18" x2="9" y2="10" /><line x1="7" y1="3" x2="13" y2="21" /><line x1="9" y1="10" x2="22" y2="5" /><line x1="11" y1="15.5" x2="22" y2="11" /><line x1="7" y1="3" x2="20" y2="-1" /></svg>,
     modifiedSchiff: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="14" x2="9" y2="11" /><line x1="6" y1="5" x2="12" y2="19" /><line x1="9" y1="11" x2="22" y2="6" /><line x1="10.5" y1="15" x2="22" y2="12" /></svg>,
@@ -257,7 +259,9 @@ export default function DrawingToolsPanel({
     pitchfork: 'Pitchfork',
     schiff: 'Schiff Pitchfork',
     modifiedSchiff: 'Modified Schiff Pitchfork',
+    innerFork: 'Inner Fork',
   };
+  const innerForkIcon = <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="9" y2="12" /><line x1="9" y1="4" x2="9" y2="20" /><line x1="9" y1="4" x2="22" y2="4" /><line x1="9" y1="12" x2="22" y2="12" /><line x1="9" y1="20" x2="22" y2="20" /><line x1="9" y1="8" x2="22" y2="8" strokeWidth="1" opacity="0.55" strokeDasharray="2 2" /><line x1="9" y1="16" x2="22" y2="16" strokeWidth="1" opacity="0.55" strokeDasharray="2 2" /></svg>;
   const patternIcons: Record<string, React.ReactNode> = {
     xabcd: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,20 7,6 12,15 17,7 21,19" /></svg>,
     cypher: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="3,18 8,5 13,14 18,8 21,20" opacity="0.85" /></svg>,
@@ -301,8 +305,9 @@ export default function DrawingToolsPanel({
   const cycleIcons: Record<string, React.ReactNode> = {
     cyclicLines: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="3" x2="5" y2="21" /><line x1="12" y1="3" x2="12" y2="21" opacity="0.75" /><line x1="19" y1="3" x2="19" y2="21" opacity="0.55" /></svg>,
     sineLine: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12 Q 7 3 11 12 T 19 12" /></svg>,
+    timeArcs: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17 A 4 4 0 0 1 11 17" /><path d="M11 17 A 4 4 0 0 1 19 17" /><line x1="3" y1="17" x2="21" y2="17" opacity="0.5" /></svg>,
   };
-  const cycleLabels: Record<string, string> = { cyclicLines: 'Cyclic Lines', sineLine: 'Sine Line' };
+  const cycleLabels: Record<string, string> = { cyclicLines: 'Cyclic Lines', sineLine: 'Sine Line', timeArcs: 'Time Arcs' };
   const lineIcons: Record<string, React.ReactNode> = {
     horizontal: <Minus className="h-[18px] w-[18px]" />,
     horizontalRay: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="12" /><polyline points="17,9 20,12 17,15" /></svg>,
@@ -395,7 +400,7 @@ export default function DrawingToolsPanel({
         {/* Trend Lines Group */}
         {renderToolGroup(
           trendToolMenuOpen, setTrendToolMenuOpen, selectedTrendTool,
-          ['trend', 'trendRay', 'parallelChannel', 'straightArrow', 'flatChannel', 'regressionTrend'],
+          ['trend', 'trendRay', 'parallelChannel', 'straightArrow', 'flatChannel', 'regressionTrend', 'splitChannel'],
           trendIcons[selectedTrendTool],
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Trend Lines</div>
@@ -406,6 +411,7 @@ export default function DrawingToolsPanel({
               { id: 'straightArrow', label: 'Arrow' },
               { id: 'flatChannel', label: 'Flat Top/Bottom' },
               { id: 'regressionTrend', label: 'Regression Trend' },
+              { id: 'splitChannel', label: 'Split Channel' },
             ].map(t => (
               <ToolMenuItem key={t.id} toolId={t.id} label={t.label} icon={trendIcons[t.id]} isActive={activeTool === t.id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTrendTool, setTrendToolMenuOpen, t.id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -471,11 +477,11 @@ export default function DrawingToolsPanel({
         {/* Pitchforks Group */}
         {renderToolGroup(
           pitchforkToolMenuOpen, setPitchforkToolMenuOpen, selectedPitchforkTool,
-          ['pitchfork', 'schiff', 'modifiedSchiff'],
+          ['pitchfork', 'schiff', 'modifiedSchiff', 'innerFork'],
           pitchforkIcons[selectedPitchforkTool],
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Pitchforks</div>
-            {['pitchfork', 'schiff', 'modifiedSchiff'].map(id => (
+            {['pitchfork', 'schiff', 'modifiedSchiff', 'innerFork'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={pitchforkLabels[id]} icon={pitchforkIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedPitchforkTool, setPitchforkToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
           </div>
@@ -606,11 +612,11 @@ export default function DrawingToolsPanel({
         {/* Cycles Group */}
         {renderToolGroup(
           cycleToolMenuOpen, setCycleToolMenuOpen, selectedCycleTool,
-          ['cyclicLines', 'sineLine'],
+          ['cyclicLines', 'sineLine', 'timeArcs'],
           cycleIcons[selectedCycleTool],
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Cycles</div>
-            {['cyclicLines', 'sineLine'].map(id => (
+            {['cyclicLines', 'sineLine', 'timeArcs'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={cycleLabels[id]} icon={cycleIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedCycleTool, setCycleToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
           </div>
