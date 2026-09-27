@@ -19,7 +19,7 @@ const EMOJI_LIST = ['📈','📉','🚀','💰','🔥','⭐','✅','❌','⚠️
 import {
   Star, Plus, X, Minus, Type, Square, RectangleHorizontal, Paintbrush,
   ArrowUpCircle, ArrowDownCircle, Trash2, Lock, Unlock, Eye, EyeOff, Ruler, Keyboard,
-  ChevronRight, ArrowRight, MoveVertical, Circle, Triangle, RotateCw,
+  ArrowRight, MoveVertical, Circle, Triangle, RotateCw,
   Octagon, Diamond, Pentagon, Hexagon, Heart, ArrowBigRight, Highlighter,
   MousePointer2, DollarSign, Settings, Bell, Camera, Lasso, ArrowUp, ArrowDown
 } from "lucide-react";
@@ -206,10 +206,10 @@ export default function DrawingToolsPanel({
               <Button
                 variant="ghost"
                 size="icon"
-                className={`relative h-10 w-10 rounded-none transition-all ${
+                className={`relative h-9 w-9 rounded-lg transition-colors ${
                   toolOptions.includes(activeTool as string)
-                    ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r'
-                    : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'
+                    ? 'bg-teal-400/15 text-teal-300 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-teal-400 before:rounded-r'
+                    : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'
                 }`}
                 onClick={() => {
                   if (activeTool === selectedTool) { onToolSelect(null); }
@@ -224,10 +224,10 @@ export default function DrawingToolsPanel({
         </TooltipProvider>
         <PopoverTrigger asChild>
           <button
-            className="absolute -right-1 top-1/2 -translate-y-1/2 w-5 h-10 flex items-center justify-center text-muted-foreground/30 hover:text-muted-foreground transition-colors"
+            className="absolute bottom-0 right-0 p-[3px] leading-none text-muted-foreground/40 hover:text-teal-300 transition-colors"
             onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
           >
-            <ChevronRight className="h-3 w-3" />
+            <svg width="6" height="6" viewBox="0 0 6 6"><path d="M6 0V6H0Z" fill="currentColor" /></svg>
           </button>
         </PopoverTrigger>
       </div>
@@ -383,20 +383,20 @@ export default function DrawingToolsPanel({
 
   return (
     <>
-      <div className="flex flex-col gap-0 items-center py-1">
+      <div className="flex flex-col gap-0.5 items-center py-1.5">
         {/* Cursor / select: the default state. Deselects any active drawing
             tool so clicks select and edit existing drawings. */}
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${!activeTool ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(null)}>
+              <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${!activeTool ? 'bg-teal-400/15 text-teal-300 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-teal-400 before:rounded-r' : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'}`} onClick={() => onToolSelect(null)}>
                 <MousePointer2 className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs lg:text-sm">Cursor</TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <div className="w-6 h-px bg-border mx-auto my-1" />
+        <div className="w-5 h-px bg-white/10 mx-auto my-1.5" />
         {/* Trend Lines Group */}
         {renderToolGroup(
           trendToolMenuOpen, setTrendToolMenuOpen, selectedTrendTool,
@@ -573,7 +573,7 @@ export default function DrawingToolsPanel({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'emoji' ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => { if (activeTool === 'emoji') { onToolSelect(null); } else { emojiSelection.current = selectedEmoji; onToolSelect('emoji' as DrawingTool); } }}>
+                  <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${activeTool === 'emoji' ? 'bg-teal-400/15 text-teal-300 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-teal-400 before:rounded-r' : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'}`} onClick={() => { if (activeTool === 'emoji') { onToolSelect(null); } else { emojiSelection.current = selectedEmoji; onToolSelect('emoji' as DrawingTool); } }}>
                     <span className="text-lg leading-none">{selectedEmoji}</span>
                   </Button>
                 </TooltipTrigger>
@@ -581,8 +581,8 @@ export default function DrawingToolsPanel({
               </Tooltip>
             </TooltipProvider>
             <PopoverTrigger asChild>
-              <button className="absolute -right-1 top-1/2 -translate-y-1/2 w-5 h-10 flex items-center justify-center text-muted-foreground/30 hover:text-muted-foreground transition-colors" onClick={(e) => { e.stopPropagation(); setEmojiMenuOpen(!emojiMenuOpen); }}>
-                <ChevronRight className="h-3 w-3" />
+              <button className="absolute bottom-0 right-0 p-[3px] leading-none text-muted-foreground/40 hover:text-teal-300 transition-colors" onClick={(e) => { e.stopPropagation(); setEmojiMenuOpen(!emojiMenuOpen); }}>
+                <svg width="6" height="6" viewBox="0 0 6 6"><path d="M6 0V6H0Z" fill="currentColor" /></svg>
               </button>
             </PopoverTrigger>
           </div>
@@ -590,7 +590,7 @@ export default function DrawingToolsPanel({
             <div className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Stickers</div>
             <div className="grid grid-cols-6 gap-1">
               {EMOJI_LIST.map((em) => (
-                <button key={em} className={`h-8 w-8 flex items-center justify-center rounded text-lg transition-colors hover:bg-black/10 dark:hover:bg-white/10 ${selectedEmoji === em ? 'bg-black/10 dark:bg-white/10 ring-1 ring-teal-400/50' : ''}`} onClick={() => { emojiSelection.current = em; setSelectedEmoji(em); onToolSelect('emoji' as DrawingTool); setEmojiMenuOpen(false); }}>
+                <button key={em} className={`h-8 w-8 flex items-center justify-center rounded text-lg transition-colors hover:bg-white/[0.07] ${selectedEmoji === em ? 'bg-black/10 dark:bg-white/10 ring-1 ring-teal-400/50' : ''}`} onClick={() => { emojiSelection.current = em; setSelectedEmoji(em); onToolSelect('emoji' as DrawingTool); setEmojiMenuOpen(false); }}>
                   {em}
                 </button>
               ))}
@@ -625,7 +625,7 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'long' ? 'text-neon-green before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-neon-green before:rounded-r' : 'text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-neon-green'}`} onClick={() => onToolSelect(activeTool === 'long' ? null : 'long')}>
+              <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${activeTool === 'long' ? 'text-neon-green before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-neon-green before:rounded-r' : 'text-muted-foreground hover:bg-white/[0.07] hover:text-neon-green'}`} onClick={() => onToolSelect(activeTool === 'long' ? null : 'long')}>
                 <LongPositionIcon className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
@@ -636,7 +636,7 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'short' ? 'text-neon-pink before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-neon-pink before:rounded-r' : 'text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10 hover:text-neon-pink'}`} onClick={() => onToolSelect(activeTool === 'short' ? null : 'short')}>
+              <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${activeTool === 'short' ? 'text-neon-pink before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-neon-pink before:rounded-r' : 'text-muted-foreground hover:bg-white/[0.07] hover:text-neon-pink'}`} onClick={() => onToolSelect(activeTool === 'short' ? null : 'short')}>
                 <ShortPositionIcon className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
@@ -644,13 +644,13 @@ export default function DrawingToolsPanel({
           </Tooltip>
         </TooltipProvider>
         {/* Divider: creation tools above, edit/utility actions below */}
-        <div className="w-6 h-px bg-border mx-auto my-1" />
+        <div className="w-5 h-px bg-white/10 mx-auto my-1.5" />
         {/* Lock drawings */}
         {onToggleLock && (
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${drawingsLocked ? 'text-yellow-400 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-yellow-400 before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={onToggleLock}>
+                <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${drawingsLocked ? 'text-yellow-400 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-yellow-400 before:rounded-r' : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'}`} onClick={onToggleLock}>
                   {drawingsLocked ? <Lock className="h-[18px] w-[18px]" /> : <Unlock className="h-[18px] w-[18px]" />}
                 </Button>
               </TooltipTrigger>
@@ -663,7 +663,7 @@ export default function DrawingToolsPanel({
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${drawingsHidden ? 'text-muted-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-muted-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={onToggleHide}>
+                <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${drawingsHidden ? 'text-muted-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-muted-foreground before:rounded-r' : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'}`} onClick={onToggleHide}>
                   {drawingsHidden ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
                 </Button>
               </TooltipTrigger>
@@ -675,7 +675,7 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${activeTool === 'measure' ? 'text-electric-blue before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-electric-blue before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'measure' ? null : 'measure')}>
+              <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${activeTool === 'measure' ? 'text-electric-blue before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-electric-blue before:rounded-r' : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'measure' ? null : 'measure')}>
                 <Ruler className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
@@ -691,7 +691,7 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.screenshot?.()}>
+              <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-lg transition-colors text-foreground/80 hover:bg-white/[0.07] hover:text-foreground" onClick={() => (window as any).__lseShell?.screenshot?.()}>
                 <Camera className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
@@ -701,7 +701,7 @@ export default function DrawingToolsPanel({
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={() => (window as any).__lseShell?.lasso?.()}>
+              <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-lg transition-colors text-foreground/80 hover:bg-white/[0.07] hover:text-foreground" onClick={() => (window as any).__lseShell?.lasso?.()}>
                 <Lasso className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
@@ -729,7 +729,7 @@ export default function DrawingToolsPanel({
               onLoadLayout={onLoadLayout || (() => {})}
               onOpenSaveDialog={onOpenSaveDialog || (() => {})}
               hideExitButton
-              className="h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-muted/50 hover:text-foreground p-0 border-0 bg-transparent shadow-none flex items-center justify-center"
+              className="h-9 w-9 rounded-lg transition-colors text-foreground/80 hover:bg-muted/50 hover:text-foreground p-0 border-0 bg-transparent shadow-none flex items-center justify-center"
             />
           </div>
         )}
@@ -740,7 +740,7 @@ export default function DrawingToolsPanel({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className={`relative h-10 w-10 rounded-none transition-all ${calendarPanelActive ? 'text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:bg-foreground before:rounded-r' : 'text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'}`} onClick={onToggleCalendar}>
+                  <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${calendarPanelActive ? 'bg-teal-400/15 text-teal-300 before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-teal-400 before:rounded-r' : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'}`} onClick={onToggleCalendar}>
                     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><circle cx="17.5" cy="17.5" r="4" fill="var(--background, white)" stroke="currentColor" strokeWidth="1.75" /><line x1="17.5" y1="15.5" x2="17.5" y2="17.5" /><line x1="17.5" y1="17.5" x2="19" y2="18.5" /></svg>
                   </Button>
                 </TooltipTrigger>
@@ -755,7 +755,7 @@ export default function DrawingToolsPanel({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-muted/50 hover:text-foreground" onClick={onShowAlertDialog}>
+                  <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-lg transition-colors text-foreground/80 hover:bg-muted/50 hover:text-foreground" onClick={onShowAlertDialog}>
                     <Bell className="h-5 w-5" />
                     {alertCount > 0 && (
                       <span className="absolute -top-1 -right-1 h-3 min-w-[12px] px-0.5 text-[8px] bg-electric-blue text-white rounded-full flex items-center justify-center">{alertCount}</span>
@@ -772,7 +772,7 @@ export default function DrawingToolsPanel({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-muted/50 hover:text-foreground" onClick={() => onOpenSettings?.()}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg transition-colors text-foreground/80 hover:bg-muted/50 hover:text-foreground" onClick={() => onOpenSettings?.()}>
                     <Settings className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
@@ -791,7 +791,7 @@ export default function DrawingToolsPanel({
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-none transition-all text-foreground/80 hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground" onClick={onOpenShortcutsDialog}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg transition-colors text-foreground/80 hover:bg-white/[0.07] hover:text-foreground" onClick={onOpenShortcutsDialog}>
                     <Keyboard className="h-[18px] w-[18px]" />
                   </Button>
                 </TooltipTrigger>
@@ -807,7 +807,7 @@ export default function DrawingToolsPanel({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon"
-                    className={`h-10 w-10 rounded-none transition-all text-muted-foreground hover:bg-destructive/10 hover:text-destructive ${selectedDrawingId ? 'text-destructive/70' : ''}`}
+                    className={`h-9 w-9 rounded-lg transition-colors text-muted-foreground hover:bg-destructive/10 hover:text-destructive ${selectedDrawingId ? 'text-destructive/70' : ''}`}
                     onClick={() => { if (selectedDrawingId && onDeleteSelectedDrawing) { onDeleteSelectedDrawing(selectedDrawingId); } }}
                   >
                     <Trash2 className="h-[18px] w-[18px]" />
@@ -818,8 +818,8 @@ export default function DrawingToolsPanel({
             </TooltipProvider>
             <Popover>
               <PopoverTrigger asChild>
-                <button className="absolute -right-1 top-1/2 -translate-y-1/2 w-5 h-10 flex items-center justify-center text-muted-foreground/30 hover:text-muted-foreground transition-colors">
-                  <ChevronRight className="h-3 w-3" />
+                <button className="absolute bottom-0 right-0 p-[3px] leading-none text-muted-foreground/40 hover:text-teal-300 transition-colors">
+                  <svg width="6" height="6" viewBox="0 0 6 6"><path d="M6 0V6H0Z" fill="currentColor" /></svg>
                 </button>
               </PopoverTrigger>
               <PopoverContent side="right" align="start" className="w-auto p-1 bg-card border border-border shadow-lg">
