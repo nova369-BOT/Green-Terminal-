@@ -113,13 +113,11 @@ document.documentElement.setAttribute("data-theme",
        user's own imported files. -->
   <!-- Symbol search now lives once, in the sidebar (#wl-filter). The old
        toolbar search box was removed so there is only one search. -->
-  <nav id="timeframes"></nav>
-  <!-- cTrader-style timeframe "⋮ more" menu, sitting right after the rail
-       (…1d 1w ⋮). Mounted here by the chart bundle
-       (LSEChart.mountTimeframeSelector); it owns bar type AND timeframe,
-       including custom / monthly resolutions, and drives state.timeframe /
-       state.chartType. -->
-  <span id="bar-type-slot" title="Timeframe & bar type"></span>
+  <!-- Item 5: the timeframe rail (#timeframes) and its cTrader-style "⋮ more"
+       menu (#bar-type-slot) were MOVED to the right end of the toolbar; they
+       now live just before the right-hand #sl-slot group below. The "⋮ more"
+       menu (LSEChart.mountTimeframeSelector) owns bar type AND timeframe,
+       including custom / monthly resolutions. -->
   <!-- Dedicated advanced Bar-style menu (feature 2): 15 chart types across 4
        groups, with search + live descriptions. Mounted by the chart bundle
        (LSEChart.mountChartTypeMenu); drives state.chartType only. -->
@@ -177,6 +175,12 @@ document.documentElement.setAttribute("data-theme",
        AND gets a visible button). No separate Appearance
        button: colours live inside the Chart layout panel (a short-lived
        split into its own button was reverted). -->
+  <!-- Item 5: timeframe rail + its "⋮ more" menu, moved here to the RIGHT.
+       nav#timeframes carries margin-left:auto (CSS), so it becomes the
+       leftmost item of the right-hand toolbar cluster — the rail sits on the
+       right, beside the layout / workspace controls. -->
+  <nav id="timeframes"></nav>
+  <span id="bar-type-slot" title="Timeframe & bar type"></span>
   <span id="sl-slot"></span>
   <button id="tpl-open" title="Save this chart setup, or apply a saved one">Templates</button>
   <button id="cs-open" title="Colours, candles, background, axis">Chart layout</button>

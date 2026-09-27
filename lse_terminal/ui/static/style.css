@@ -145,7 +145,9 @@ input#symbol:focus { outline: none; border-color: var(--dim); }
    (it is first of the pair, so the push carries Chart layout right with it),
    Chart layout follows with a small gap (the layout picker sits to the
    LEFT of Chart layout on the right-hand side). */
-#controls > #sl-slot { margin-left: auto; }
+/* Item 5: the auto-margin push now belongs to nav#timeframes (moved to the
+   right end of the toolbar); the layout picker just flows after the rail. */
+#controls > #sl-slot { margin-left: 0; }
 /* No extra margin: the toolbar's own 4px gap is the whole separation
    (the 8px margin plus both buttons' transparent padding read as too
    wide a gap next to Chart layout). */
@@ -171,7 +173,8 @@ input#symbol:focus { outline: none; border-color: var(--dim); }
   padding: 4px 7px;
 }
 #controls select:hover { color: var(--text); }
-nav#timeframes { display: flex; gap: 1px; margin-right: 8px; flex: none; }
+/* Item 5: margin-left:auto pushes the rail to the right end of the toolbar. */
+nav#timeframes { display: flex; gap: 1px; margin-left: auto; margin-right: 8px; flex: none; }
 nav#timeframes button { border-radius: 2px; padding: 3px 7px; color: var(--dim); border-color: transparent; font-variant-numeric: tabular-nums; }
 nav#timeframes button.active { color: #0a0f0c; background: var(--accent-bar); }
 nav#timeframes button:hover { color: var(--text); }
@@ -3381,9 +3384,13 @@ nav#timeframes button { font-family: var(--mono); font-size: 11.5px; }
 /* Toolbar group seams: a quiet vertical rule between the
    search/timeframe cluster and the chart-type/indicator cluster. */
 #controls select { margin-left: 2px; }
+/* Item 5: rail sits on the RIGHT now, so the group seam is on its LEFT
+   (separating the drawing/indicator tools from the timeframe cluster) and it
+   keeps the auto push. */
 nav#timeframes {
-  padding-right: 10px; margin-right: 10px;
-  border-right: 1px solid var(--edge);
+  margin-left: auto;
+  padding-left: 12px; margin-right: 8px;
+  border-left: 1px solid var(--edge);
 }
 
 /* ---------- MARKETS > NEWS ---------------------------------------------
