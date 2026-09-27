@@ -19,6 +19,8 @@ import { calculateEMA, calculateSMA, calculateSMMA, calculateBollingerBands, cal
 import { evaluateFormula, type CustomIndicator } from '@/lib/formulaEngine';
 import { MAType, IndicatorConfig } from './IndicatorSettings';
 import IndicatorPanelSettings, { IndicatorType } from './IndicatorPanelSettings';
+import OnChartHUD from './OnChartHUD';
+import { deriveHudItems, type HudIndicatorItem } from './onChartHudData';
 // Registry-driven legend metadata. Replaces the hand-typed overlayOrder /
 // allSubplots arrays that used to live inline below; adding indicator #106
 // now means one entry in INDICATOR_DISPLAY, not parallel edits across two
@@ -467,6 +469,17 @@ const ProChart: React.FC<ProChartProps> = ({
     type: IndicatorType;
     position: { x: number; y: number };
   } | null>(null);
+
+  // ── Item 8: on-chart indicator HUD ──────────────────────────────────────
+  // The brass instrument-cluster HUD replaces the old canvas text legend.
+  // Always on: it IS the legend now (OHLC removed per spec). hudHiddenKeys
+  // persists a "hidden but still listed" state for single-key indicators;
+  // hiddenMaLines stashes hidden moving-average lines so they can be restored
+  // (the config has no per-line visibility flag of its own).
+  const hudEnabled = true;
+  const [hudHiddenKeys, setHudHiddenKeys] = useState<Set<string>>(() => new Set());
+  const [hiddenMaLines, setHiddenMaLines] = useState<any[]>([]);
+  const hudSnapshotsRef = useRef<Record<string, HudIndicatorItem>>({});
 
   // Per-instance Brue settings state removed alongside the cog button.
 
@@ -5403,7 +5416,9 @@ const ProChart: React.FC<ProChartProps> = ({
       indicatorData,
       indicators,
       indicatorHeightRatio,
-      showOHLC,
+      // Item 8: the on-chart HUD IS the legend now, so the canvas OHLC +
+      // indicator text legend is suppressed while the HUD is enabled.
+      showOHLC: showOHLC && !hudEnabled,
       isDesktop,
       PRICE_AXIS_WIDTH,
       TIME_AXIS_HEIGHT,
@@ -8774,6 +8789,8 @@ const ProChart: React.FC<ProChartProps> = ({
           top: 3,
           left: showOHLC ? ((ohlcTextWidth || 295) + 6) : 6,
           pointerEvents: 'auto',
+          // Item 8: the HUD replaces this legacy OHLC toggle + session dot.
+          display: hudEnabled ? 'none' : undefined,
         }}
         onMouseEnter={() => { sessionControlHoveredRef.current = true; }}
         onMouseLeave={() => { sessionControlHoveredRef.current = false; }}
@@ -9075,8 +9092,101 @@ const ProChart: React.FC<ProChartProps> = ({
       })()}
       </div>
 
+      {/* ═══ Item 8: on-chart indicator HUD (brass instrument cluster) ═══ */}
+      {hudEnabled && indicators && onIndicatorsChange && (() => {
+        const raw = deriveHudItems(indicators, indicatorData, '#b08d57');
+        for (const it of raw) if (it.lineIndex === null) hudSnapshotsRef.current[it.configKey] = it;
+        const rawKeys = new Set(raw.map((r) => r.configKey));
+        const hudItems: HudIndicatorItem[] = raw.map((it) => ({ ...it, hidden: false }));
+        // Persistent hidden placeholders (single-key indicators).
+        for (const key of hudHiddenKeys) {
+          if (!rawKeys.has(key) && hudSnapshotsRef.current[key]) {
+            hudItems.push({ ...hudSnapshotsRef.current[key], hidden: true, valueText: '—', gaugePct: null });
+          }
+        }
+        // Persistent hidden placeholders (moving-average lines).
+        hiddenMaLines.forEach((ln, i) => {
+          hudItems.push({
+            key: `ma-hidden-${i}`, configKey: 'movingAverages', lineIndex: null,
+            title: `${ln.type} ${ln.period}`, valueText: '—', color: ln.color || '#b08d57',
+            gaugePct: null, display: 'overlay', hidden: true,
+          });
+        });
+
+        const hudEdit = (item: HudIndicatorItem) => {
+          setSelectedIndicator({ type: item.configKey as IndicatorType, position: { x: 60, y: 72 } });
+        };
+        const hudDelete = (item: HudIndicatorItem) => {
+          if (!onIndicatorsChange) return;
+          if (item.key.startsWith('ma-hidden-')) {
+            const idx = Number(item.key.slice('ma-hidden-'.length));
+            setHiddenMaLines((lines) => lines.filter((_, i) => i !== idx));
+            return;
+          }
+          if (item.configKey === 'movingAverages' && item.lineIndex !== null) {
+            const lines = (indicators as any).movingAverages?.lines ?? [];
+            onIndicatorsChange({ ...indicators, movingAverages: {
+              ...(indicators as any).movingAverages,
+              lines: lines.filter((_: any, i: number) => i !== item.lineIndex),
+            } } as any);
+            return;
+          }
+          const cfg = (indicators as any)[item.configKey];
+          if (cfg) onIndicatorsChange({ ...indicators, [item.configKey]: { ...cfg, enabled: false } });
+          setHudHiddenKeys((s) => { const n = new Set(s); n.delete(item.configKey); return n; });
+        };
+        const hudHide = (item: HudIndicatorItem) => {
+          if (!onIndicatorsChange) return;
+          // Unhide a stashed MA line.
+          if (item.key.startsWith('ma-hidden-')) {
+            const idx = Number(item.key.slice('ma-hidden-'.length));
+            const ln = hiddenMaLines[idx];
+            if (!ln) return;
+            setHiddenMaLines((lines) => lines.filter((_, i) => i !== idx));
+            const cur = (indicators as any).movingAverages || { enabled: true, lines: [] };
+            onIndicatorsChange({ ...indicators, movingAverages: {
+              ...cur, enabled: true, lines: [...(cur.lines || []), ln],
+            } } as any);
+            return;
+          }
+          // Hide a visible MA line: stash it and drop it from the drawn set.
+          if (item.configKey === 'movingAverages' && item.lineIndex !== null) {
+            const lines = (indicators as any).movingAverages?.lines ?? [];
+            const ln = lines[item.lineIndex];
+            if (ln) setHiddenMaLines((l) => [...l, ln]);
+            onIndicatorsChange({ ...indicators, movingAverages: {
+              ...(indicators as any).movingAverages,
+              lines: lines.filter((_: any, i: number) => i !== item.lineIndex),
+            } } as any);
+            return;
+          }
+          // Single-key indicator: reversible enabled toggle + persistence.
+          const cfg = (indicators as any)[item.configKey];
+          if (!cfg) return;
+          if (item.hidden) {
+            onIndicatorsChange({ ...indicators, [item.configKey]: { ...cfg, enabled: true } });
+            setHudHiddenKeys((s) => { const n = new Set(s); n.delete(item.configKey); return n; });
+          } else {
+            onIndicatorsChange({ ...indicators, [item.configKey]: { ...cfg, enabled: false } });
+            setHudHiddenKeys((s) => { const n = new Set(s); n.add(item.configKey); return n; });
+          }
+        };
+        const hudAdd = () => { onOpenSettings?.(); };
+
+        return (
+          <OnChartHUD
+            symbol={symbol}
+            items={hudItems}
+            onEdit={hudEdit}
+            onHide={hudHide}
+            onDelete={hudDelete}
+            onAdd={hudAdd}
+          />
+        );
+      })()}
+
       {/* ═══ TradingView-style clickable overlay indicator labels + inline toolbar ═══ */}
-      {showOHLC && indicators && onIndicatorsChange && (() => {
+      {!hudEnabled && showOHLC && indicators && onIndicatorsChange && (() => {
         // ── Registry-driven overlay list ───────────────────────────────
         // Iteration order, titles, and pane assignment all come from
         // INDICATOR_DISPLAY now. The bespoke endX vars below stay because
