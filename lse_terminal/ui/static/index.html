@@ -201,12 +201,27 @@ document.documentElement.setAttribute("data-theme",
      every registered indicator (built-ins + the user's own); click toggles it
      on the chart, the gear on an active row opens its parameters. Positioned
      under its button by app.js. -->
-<div id="ind-panel" class="hidden">
-  <input id="ind-search" placeholder="Search indicators&hellip;" spellcheck="false" autocomplete="off">
-  <div id="ind-list"></div>
-  <button id="ind-create">+ Create custom indicator (Python)</button>
+<!-- Item 7: advanced indicator browser. Three columns — category rail |
+     card catalog | live inspector — a centred modal that replaces the old
+     flat dropdown. The engine wiring is unchanged (the same
+     state.indicatorSpecs / state.activeIndicators drive the chart). -->
+<div id="ind-panel" class="hidden" role="dialog" aria-modal="true" aria-label="Indicators">
+  <div id="indb-backdrop"></div>
+  <div id="indb-modal">
+    <aside id="indb-cats" aria-label="Indicator categories"></aside>
+    <section id="indb-catalog">
+      <div id="indb-head">
+        <input id="ind-search" placeholder="Search indicators&hellip;" spellcheck="false" autocomplete="off">
+        <div id="indb-chips" role="group" aria-label="Filters"></div>
+      </div>
+      <div id="ind-list"></div>
+      <button id="ind-create">+ Create custom indicator (Python)</button>
+    </section>
+    <aside id="indb-inspector" aria-label="Indicator settings"></aside>
+  </div>
 </div>
-<!-- Per-indicator parameter editor, opened from a chip or an active row. -->
+<!-- Legacy per-indicator parameter popup, still opened by the active-indicator
+     chip strip beneath the toolbar. -->
 <div id="ind-cfg" class="hidden"></div>
 <!-- Chart templates dropdown (toolbar Templates button): rows apply, x
      deletes (two-click), the bottom row saves the current setup under a

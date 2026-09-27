@@ -1149,65 +1149,383 @@ function closeIndPanels() {
   $("ind-cfg").classList.add("hidden");
 }
 
-function renderIndicatorList() {
-  const q = $("ind-search").value.trim().toLowerCase();
-  const list = $("ind-list");
-  list.innerHTML = "";
-  // Starred indicators float to the top; the sort is stable, so both groups
-  // keep the registry's alphabetical order inside themselves.
-  const favs = new Set(state.favoriteIndicators);
-  const specs = [...state.indicatorSpecs]
-    .sort((a, b) => Number(favs.has(b.name)) - Number(favs.has(a.name)));
-  let pastFavs = false;
-  for (const s of specs) {
-    if (q && !(s.title.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))) continue;
-    const isFav = favs.has(s.name);
-    // Thin rule between the starred block and the rest, only when both exist.
-    if (!isFav && !pastFavs && list.children.length) {
+/* ── Item 7: advanced indicator browser ───────────────────────────────────
+   Three columns: category rail (renderIndCats) | card catalog
+   (renderIndicatorList) | live inspector (renderIndInspector). Engine wiring
+   is unchanged: cards toggle state.activeIndicators and call loadChart(), the
+   inspector edits params and live-updates both the chart and its own preview. */
+
+const IND_CATS = [
+  { id: "all", label: "All" },
+  { id: "fav", label: "Favourites", star: true },
+  { id: "trend", label: "Trend" },
+  { id: "momentum", label: "Momentum" },
+  { id: "volatility", label: "Volatility" },
+  { id: "volume", label: "Volume" },
+  { id: "bands", label: "Bands" },
+  { id: "my", label: "My indicators" },
+];
+const IND_CHIPS = [
+  { id: "overlay", label: "Overlay" },
+  { id: "pane", label: "Pane" },
+  { id: "fav", label: "Favourites" },
+];
+// Names owned by the user's own indicator files (/api/user-indicators); drives
+// the "My indicators" category. Refilled each time the browser opens.
+let indUserNames = new Set();
+
+// Keyword classifier: the engine specs carry no category, so bucket by
+// name/title, then fall back to overlay(=trend)/pane(=momentum).
+function indCategoryOf(spec) {
+  if (indUserNames.has(spec.name)) return "my";
+  const key = (spec.name + " " + (spec.title || "")).toLowerCase();
+  const has = (...ws) => ws.some((w) => key.includes(w));
+  if (has("bollinger", "keltner", "donchian", "envelope", "bband", " band")) return "bands";
+  if (has("volume", "obv", "vwap", "vwma", "mfi", "chaikin", "accumulation",
+          "cmf", "money flow", "pvt", "ease of movement", "eom", "klinger")) return "volume";
+  if (has("atr", "true range", "stddev", "std dev", "standard deviation",
+          "deviation", "volatility", "chandelier", "natr", "bandwidth")) return "volatility";
+  if (has("rsi", "macd", "stoch", "cci", "momentum", "rate of change", "roc",
+          "william", "%r", "tsi", "ultimate", "awesome", "kdj", "rvi", "cmo",
+          "ppo", "trix", "dpo", "fisher", "relative strength", "oscillator",
+          "connors", "coppock")) return "momentum";
+  if (has("sma", "ema", "wma", "dema", "tema", "hma", "vwma", "kama",
+          "moving average", "adx", "dmi", "ichimoku", "psar", "parabolic",
+          "supertrend", "aroon", "alma", "zlema", "lsma", "regression",
+          "gann", "hull", "mcginley", "trend")) return "trend";
+  return spec.overlay ? "trend" : "momentum";
+}
+
+function indPassesCat(spec, cat) {
+  if (cat === "all") return true;
+  if (cat === "fav") return state.favoriteIndicators.includes(spec.name);
+  if (cat === "my") return indUserNames.has(spec.name);
+  return indCategoryOf(spec) === cat;
+}
+
+// A stable little sparkline per card, seeded by the name so it never jitters
+// between renders. Overlays draw a drifting line, panes an oscillation.
+function indSpark(spec) {
+  let h = 0;
+  for (const c of spec.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const rnd = () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return (h % 1000) / 1000; };
+  const n = 24, w = 150, ht = 34, pad = 3;
+  const pts = [];
+  let v = 0.5;
+  for (let i = 0; i < n; i++) {
+    if (spec.overlay) v += (rnd() - 0.47) * 0.17;
+    else v = 0.5 + Math.sin(i / 2.1 + rnd() * 2) * 0.34 * (0.55 + rnd() * 0.6);
+    v = Math.max(0.06, Math.min(0.94, v));
+    const x = pad + (i / (n - 1)) * (w - pad * 2);
+    const y = pad + (1 - v) * (ht - pad * 2);
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  return `<svg class="indb-spark" viewBox="0 0 ${w} ${ht}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<polyline fill="none" stroke="var(--accent-bar)" stroke-width="1.4" ` +
+    `stroke-linejoin="round" stroke-linecap="round" points="${pts.join(" ")}"/></svg>`;
+}
+
+function renderIndCats() {
+  const rail = $("indb-cats");
+  if (!rail) return;
+  state.indCat = state.indCat || "all";
+  const specs = state.indicatorSpecs || [];
+  rail.innerHTML = "";
+  for (const c of IND_CATS) {
+    if (c.id === "trend" || c.id === "my") {
       const sep = document.createElement("div");
-      sep.className = "ind-sep";
-      list.appendChild(sep);
+      sep.className = "indb-cat-sep";
+      rail.appendChild(sep);
     }
-    if (!isFav) pastFavs = true;
-    const active = state.activeIndicators.find((i) => i.name === s.name);
-    const row = document.createElement("div");
-    row.className = "ind-row" + (active ? " active" : "");
-    row.innerHTML =
-      `<span class="ind-check">${active ? "&#10003;" : ""}</span>` +
-      `<span class="ind-title">${s.title}</span>` +
-      `<button class="ind-star${isFav ? " fav" : ""}" title="${isFav ? "Unfavourite" : "Favourite: pins it to the top"}">${isFav ? "&#9733;" : "&#9734;"}</button>` +
-      `<span class="ind-tag">${s.overlay ? "overlay" : "pane"}</span>` +
-      (active ? `<button class="ind-gear" title="Parameters">&#9998;</button>` : "");
-    row.onclick = () => {
-      const cur = state.activeIndicators.find((i) => i.name === s.name);
-      if (cur) {
-        state.activeIndicators = state.activeIndicators.filter((i) => i !== cur);
-      } else {
-        state.activeIndicators.push({ name: s.name, params: {} });
-      }
-      renderActiveIndicators();
-      renderIndicatorList();
-      loadChart();
-      saveShellState();
-    };
-    const gear = row.querySelector(".ind-gear");
-    if (gear) gear.onclick = (e) => {
-      e.stopPropagation();
-      openIndicatorConfig(active, row);
-    };
-    row.querySelector(".ind-star").onclick = (e) => {
+    const n = specs.filter((s) => indPassesCat(s, c.id)).length;
+    const el = document.createElement("div");
+    el.className = "indb-cat" + (state.indCat === c.id ? " active" : "");
+    el.innerHTML = (c.star ? `<span class="indb-cat-star">&#9733;</span>` : "") +
+      `<span>${c.label}</span><span class="indb-cat-n">${n}</span>`;
+    el.onclick = () => { state.indCat = c.id; renderIndCats(); renderIndicatorList(); };
+    rail.appendChild(el);
+  }
+}
+
+function renderIndChips() {
+  const box = $("indb-chips");
+  if (!box) return;
+  state.indChips = state.indChips || { overlay: false, pane: false, fav: false };
+  box.innerHTML = "";
+  for (const c of IND_CHIPS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "indb-chip" + (state.indChips[c.id] ? " on" : "");
+    b.textContent = c.label;
+    b.onclick = () => { state.indChips[c.id] = !state.indChips[c.id]; renderIndChips(); renderIndicatorList(); };
+    box.appendChild(b);
+  }
+}
+
+function renderIndicatorList() {
+  const list = $("ind-list");
+  if (!list) return;
+  const q = ($("ind-search").value || "").trim().toLowerCase();
+  const favs = new Set(state.favoriteIndicators);
+  const chips = state.indChips || {};
+  list.innerHTML = "";
+  let specs = (state.indicatorSpecs || []).filter((s) => indPassesCat(s, state.indCat || "all"));
+  if (chips.overlay) specs = specs.filter((s) => s.overlay);
+  if (chips.pane) specs = specs.filter((s) => !s.overlay);
+  if (chips.fav) specs = specs.filter((s) => favs.has(s.name));
+  if (q) specs = specs.filter((s) => s.title.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
+  specs.sort((a, b) =>
+    Number(favs.has(b.name)) - Number(favs.has(a.name)) ||
+    a.title.localeCompare(b.title));
+  for (const s of specs) {
+    const isFav = favs.has(s.name);
+    const added = state.activeIndicators.some((i) => i.name === s.name);
+    const card = document.createElement("div");
+    card.className = "indb-card" + (state.indSelected === s.name ? " selected" : "") + (added ? " added" : "");
+    card.dataset.name = s.name;
+    card.innerHTML =
+      `<div class="indb-card-top">` +
+        `<span class="indb-card-title">${s.title}</span>` +
+        `<button class="indb-card-star${isFav ? " fav" : ""}" title="${isFav ? "Unfavourite" : "Favourite"}">${isFav ? "&#9733;" : "&#9734;"}</button>` +
+      `</div>` +
+      `<div class="indb-card-sub">${s.name}</div>` +
+      indSpark(s) +
+      `<div class="indb-card-foot">` +
+        `<span class="indb-card-tag">${s.overlay ? "overlay" : "pane"}</span>` +
+        `<span class="indb-card-added">&#10003; added</span>` +
+      `</div>`;
+    card.onclick = () => indSelect(s.name);
+    card.querySelector(".indb-card-star").onclick = (e) => {
       e.stopPropagation();
       const at = state.favoriteIndicators.indexOf(s.name);
       if (at >= 0) state.favoriteIndicators.splice(at, 1);
       else state.favoriteIndicators.push(s.name);
+      renderIndCats();
       renderIndicatorList();
       saveShellState();
     };
-    list.appendChild(row);
+    list.appendChild(card);
   }
   if (!list.children.length) {
     list.innerHTML = '<div class="ind-empty">Nothing matches.</div>';
   }
+}
+
+/* ---- inspector (right column) ---- */
+
+function indActiveItem(name) {
+  return state.activeIndicators.find((i) => i.name === name) || null;
+}
+// Seed the working draft from the on-chart params (if added) or defaults.
+function indSeedDraft(spec) {
+  const active = indActiveItem(spec.name);
+  const params = {};
+  for (const [k, p] of Object.entries(spec.params || {})) {
+    params[k] = (active && active.params && active.params[k] !== undefined)
+      ? active.params[k] : p.default;
+  }
+  state.indDraft = { name: spec.name, params };
+}
+function indSeedDefaults(spec) {
+  const params = {};
+  for (const [k, p] of Object.entries(spec.params || {})) params[k] = p.default;
+  state.indDraft = { name: spec.name, params };
+}
+// Only non-default params travel to the engine (matches indicatorQuery()).
+function indDraftToParams(spec) {
+  const out = {};
+  for (const [k, p] of Object.entries(spec.params || {})) {
+    const v = state.indDraft.params[k];
+    if (v !== "" && v !== undefined && String(p.default) !== String(v)) out[k] = v;
+  }
+  return out;
+}
+function indApplyDraft(name, addIfMissing) {
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === name);
+  if (!spec) return;
+  const params = indDraftToParams(spec);
+  let item = indActiveItem(name);
+  if (!item) {
+    if (!addIfMissing) return;
+    item = { name, params };
+    state.activeIndicators.push(item);
+  } else {
+    item.params = params;
+  }
+  renderActiveIndicators();
+  loadChart();
+  saveShellState();
+}
+
+function indSelect(name) {
+  state.indSelected = name;
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === name);
+  if (spec) indSeedDraft(spec);
+  renderIndicatorList();
+  renderIndInspector();
+}
+
+function renderIndInspector() {
+  const insp = $("indb-inspector");
+  if (!insp) return;
+  const name = state.indSelected;
+  const spec = name ? (state.indicatorSpecs || []).find((s) => s.name === name) : null;
+  if (!spec) {
+    insp.innerHTML = `<div class="indb-insp-empty">Select an indicator to see its settings and a live preview.</div>`;
+    return;
+  }
+  if (!state.indDraft || state.indDraft.name !== name) indSeedDraft(spec);
+  const added = !!indActiveItem(name);
+  const tab = state.indInspTab || "inputs";
+  const paramEntries = Object.entries(spec.params || {});
+  const inputsHtml = paramEntries.length
+    ? paramEntries.map(([k, p]) => {
+        const step = p.type === "int" ? "1" : "any";
+        const bounds = `${p.min !== undefined ? `min="${p.min}"` : ""} ${p.max !== undefined ? `max="${p.max}"` : ""}`;
+        const val = state.indDraft.params[k];
+        return `<label class="indb-field"><span>${k}</span>` +
+          `<input type="number" data-param="${k}" value="${val}" step="${step}" ${bounds}></label>`;
+      }).join("")
+    : `<div class="indb-insp-empty" style="padding:8px">This indicator has no parameters.</div>`;
+
+  insp.innerHTML =
+    `<div class="indb-insp-head">` +
+      `<span class="indb-insp-title">${spec.title}</span>` +
+      `<button class="indb-insp-close" title="Close settings">&times;</button>` +
+    `</div>` +
+    `<div class="indb-insp-body">` +
+      `<div class="indb-preview-wrap"><canvas class="indb-preview-canvas" id="indb-preview"></canvas></div>` +
+      `<div class="indb-preview-lbl">Live preview</div>` +
+      `<div class="indb-insp-tabs">` +
+        ["inputs", "style", "visibility"].map((t) =>
+          `<button class="indb-insp-tab${tab === t ? " on" : ""}" data-tab="${t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("") +
+      `</div>` +
+      `<div class="indb-insp-tabpane">` +
+        (tab === "inputs" ? inputsHtml :
+         tab === "style" ? `<div class="indb-insp-empty" style="padding:8px">Colours &amp; line widths arrive with Part B.</div>` :
+         `<div class="indb-insp-empty" style="padding:8px">Per-plot show/hide arrives with Part B.</div>`) +
+      `</div>` +
+    `</div>` +
+    `<div class="indb-insp-foot">` +
+      (added
+        ? `<button class="indb-add remove" data-act="remove">Remove from chart</button>`
+        : `<button class="indb-reset" data-act="reset">Reset</button><button class="indb-add" data-act="add">Add to chart</button>`) +
+    `</div>`;
+
+  insp.querySelectorAll(".indb-insp-tab").forEach((b) => {
+    b.onclick = () => { state.indInspTab = b.dataset.tab; renderIndInspector(); };
+  });
+  insp.querySelector(".indb-insp-close").onclick = () => {
+    state.indSelected = null;
+    renderIndicatorList();
+    renderIndInspector();
+  };
+  insp.querySelectorAll("input[data-param]").forEach((inp) => {
+    inp.oninput = () => {
+      state.indDraft.params[inp.dataset.param] = inp.value;
+      indPreviewSchedule();
+      if (indActiveItem(name)) indApplyDraft(name); // live-update the chart too
+    };
+  });
+  insp.querySelector(".indb-insp-foot").querySelectorAll("[data-act]").forEach((b) => {
+    b.onclick = () => {
+      const a = b.dataset.act;
+      if (a === "reset") { indSeedDefaults(spec); renderIndInspector(); }
+      else if (a === "add") { indApplyDraft(name, true); renderIndicatorList(); renderIndInspector(); }
+      else if (a === "remove") {
+        state.activeIndicators = state.activeIndicators.filter((i) => i.name !== name);
+        renderActiveIndicators();
+        loadChart();
+        saveShellState();
+        renderIndicatorList();
+        renderIndInspector();
+      }
+    };
+  });
+
+  indPreviewRender();
+}
+
+/* ---- live preview canvas ----
+   Draws recent real candles for the charted instrument so the inspector shows
+   the indicator's context. The indicator-line overlay + Style/Visibility land
+   in Part B. Sequenced + debounced so fast typing does not stack fetches. */
+let indPvTimer = null;
+function indPreviewSchedule() {
+  if (indPvTimer) clearTimeout(indPvTimer);
+  indPvTimer = setTimeout(indPreviewRender, 240);
+}
+function indCssCol(v, fallback) {
+  try { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback; }
+  catch (e) { return fallback; }
+}
+function indPvMsg(ctx, w, ht, msg) {
+  ctx.fillStyle = "rgba(255,255,255,.4)";
+  ctx.font = "11px ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(msg, w / 2, ht / 2);
+}
+function indDrawCandles(ctx, w, ht, candles) {
+  if (!candles.length) { indPvMsg(ctx, w, ht, "No candles"); return; }
+  const padY = 8;
+  let lo = Infinity, hi = -Infinity;
+  for (const c of candles) { lo = Math.min(lo, c[3]); hi = Math.max(hi, c[2]); }
+  if (!(hi > lo)) { indPvMsg(ctx, w, ht, "No range"); return; }
+  const n = candles.length;
+  const cw = w / n;
+  const yOf = (p) => padY + (1 - (p - lo) / (hi - lo)) * (ht - padY * 2);
+  const up = indCssCol("--up", "#63b26a");
+  const down = indCssCol("--down", "#d16d6d");
+  for (let i = 0; i < n; i++) {
+    const [, o, h, l, c] = candles[i];
+    const x = i * cw + cw / 2;
+    const green = c >= o;
+    ctx.strokeStyle = ctx.fillStyle = green ? up : down;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, yOf(h));
+    ctx.lineTo(x, yOf(l));
+    ctx.stroke();
+    const bw = Math.max(1, cw * 0.62);
+    const yo = yOf(o), yc = yOf(c);
+    ctx.fillRect(x - bw / 2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
+  }
+}
+async function indPreviewRender() {
+  const cv = document.getElementById("indb-preview");
+  if (!cv) return;
+  const rect = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width));
+  const ht = Math.max(1, Math.round(rect.height));
+  cv.width = w * dpr;
+  cv.height = ht * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, ht);
+  if (!state.provider || !state.symbol) { indPvMsg(ctx, w, ht, "Chart a symbol to preview"); return; }
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === state.indSelected);
+  const seq = (state.indPvSeq = (state.indPvSeq || 0) + 1);
+  let data;
+  try {
+    let q = "";
+    if (spec) {
+      const ps = Object.entries(indDraftToParams(spec));
+      q = spec.name + (ps.length ? ":" + ps.map(([k, v]) => `${k}=${v}`).join(";") : "");
+    }
+    const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
+      `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
+      `&limit=160&indicators=${encodeURIComponent(q)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("http");
+    data = await r.json();
+  } catch (e) {
+    if (seq === state.indPvSeq) indPvMsg(ctx, w, ht, "Preview unavailable (no live data)");
+    return;
+  }
+  if (seq !== state.indPvSeq) return;
+  indDrawCandles(ctx, w, ht, data.candles || []);
 }
 
 // The parameter editor: one input per spec param (already typed and bounded
@@ -1251,40 +1569,66 @@ function openIndicatorConfig(item, anchor) {
   $("cfg-close").onclick = () => cfg.classList.add("hidden");
 }
 
+// Open the advanced browser (centred modal). Populates all three columns and
+// auto-selects a card so the inspector is never empty.
+function openIndicatorBrowser() {
+  const panel = $("ind-panel");
+  if (!panel.classList.contains("hidden")) return;
+  state.indCat = state.indCat || "all";
+  state.indChips = state.indChips || { overlay: false, pane: false, fav: false };
+  indFetchUserNames();                 // async; re-renders cats/list when it lands
+  renderIndCats();
+  renderIndChips();
+  // Keep a valid selection; default to the first spec so the inspector shows.
+  if (!state.indSelected || !(state.indicatorSpecs || []).some((s) => s.name === state.indSelected)) {
+    state.indSelected = (state.indicatorSpecs || [])[0] ? state.indicatorSpecs[0].name : null;
+  }
+  if (state.indSelected) {
+    const spec = state.indicatorSpecs.find((s) => s.name === state.indSelected);
+    if (spec) indSeedDraft(spec);
+  }
+  renderIndicatorList();
+  renderIndInspector();
+  panel.classList.remove("hidden");
+  setTimeout(() => { const s = $("ind-search"); if (s) s.focus(); }, 0);
+}
+
+function indFetchUserNames() {
+  fetch("/api/user-indicators")
+    .then((r) => (r.ok ? r.json() : []))
+    .then((items) => {
+      indUserNames = new Set();
+      for (const it of (items || [])) for (const nm of (it.names || [])) indUserNames.add(nm);
+      if (!$("ind-panel").classList.contains("hidden")) { renderIndCats(); renderIndicatorList(); }
+    })
+    .catch(() => { /* no user indicators / offline: category stays empty */ });
+}
+
 function setupIndicatorPanel() {
   $("ind-open").onclick = (e) => {
     e.stopPropagation();
     const panel = $("ind-panel");
-    const opening = panel.classList.contains("hidden");
-    closeIndPanels();
-    if (!opening) return;
-    renderIndicatorList();
-    panel.classList.remove("hidden");
-    positionPanel(panel, $("ind-open"));
-    $("ind-search").focus();
+    if (!panel.classList.contains("hidden")) { closeIndPanels(); return; }
+    openIndicatorBrowser();
   };
   // The chart's tool rail and settings affordances (React island) have no
-  // indicator dialog of their own since the built-in indicator dialog was retired; they
-  // raise this event to open the shell's browser instead.
-  window.addEventListener("lset:open-indicators", () => {
-    // Deferred: the originating click is still bubbling and would hit the
-    // click-away closer below, shutting the panel the moment it opened.
-    setTimeout(() => {
-      const panel = $("ind-panel");
-      if (!panel.classList.contains("hidden")) return;
-      renderIndicatorList();
-      panel.classList.remove("hidden");
-      positionPanel(panel, $("ind-open"));
-      $("ind-search").focus();
-    }, 0);
-  });
+  // indicator dialog of their own; they raise this event to open the browser.
+  // Deferred so the originating click finishes bubbling first.
+  window.addEventListener("lset:open-indicators", () => setTimeout(openIndicatorBrowser, 0));
   $("ind-search").oninput = renderIndicatorList;
   $("ind-create").onclick = () => { closeIndPanels(); openEditor(); };
-  // Click-away closes; clicks inside the panels stay.
+  $("indb-backdrop").onclick = () => closeIndPanels();
+  // Esc closes the modal.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("ind-panel").classList.contains("hidden")) closeIndPanels();
+  });
+  // Click-away still closes the legacy #ind-cfg popup (chip-strip editor);
+  // the modal itself is dismissed via its backdrop / Esc, never this handler
+  // (all its content lives inside #ind-panel, so contains() is always true).
   document.addEventListener("click", (e) => {
     if (!$("ind-panel").contains(e.target) && !$("ind-cfg").contains(e.target) &&
         e.target !== $("ind-open")) {
-      closeIndPanels();
+      $("ind-cfg").classList.add("hidden");
     }
   });
 }
