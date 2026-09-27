@@ -349,14 +349,23 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
             {hasFill && (
               <>
                 <SectionTitle>Background</SectionTitle>
-                <Row label={isLongShort ? 'Stop color' : 'Fill color'}>
-                  <ColorSwatch value={fillColor} onChange={(v) => update({ fillColor: v })} showOpacity={!isLongShort} opacity={fillOpacity} onOpacityChange={(v) => update({ fillOpacity: v })} title={isLongShort ? 'Stop color' : 'Fill color'} />
-                </Row>
                 {!isLongShort && (
-                <Row label="Fill opacity">
-                  <Slider value={[fillOpacity]} min={0} max={100} step={1} onValueChange={(v) => update({ fillOpacity: v[0] })} className="w-32" />
-                  <span className="w-9 text-right font-mono text-[11px] text-slate-400">{fillOpacity}%</span>
-                </Row>
+                  <Row label="Fill">
+                    <Switch checked={!!drawing.fillColor} onCheckedChange={(c) => update({ fillColor: c ? (drawing.fillColor || fillColor) : undefined })} />
+                  </Row>
+                )}
+                {(isLongShort || !!drawing.fillColor) && (
+                  <>
+                    <Row label={isLongShort ? 'Stop color' : 'Fill color'}>
+                      <ColorSwatch value={fillColor} onChange={(v) => update({ fillColor: v })} showOpacity={!isLongShort} opacity={fillOpacity} onOpacityChange={(v) => update({ fillOpacity: v })} title={isLongShort ? 'Stop color' : 'Fill color'} />
+                    </Row>
+                    {!isLongShort && (
+                      <Row label="Fill opacity">
+                        <Slider value={[fillOpacity]} min={0} max={100} step={1} onValueChange={(v) => update({ fillOpacity: v[0] })} className="w-32" />
+                        <span className="w-9 text-right font-mono text-[11px] text-slate-400">{fillOpacity}%</span>
+                      </Row>
+                    )}
+                  </>
                 )}
               </>
             )}
