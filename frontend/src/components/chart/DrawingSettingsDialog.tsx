@@ -144,6 +144,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const canExtendLine = LINE_EXTEND_TYPES.has(type);
   const isParallelChannel = type === 'parallelChannel';
   const isLongShort = type === 'long' || type === 'short';
+  const isSplitFlatChannel = type === 'splitChannel' || type === 'flatChannel';
   const isFreehand = (drawing.points?.length || 0) > 6 || type === 'brush' || type === 'highlighter';
 
   // Snapshot for Cancel/revert.
@@ -480,6 +481,15 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                 <Row label="Extend left"><Switch checked={!!drawing.extendLeft} onCheckedChange={(c) => update({ extendLeft: c })} /></Row>
                 <Row label="Extend right"><Switch checked={!!drawing.extendRight} onCheckedChange={(c) => update({ extendRight: c })} /></Row>
                 <Row label="Middle line"><Switch checked={drawing.showMiddleLine !== false} onCheckedChange={(c) => update({ showMiddleLine: c })} /></Row>
+              </>
+            )}
+
+            {isSplitFlatChannel && (
+              <>
+                <SectionTitle>Channel options</SectionTitle>
+                <Row label="Extend left"><Switch checked={!!drawing.extendLeft} onCheckedChange={(c) => update({ extendLeft: c })} /></Row>
+                <Row label="Extend right"><Switch checked={!!drawing.extendRight} onCheckedChange={(c) => update({ extendRight: c })} /></Row>
+                <Row label="Middle line"><Switch checked={drawing.showMiddleLine === true} onCheckedChange={(c) => update({ showMiddleLine: c })} /></Row>
               </>
             )}
 

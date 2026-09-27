@@ -4443,12 +4443,24 @@ const ChartDrawingOverlayComponent = ({
       const [a1, a2, b1, b2] = pixels;
       const col = drawingColor;
       const fillCol = drawing.fillColor || col;
-      const fillPts = `${a1.x},${a1.y} ${a2.x},${a2.y} ${b2.x},${b2.y} ${b1.x},${b1.y}`;
+      const CEXT = 6000;
+      const scL = !!drawing.extendLeft, scR = !!drawing.extendRight;
+      const u1x = a2.x - a1.x, u1y = a2.y - a1.y, l1 = Math.hypot(u1x, u1y) || 1;
+      const u2x = b2.x - b1.x, u2y = b2.y - b1.y, l2 = Math.hypot(u2x, u2y) || 1;
+      const A1 = { x: scL ? a1.x - (u1x / l1) * CEXT : a1.x, y: scL ? a1.y - (u1y / l1) * CEXT : a1.y };
+      const A2 = { x: scR ? a2.x + (u1x / l1) * CEXT : a2.x, y: scR ? a2.y + (u1y / l1) * CEXT : a2.y };
+      const B1 = { x: scL ? b1.x - (u2x / l2) * CEXT : b1.x, y: scL ? b1.y - (u2y / l2) * CEXT : b1.y };
+      const B2 = { x: scR ? b2.x + (u2x / l2) * CEXT : b2.x, y: scR ? b2.y + (u2y / l2) * CEXT : b2.y };
+      const scMid = drawing.showMiddleLine === true;
+      const fillPts = `${A1.x},${A1.y} ${A2.x},${A2.y} ${B2.x},${B2.y} ${B1.x},${B1.y}`;
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
           <polygon points={fillPts} fill={fillCol} fillOpacity={0.08 * fillOpacityValue} stroke="none" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
-          <line x1={a1.x} y1={a1.y} x2={a2.x} y2={a2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
-          <line x1={b1.x} y1={b1.y} x2={b2.x} y2={b2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={A1.x} y1={A1.y} x2={A2.x} y2={A2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={B1.x} y1={B1.y} x2={B2.x} y2={B2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          {scMid && (
+            <line x1={(A1.x + B1.x) / 2} y1={(A1.y + B1.y) / 2} x2={(A2.x + B2.x) / 2} y2={(A2.y + B2.y) / 2} stroke={col} strokeWidth={Math.max(1, drawingStrokeWidth - 1)} strokeDasharray="6 4" strokeOpacity={strokeOpacity * 0.7} style={{ pointerEvents: 'none' }} />
+          )}
           {showHandles && [a1, a2, b1, b2].map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? '#ffffff' : '#1e293b'} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
           ))}
@@ -4593,12 +4605,23 @@ const ChartDrawingOverlayComponent = ({
       const flatY = P2.y;
       const col = drawingColor;
       const fillCol = drawing.fillColor || col;
-      const fillPts = `${P0.x},${P0.y} ${P1.x},${P1.y} ${P1.x},${flatY} ${P0.x},${flatY}`;
+      const CEXT = 6000;
+      const fcL = !!drawing.extendLeft, fcR = !!drawing.extendRight;
+      const ux = P1.x - P0.x, uy = P1.y - P0.y, ul = Math.hypot(ux, uy) || 1;
+      const topL = { x: fcL ? P0.x - (ux / ul) * CEXT : P0.x, y: fcL ? P0.y - (uy / ul) * CEXT : P0.y };
+      const topR = { x: fcR ? P1.x + (ux / ul) * CEXT : P1.x, y: fcR ? P1.y + (uy / ul) * CEXT : P1.y };
+      const botL = { x: topL.x, y: flatY };
+      const botR = { x: topR.x, y: flatY };
+      const fcMid = drawing.showMiddleLine === true;
+      const fillPts = `${topL.x},${topL.y} ${topR.x},${topR.y} ${botR.x},${botR.y} ${botL.x},${botL.y}`;
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
           <polygon points={fillPts} fill={fillCol} fillOpacity={0.08 * fillOpacityValue} stroke="none" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
-          <line x1={P0.x} y1={P0.y} x2={P1.x} y2={P1.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
-          <line x1={P0.x} y1={flatY} x2={P1.x} y2={flatY} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={topL.x} y1={topL.y} x2={topR.x} y2={topR.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={botL.x} y1={flatY} x2={botR.x} y2={flatY} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          {fcMid && (
+            <line x1={topL.x} y1={(topL.y + flatY) / 2} x2={topR.x} y2={(topR.y + flatY) / 2} stroke={col} strokeWidth={Math.max(1, drawingStrokeWidth - 1)} strokeDasharray="6 4" strokeOpacity={strokeOpacity * 0.7} style={{ pointerEvents: 'none' }} />
+          )}
           {showHandles && (
             <>
               <circle cx={P0.x} cy={P0.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />

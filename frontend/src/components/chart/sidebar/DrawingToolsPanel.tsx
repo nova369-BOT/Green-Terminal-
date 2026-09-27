@@ -95,7 +95,7 @@ function ToolMenuItem({
     <Button
       variant="ghost"
       size="sm"
-      className={`w-full group justify-start gap-2.5 h-8 px-3 rounded-none text-popover-foreground hover:bg-muted hover:text-foreground ${isActive ? 'active-tool bg-foreground/10 text-foreground' : ''}`}
+      className={`w-full group justify-start gap-2.5 h-8 px-2.5 rounded-md text-popover-foreground/90 transition-colors hover:bg-teal-400/10 hover:text-teal-50 ${isActive ? 'active-tool bg-teal-400/15 text-teal-50' : ''}`}
       onPointerDown={(e) => { e.preventDefault(); onSelect(); }}
       onClick={onSelect}
     >
@@ -233,7 +233,7 @@ export default function DrawingToolsPanel({
       </div>
       {/* w-auto lets the menu hug its content instead of being a fixed 288px;
           min-w-[180px] prevents it from collapsing too small on short labels */}
-      <PopoverContent side="right" align="start" className="drawing-tool-menu w-auto min-w-[180px] p-0 bg-card border border-border shadow-xl rounded-lg z-50 overflow-hidden" sideOffset={8}>
+      <PopoverContent side="right" align="start" className="drawing-tool-menu w-auto min-w-[184px] p-0 bg-[#0d1117]/95 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/60 ring-1 ring-white/5 rounded-xl z-50 overflow-hidden" sideOffset={8}>
         {menuContent}
       </PopoverContent>
     </Popover>
@@ -402,8 +402,8 @@ export default function DrawingToolsPanel({
           trendToolMenuOpen, setTrendToolMenuOpen, selectedTrendTool,
           ['trend', 'trendRay', 'parallelChannel', 'straightArrow', 'flatChannel', 'regressionTrend', 'splitChannel'],
           trendIcons[selectedTrendTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Trend Lines</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Trend Lines</div>
             {[
               { id: 'trend', label: 'Trend Line' },
               { id: 'trendRay', label: 'Trend Line Ray' },
@@ -422,8 +422,8 @@ export default function DrawingToolsPanel({
           lineToolMenuOpen, setLineToolMenuOpen, selectedLineTool,
           ['horizontal', 'horizontalRay', 'vertical', 'line', 'extendedLine', 'infoLine', 'trendAngle', 'crossline'],
           lineIcons[selectedLineTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Lines</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Lines</div>
             {[
               { id: 'horizontal', label: 'Horizontal Line' },
               { id: 'horizontalRay', label: 'Horizontal Ray' },
@@ -443,8 +443,8 @@ export default function DrawingToolsPanel({
           fibToolMenuOpen, setFibToolMenuOpen, selectedFibTool,
           ['fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime'],
           <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="4" x2="21" y2="4" /><line x1="3" y1="9" x2="17" y2="9" opacity="0.7" /><line x1="3" y1="14" x2="13" y2="14" opacity="0.5" /><line x1="3" y1="19" x2="21" y2="19" /><line x1="18" y1="4" x2="6" y2="19" strokeWidth="1.5" strokeDasharray="3 2" /></svg>,
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Fibonacci</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Fibonacci</div>
             {[
               { id: 'fibonacci', label: 'Fib Retracement', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="4" x2="21" y2="4" /><line x1="3" y1="9" x2="17" y2="9" opacity="0.7" /><line x1="3" y1="14" x2="13" y2="14" opacity="0.5" /><line x1="3" y1="19" x2="21" y2="19" /><line x1="18" y1="4" x2="6" y2="19" strokeWidth="1.5" strokeDasharray="3 2" /></svg> },
               { id: 'fibExtension', label: 'Fib Extension', icon: <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="20" x2="21" y2="20" /><line x1="3" y1="14" x2="17" y2="14" opacity="0.7" /><line x1="3" y1="8" x2="13" y2="8" opacity="0.5" /><line x1="3" y1="3" x2="21" y2="3" /><line x1="6" y1="20" x2="18" y2="3" strokeWidth="1.5" strokeDasharray="3 2" /><polyline points="15,3 18,3 18,6" strokeWidth="1.5" /></svg> },
@@ -467,8 +467,8 @@ export default function DrawingToolsPanel({
           gannToolMenuOpen, setGannToolMenuOpen, selectedGannTool,
           ['gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed'],
           gannIcons[selectedGannTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Gann</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Gann</div>
             {['gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={gannLabels[id]} icon={gannIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedGannTool, setGannToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -479,8 +479,8 @@ export default function DrawingToolsPanel({
           pitchforkToolMenuOpen, setPitchforkToolMenuOpen, selectedPitchforkTool,
           ['pitchfork', 'schiff', 'modifiedSchiff', 'innerFork'],
           pitchforkIcons[selectedPitchforkTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Pitchforks</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Pitchforks</div>
             {['pitchfork', 'schiff', 'modifiedSchiff', 'innerFork'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={pitchforkLabels[id]} icon={pitchforkIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedPitchforkTool, setPitchforkToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -491,8 +491,8 @@ export default function DrawingToolsPanel({
           patternToolMenuOpen, setPatternToolMenuOpen, selectedPatternTool,
           ['xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives'],
           patternIcons[selectedPatternTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Chart Patterns</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Chart Patterns</div>
             {['xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={patternLabels[id]} icon={patternIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedPatternTool, setPatternToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -503,8 +503,8 @@ export default function DrawingToolsPanel({
           elliottToolMenuOpen, setElliottToolMenuOpen, selectedElliottTool,
           ['elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo'],
           elliottIcons[selectedElliottTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Elliott Waves</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Elliott Waves</div>
             {['elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={elliottLabels[id]} icon={elliottIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedElliottTool, setElliottToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -515,8 +515,8 @@ export default function DrawingToolsPanel({
           shapeToolMenuOpen, setShapeToolMenuOpen, selectedShapeTool,
           Object.keys(shapeIcons),
           shapeIcons[selectedShapeTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Shapes</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Shapes</div>
             {['rectangle', 'square', 'circle', 'triangle', 'oval', 'freeTriangle', 'parallelogram', 'octagon'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={id.charAt(0).toUpperCase() + id.slice(1).replace(/([A-Z])/g, ' $1')} icon={shapeIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedShapeTool, setShapeToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -532,8 +532,8 @@ export default function DrawingToolsPanel({
           brushToolMenuOpen, setBrushToolMenuOpen, selectedBrushTool,
           ['brush', 'highlighter', 'arrow'],
           brushIcons[selectedBrushTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Brushes</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Brushes</div>
             {[
               { id: 'brush', label: 'Brush' },
               { id: 'highlighter', label: 'Highlighter' },
@@ -548,8 +548,8 @@ export default function DrawingToolsPanel({
           markerToolMenuOpen, setMarkerToolMenuOpen, selectedMarkerTool,
           Object.keys(markerIcons),
           markerIcons[selectedMarkerTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Markers</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Markers</div>
             {['markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={markerLabels[id]} icon={markerIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedMarkerTool, setMarkerToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -560,8 +560,8 @@ export default function DrawingToolsPanel({
           textToolMenuOpen, setTextToolMenuOpen, selectedTextTool,
           ['text', 'note', 'callout', 'priceLabel', 'signpost'],
           textIcons[selectedTextTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Text & Notes</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Text & Notes</div>
             {['text', 'note', 'callout', 'priceLabel', 'signpost'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={textLabels[id]} icon={textIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTextTool, setTextToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -602,8 +602,8 @@ export default function DrawingToolsPanel({
           volumeToolMenuOpen, setVolumeToolMenuOpen, selectedVolumeTool,
           ['anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile'],
           volumeIcons[selectedVolumeTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Volume</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Volume</div>
             {['anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={volumeLabels[id]} icon={volumeIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedVolumeTool, setVolumeToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -614,8 +614,8 @@ export default function DrawingToolsPanel({
           cycleToolMenuOpen, setCycleToolMenuOpen, selectedCycleTool,
           ['cyclicLines', 'sineLine', 'timeArcs'],
           cycleIcons[selectedCycleTool],
-          <div className="flex flex-col gap-px py-1">
-            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Cycles</div>
+          <div className="flex flex-col gap-0.5 p-1.5">
+            <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-300/50">Cycles</div>
             {['cyclicLines', 'sineLine', 'timeArcs'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={cycleLabels[id]} icon={cycleIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedCycleTool, setCycleToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
