@@ -4533,6 +4533,67 @@ body { padding-bottom: 22px; padding-left: 62px; }
   opacity: 0.85;
 }
 
+/* ── Seconds-tape on-chart notice ──────────────────────────────────────────
+   Non-destructive: it does NOT blank the chart (the empty grid stays visible
+   behind it) and it never clears the instrument. A centred status card, styled
+   to match the terminal, reading as a live instrument message not an error. */
+#seconds-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;           /* chart stays interactive underneath */
+}
+#seconds-notice.hidden { display: none !important; }
+#seconds-notice .sn-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 460px;
+  padding: 12px 16px;
+  border: 1px solid var(--edge, #243028);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel, #0d130f) 88%, transparent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  text-align: left;
+}
+#seconds-notice .sn-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dim, #7a8a80);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--dim, #7a8a80) 70%, transparent);
+}
+/* Live (socket up, waiting on a trade): green pulsing heartbeat. */
+#seconds-notice.sn-live .sn-dot {
+  background: var(--up, #3fb950);
+  animation: sn-pulse 1.6s ease-out infinite;
+}
+/* Market closed: steady amber, no pulse (nothing is coming). */
+#seconds-notice.sn-closed .sn-dot { background: var(--logo-down, #b08d57); animation: none; }
+/* No feed: steady muted red. */
+#seconds-notice.sn-nofeed .sn-dot { background: var(--down, #e5534b); animation: none; }
+@keyframes sn-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--up, #3fb950) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 7px color-mix(in srgb, var(--up, #3fb950) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--up, #3fb950) 0%, transparent); }
+}
+#seconds-notice .sn-title {
+  font: 600 12px/1.3 var(--sans, system-ui, sans-serif);
+  letter-spacing: 0.08em;
+  color: var(--text, #d7e2db);
+}
+#seconds-notice .sn-detail {
+  margin-top: 2px;
+  font: 11px/1.45 var(--sans, system-ui, sans-serif);
+  color: var(--dim, #9aaba2);
+}
+
 
 /* ── Phase 4: ORDER FLOW (hosts real EdgeDepth WASM) ───────────────────── */
 #orderflow {

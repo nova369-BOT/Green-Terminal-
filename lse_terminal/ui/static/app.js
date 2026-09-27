@@ -408,6 +408,8 @@ function enterDataWaiting(title, detail) {
     if (t) t.textContent = title || "WAITING FOR MARKET DATA";
     if (d) d.textContent = detail || "";
   }
+  // The full-cover waiting overlay supersedes the seconds tape notice.
+  hideSecondsNotice();
   // Clear any prior instrument so the header cannot show a stale symbol.
   state.symbol = null;
   state.candleData = [];
@@ -421,6 +423,49 @@ function exitDataWaiting() {
   state.dataWaiting = false;
   const ov = $("data-waiting");
   if (ov) ov.classList.add("hidden");
+}
+
+/* Seconds tape (1s–45s) opens EMPTY — its bars build forward from live trades,
+   not from history. This non-destructive on-chart notice explains an empty
+   seconds panel honestly (market closed / waiting on first trade / no feed)
+   without clearing the instrument. Hidden the instant a bar prints. */
+function showSecondsNotice() {
+  const ov = $("seconds-notice");
+  if (!ov) return;
+  const tf = String(state.timeframe || "").toUpperCase();
+  // Session state for the charted symbol when the chart bundle exposes it.
+  let open;
+  try {
+    if (window.LSEChart && typeof window.LSEChart.sessionOpen === "function") {
+      open = window.LSEChart.sessionOpen(state.symbol);
+    }
+  } catch (e) { /* unknown session → treat as waiting */ }
+  ov.classList.remove("sn-live", "sn-closed", "sn-nofeed");
+  let cls, title, detail;
+  if (open === false) {
+    cls = "sn-closed";
+    title = "MARKET CLOSED";
+    detail = `Seconds bars build from live trades. Nothing will print on ${tf} `
+      + `until ${state.symbol || "this market"} trades again.`;
+  } else if (state.ws) {
+    cls = "sn-live";
+    title = `BUILDING LIVE ${tf} BARS`;
+    detail = "Waiting for the first live trade to print. Bars form here as trades arrive.";
+  } else {
+    cls = "sn-nofeed";
+    title = "NO LIVE TRADE FEED";
+    detail = "Connect a live data source to build seconds bars from the trade stream.";
+  }
+  ov.classList.add(cls);
+  const t = $("sn-title");
+  const d = $("sn-detail");
+  if (t) t.textContent = title;
+  if (d) d.textContent = detail;
+  ov.classList.remove("hidden");
+}
+function hideSecondsNotice() {
+  const ov = $("seconds-notice");
+  if (ov && !ov.classList.contains("hidden")) ov.classList.add("hidden");
 }
 // Probe EdgeDepth gateway reachability (server-side TCP/HTTP check).
 // Never invents data — only reports whether the optional L2 feed is up.
@@ -800,11 +845,15 @@ async function loadChart() {
     state.lastBar = null;
     pushToChart();
     updateInstrumentBar();
+    // Honest on-chart notice while the empty tape waits for its first trade.
+    showSecondsNotice();
     status(state.ws
       ? `building live ${state.timeframe} bars from trades…`
       : "waiting for live trades…");
     return;
   }
+  // Any non-seconds load leaves the seconds tape state behind.
+  hideSecondsNotice();
   status(`loading ${state.symbol}…`);
   // 5000 = the engine's per-request cap: open with one full page of history
   // so deep scrollback starts loaded instead of paging immediately.
@@ -1046,6 +1095,8 @@ function onTick(t) {
   // the new/updated bar actually repaints.
   state.candleData = state.candleData.slice();
   pushToChart();
+  // First seconds bar has printed — drop the "waiting for trades" notice.
+  if (tfIsSeconds) hideSecondsNotice();
 }
 
 /* ---------- indicator picker ---------- */

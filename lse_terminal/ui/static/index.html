@@ -392,6 +392,20 @@ def my_ind(df, length=20):
         <div id="dw-detail" class="dw-detail">No live data source connected.</div>
         <div class="dw-hint">Add your free LSE API key · EdgeDepth gateway is a separate optional feed</div>
       </div>
+      <!-- Seconds tape (1s–45s): candle history is minute-grained, so a seconds
+           chart opens EMPTY and builds forward from the live trade stream. This
+           non-destructive notice (keeps the instrument + header intact) tells
+           the trader honestly why the panel is blank: market closed, waiting on
+           the first trade, or no live feed. Hidden the instant a bar prints. -->
+      <div id="seconds-notice" class="hidden" role="status" aria-live="polite">
+        <div class="sn-card">
+          <span class="sn-dot" aria-hidden="true"></span>
+          <div class="sn-text">
+            <div id="sn-title" class="sn-title">BUILDING LIVE BARS</div>
+            <div id="sn-detail" class="sn-detail">Waiting for the first live trade to print.</div>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="panes"></div>
     <!-- Account dock: MT-style strip under the chart.
