@@ -397,6 +397,35 @@ export default function GoToNavigator() {
               </button>
             </div>
 
+            {/* Quick ranges (moved in from the old always-on strip) */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
+              {PRESETS.map((p) => {
+                const active = activePreset === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => applyPreset(p)}
+                    style={{
+                      minWidth: 34,
+                      padding: '4px 9px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: active ? '#fff' : 'var(--text,#e6e6e6)',
+                      background: active ? EMERALD : 'var(--panel-2, rgba(255,255,255,0.05))',
+                      border: `1px solid ${active ? EMERALD : 'var(--edge,#2a2e39)'}`,
+                      borderRadius: 999,
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--hover, rgba(255,255,255,0.10))'; }}
+                    onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'var(--panel-2, rgba(255,255,255,0.05))'; }}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 20, marginTop: 12, borderBottom: '1px solid var(--edge,#2a2e39)' }}>
               {(['date', 'range'] as Tab[]).map((tk) => (
@@ -517,76 +546,33 @@ export default function GoToNavigator() {
           </div>
         )}
 
-        {/* ── bottom navigator strip ── */}
-        <div
+        {/* ── collapsed trigger: a single small corner icon, so the chart
+             view stays clear. Click to open the full panel (quick ranges +
+             Go-to date/range live inside it). ── */}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          title="History Navigator — go to date / range"
+          aria-label="History Navigator"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 4,
-            padding: '5px 8px',
-            background: 'var(--panel, #14181c)',
-            border: '1px solid var(--edge,#2a2e39)',
+            justifyContent: 'center',
+            width: 34,
+            height: 34,
+            color: open ? '#0d1117' : GOLD,
+            background: open ? GOLD : 'var(--panel, #14181c)',
+            border: `1px solid ${open ? GOLD : 'rgba(212,175,55,0.45)'}`,
             borderRadius: 999,
             boxShadow: '0 6px 20px var(--shadow, rgba(0,0,0,0.45))',
-            color: 'var(--text,#e6e6e6)',
-            userSelect: 'none',
+            cursor: 'pointer',
+            transition: 'background 120ms, color 120ms',
           }}
+          onMouseEnter={(e) => { if (!open) e.currentTarget.style.background = 'var(--hover, rgba(255,255,255,0.08))'; }}
+          onMouseLeave={(e) => { if (!open) e.currentTarget.style.background = 'var(--panel, #14181c)'; }}
         >
-          <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--dim,#8b8f98)', padding: '0 8px 0 4px' }}>
-            History Navigator
-          </span>
-          {PRESETS.map((p) => {
-            const active = activePreset === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => applyPreset(p)}
-                style={{
-                  minWidth: 34,
-                  padding: '4px 8px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: active ? '#fff' : 'var(--text,#e6e6e6)',
-                  background: active ? EMERALD : 'transparent',
-                  border: 'none',
-                  borderRadius: 999,
-                  borderBottom: active ? `2px solid ${GOLD}` : '2px solid transparent',
-                  cursor: 'pointer',
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.background = 'var(--hover, rgba(255,255,255,0.07))';
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.background = 'transparent';
-                }}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-          <span style={{ width: 1, height: 18, background: 'var(--edge,#2a2e39)', margin: '0 4px' }} />
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            title="Go to date / range"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '4px 10px',
-              fontSize: 12,
-              fontWeight: 600,
-              color: GOLD,
-              background: open ? 'rgba(212,175,55,0.14)' : 'transparent',
-              border: 'none',
-              borderRadius: 999,
-              cursor: 'pointer',
-            }}
-          >
-            <Calendar size={14} /> Go to
-          </button>
-        </div>
+          <Calendar size={16} />
+        </button>
       </div>
     </>
   );
