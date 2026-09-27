@@ -207,7 +207,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         return (
           <Row key={i} label={st.label}>
             <ColorSwatch
-              value={dv(st.key, color) as string}
+              value={dv(st.key, st.fallback ?? color) as string}
               onChange={(v) => update({ [st.key]: v } as Partial<Drawing>)}
               showOpacity={!!st.opacityKey}
               opacity={st.opacityKey ? (dv(st.opacityKey, 100) as number) : undefined}

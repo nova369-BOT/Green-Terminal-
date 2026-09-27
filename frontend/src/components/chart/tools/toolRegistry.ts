@@ -23,7 +23,7 @@ export type DataNeed = 'ohlc' | 'volume' | 'l2';
 export type Setting =
   | { kind: 'section'; label: string }
   | { kind: 'note'; text: string }
-  | { kind: 'color'; key: string; label: string; opacityKey?: string }
+  | { kind: 'color'; key: string; label: string; opacityKey?: string; fallback?: string }
   | { kind: 'slider'; key: string; label: string; min: number; max: number; step: number; fallback: number; suffix?: string }
   | { kind: 'toggle'; key: string; label: string; fallback?: boolean }
   | { kind: 'segmented'; key: string; label: string; options: { value: string; label: string }[]; fallback: string }
@@ -55,7 +55,6 @@ const FILL_SET = new Set<string>([
 // phase). Returning [] here routes them to the legacy renderer unchanged.
 const LEGACY_SET = new Set<string>([
   'long', 'short',
-  'anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile', 'regressionTrend',
 ]);
 
 export const isMarkerType = (t: string): boolean => MARKER_SET.has(t);
@@ -100,6 +99,36 @@ export function getToolSettings(type: string): Setting[] {
       { kind: 'slider', key: 'strokeWidth', label: 'Font size', min: 8, max: 72, step: 1, fallback: 14 },
       { kind: 'toggle', key: 'textBold', label: 'Bold', fallback: true },
       { kind: 'toggle', key: 'textItalic', label: 'Italic', fallback: false },
+    ];
+  }
+  if (type === 'anchoredVwap') {
+    return [
+      { kind: 'section', label: 'VWAP' },
+      { kind: 'color', key: 'color', label: 'Line color', opacityKey: 'opacity', fallback: '#2dd4bf' },
+      { kind: 'slider', key: 'strokeWidth', label: 'Thickness', min: 1, max: 6, step: 1, fallback: 2 },
+      { kind: 'segmented', key: 'vwapSource', label: 'Source', options: [{ value: 'hlc3', label: 'HLC3' }, { value: 'hl2', label: 'HL2' }, { value: 'close', label: 'Close' }, { value: 'ohlc4', label: 'OHLC4' }], fallback: 'hlc3' },
+      { kind: 'toggle', key: 'showBands', label: 'Std-dev bands', fallback: true },
+      { kind: 'slider', key: 'band1', label: 'Band 1 \u00d7', min: 0.5, max: 4, step: 0.5, fallback: 1 },
+      { kind: 'slider', key: 'band2', label: 'Band 2 \u00d7', min: 0.5, max: 6, step: 0.5, fallback: 2 },
+    ];
+  }
+  if (type === 'fixedVolumeProfile' || type === 'anchoredVolumeProfile') {
+    return [
+      { kind: 'section', label: 'Volume Profile' },
+      { kind: 'slider', key: 'vpRows', label: 'Rows', min: 8, max: 80, step: 2, fallback: 24 },
+      { kind: 'slider', key: 'valueAreaPct', label: 'Value area', min: 30, max: 95, step: 5, fallback: 70, suffix: '%' },
+      { kind: 'color', key: 'upColor', label: 'Up color', fallback: '#2dd4bf' },
+      { kind: 'color', key: 'downColor', label: 'Down color', fallback: '#6366f1' },
+      { kind: 'toggle', key: 'showPOC', label: 'Show POC', fallback: true },
+      { kind: 'toggle', key: 'showVA', label: 'Value area', fallback: true },
+    ];
+  }
+  if (type === 'regressionTrend') {
+    return [
+      { kind: 'section', label: 'Regression' },
+      { kind: 'color', key: 'color', label: 'Line color', opacityKey: 'opacity', fallback: '#2dd4bf' },
+      { kind: 'slider', key: 'strokeWidth', label: 'Thickness', min: 1, max: 6, step: 1, fallback: 2 },
+      { kind: 'toggle', key: 'showBands', label: 'Std-dev channel', fallback: true },
     ];
   }
   if (LEGACY_SET.has(type)) return [];

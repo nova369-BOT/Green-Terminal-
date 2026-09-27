@@ -85,6 +85,17 @@ export type Drawing = {
   fibLevels?: number[];
   stopLoss?: ChartPoint;  // Also price/time coordinates
   stopLossPointIndex?: number;
+  // Volume / statistics tool options (all optional; sensible defaults in engine)
+  vwapSource?: 'hlc3' | 'hl2' | 'close' | 'ohlc4';
+  showBands?: boolean;
+  band1?: number;
+  band2?: number;
+  vpRows?: number;
+  valueAreaPct?: number;
+  upColor?: string;
+  downColor?: string;
+  showPOC?: boolean;
+  showVA?: boolean;
   strokeWidth?: number;
   lineStyle?: 'solid' | 'dashed' | 'dotted';
   locked?: boolean;  // Per-object lock: prevents moving/resizing this drawing
@@ -237,7 +248,7 @@ const ChartDrawingOverlayComponent = ({
   // Anchored VWAP: cumulative volume-weighted average price from an anchor bar to
   // the latest bar, with running standard-deviation bands (±1σ/±2σ). Uses REAL
   // candle volume only; returns null when no volume is available in range.
-  const computeAnchoredVwap = (anchorTime: number) => {
+  const computeAnchoredVwap = (anchorTime: number, source: string = 'hlc3', m1: number = 1, m2: number = 2) => {
     const cs = candlesProp;
     if (!cs || cs.length === 0) return null;
     let startIdx = cs.findIndex((c) => c.time >= anchorTime);
@@ -246,7 +257,7 @@ const ChartDrawingOverlayComponent = ({
     const line: PixelPoint[] = [], u1: PixelPoint[] = [], l1: PixelPoint[] = [], u2: PixelPoint[] = [], l2: PixelPoint[] = [];
     for (let i = startIdx; i < cs.length; i++) {
       const c = cs[i];
-      const tp = (c.high + c.low + c.close) / 3;
+      const tp = source === 'close' ? c.close : source === 'hl2' ? (c.high + c.low) / 2 : source === 'ohlc4' ? (c.open + c.high + c.low + c.close) / 4 : (c.high + c.low + c.close) / 3;
       const v = c.volume ?? 0;
       cumPV += tp * v; cumV += v; cumPV2 += tp * tp * v;
       if (cumV <= 0) continue;
@@ -255,10 +266,10 @@ const ChartDrawingOverlayComponent = ({
       const sd = Math.sqrt(Math.max(0, cumPV2 / cumV - vwap * vwap));
       const x = converter.timeToX(c.time);
       line.push({ x, y: converter.priceToY(vwap) });
-      u1.push({ x, y: converter.priceToY(vwap + sd) });
-      l1.push({ x, y: converter.priceToY(vwap - sd) });
-      u2.push({ x, y: converter.priceToY(vwap + 2 * sd) });
-      l2.push({ x, y: converter.priceToY(vwap - 2 * sd) });
+      u1.push({ x, y: converter.priceToY(vwap + m1 * sd) });
+      l1.push({ x, y: converter.priceToY(vwap - m1 * sd) });
+      u2.push({ x, y: converter.priceToY(vwap + m2 * sd) });
+      l2.push({ x, y: converter.priceToY(vwap - m2 * sd) });
     }
     if (line.length === 0) return null;
     return { line, u1, l1, u2, l2, lastVwap };
@@ -266,7 +277,7 @@ const ChartDrawingOverlayComponent = ({
 
   // Fixed-Range Volume Profile: bins REAL volume of candles inside a time range
   // across the price axis, splitting up/down volume, and finds POC + 70% value area.
-  const computeVolumeProfile = (t1: number, t2: number) => {
+  const computeVolumeProfile = (t1: number, t2: number, rows: number = 24, vaPct: number = 0.7) => {
     const cs = candlesProp;
     if (!cs || cs.length === 0) return null;
     const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
@@ -275,7 +286,7 @@ const ChartDrawingOverlayComponent = ({
     let priceLo = Infinity, priceHi = -Infinity;
     for (const c of win) { if (c.low < priceLo) priceLo = c.low; if (c.high > priceHi) priceHi = c.high; }
     if (!(priceHi > priceLo)) return null;
-    const N = 24;
+    const N = Math.max(8, Math.min(80, Math.round(rows)));
     const rowH = (priceHi - priceLo) / N;
     const up = new Array(N).fill(0), down = new Array(N).fill(0);
     for (const c of win) {
@@ -295,7 +306,7 @@ const ChartDrawingOverlayComponent = ({
     let pocIdx = 0;
     for (let i = 1; i < N; i++) if (totals[i] > totals[pocIdx]) pocIdx = i;
     let vaLo = pocIdx, vaHi = pocIdx, vaSum = totals[pocIdx];
-    const target = totalVol * 0.7;
+    const target = totalVol * Math.max(0.3, Math.min(0.95, vaPct));
     while (vaSum < target && (vaLo > 0 || vaHi < N - 1)) {
       const below = vaLo > 0 ? totals[vaLo - 1] : -1;
       const above = vaHi < N - 1 ? totals[vaHi + 1] : -1;
@@ -1967,7 +1978,7 @@ const ChartDrawingOverlayComponent = ({
         const lastT = cs && cs.length ? cs[cs.length - 1].time : anchor.time;
         const left = converter.timeToX(anchor.time);
         const right = cs && cs.length ? converter.timeToX(lastT) : left + 120;
-        const vp = computeVolumeProfile(anchor.time, lastT);
+        const vp = computeVolumeProfile(anchor.time, lastT, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
         let top: number, bot: number;
         if (vp) { const a = converter.priceToY(vp.priceHi), b = converter.priceToY(vp.priceLo); top = Math.min(a, b); bot = Math.max(a, b); }
         else { const ap = converter.priceToY(anchor.price); top = ap - 8; bot = ap + 8; }
@@ -2049,7 +2060,7 @@ const ChartDrawingOverlayComponent = ({
         const ax = converter.timeToX(anchor.time), ay = converter.priceToY(anchor.price);
         let hit = Math.abs(x - ax) <= 8 && Math.abs(y - ay) <= 8;
         if (!hit) {
-          const vw = computeAnchoredVwap(anchor.time);
+          const vw = computeAnchoredVwap(anchor.time, drawing.vwapSource || 'hlc3', drawing.band1 ?? 1, drawing.band2 ?? 2);
           if (vw) {
             for (const p of vw.line) { if (Math.abs(x - p.x) <= 6 && Math.abs(y - p.y) <= 6) { hit = true; break; } }
           }
@@ -2069,7 +2080,7 @@ const ChartDrawingOverlayComponent = ({
         const p1 = drawing.points[0], p2 = drawing.points[1];
         const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
         const left = Math.min(x1, x2), right = Math.max(x1, x2);
-        const vp = computeVolumeProfile(p1.time, p2.time);
+        const vp = computeVolumeProfile(p1.time, p2.time, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
         let top: number, bot: number;
         if (vp) { const a = converter.priceToY(vp.priceHi), b = converter.priceToY(vp.priceLo); top = Math.min(a, b); bot = Math.max(a, b); }
         else { const a = converter.priceToY(p1.price), b = converter.priceToY(p2.price); top = Math.min(a, b); bot = Math.max(a, b); }
@@ -5678,12 +5689,12 @@ const ChartDrawingOverlayComponent = ({
       const anchor = drawing.points[0];
       const cs = candlesProp;
       const lastT = cs && cs.length ? cs[cs.length - 1].time : anchor.time;
-      const vp = computeVolumeProfile(anchor.time, lastT);
+      const vp = computeVolumeProfile(anchor.time, lastT, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
       const left = converter.timeToX(anchor.time);
       const right = cs && cs.length ? converter.timeToX(lastT) : left + 120;
       const rangeW = Math.max(right - left, 12);
       const barMaxW = rangeW * 0.9;
-      const upCol = '#2dd4bf', downCol = '#6366f1', pocCol = '#fbbf24', frameCol = '#94a3b8';
+      const upCol = drawing.upColor || '#2dd4bf', downCol = drawing.downColor || '#6366f1', pocCol = '#fbbf24', frameCol = '#94a3b8';
       const ax = left, ayTop = 0;
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
@@ -5705,7 +5716,7 @@ const ChartDrawingOverlayComponent = ({
                   const wDown = (vp.down[i] / vp.maxVol) * barMaxW;
                   const wUp = (vp.up[i] / vp.maxVol) * barMaxW;
                   const isPoc = i === vp.pocIdx;
-                  const inVA = i >= vp.vaLo && i <= vp.vaHi;
+                  const inVA = (drawing.showVA !== false) && i >= vp.vaLo && i <= vp.vaHi;
                   const op = isPoc ? 1 : inVA ? 0.85 : 0.4;
                   return (
                     <g key={i} style={{ pointerEvents: 'none' }}>
@@ -5714,11 +5725,15 @@ const ChartDrawingOverlayComponent = ({
                     </g>
                   );
                 })}
-                <line x1={left} y1={pocY} x2={right} y2={pocY} stroke={pocCol} strokeWidth={1.25} strokeOpacity={0.9} strokeDasharray="2 2" style={{ pointerEvents: 'none' }} />
-                <g style={{ pointerEvents: 'none' }}>
-                  <rect x={left + 4} y={boxTop + 4} width={tw} height={15} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={pocCol} strokeOpacity={0.5} strokeWidth={0.75} />
-                  <text x={left + 9} y={boxTop + 15} fill={pocCol} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
-                </g>
+                {drawing.showPOC !== false && (
+                  <>
+                    <line x1={left} y1={pocY} x2={right} y2={pocY} stroke={pocCol} strokeWidth={1.25} strokeOpacity={0.9} strokeDasharray="2 2" style={{ pointerEvents: 'none' }} />
+                    <g style={{ pointerEvents: 'none' }}>
+                      <rect x={left + 4} y={boxTop + 4} width={tw} height={15} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={pocCol} strokeOpacity={0.5} strokeWidth={0.75} />
+                      <text x={left + 9} y={boxTop + 15} fill={pocCol} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                    </g>
+                  </>
+                )}
                 <path d={`M ${ax} ${converter.priceToY(anchor.price) - 6} L ${ax + 6} ${converter.priceToY(anchor.price)} L ${ax} ${converter.priceToY(anchor.price) + 6} L ${ax - 6} ${converter.priceToY(anchor.price)} Z`} fill={upCol} stroke="#0b0f14" strokeWidth={1} style={{ pointerEvents: 'all', cursor: 'move' }} />
               </>
             );
@@ -5747,10 +5762,14 @@ const ChartDrawingOverlayComponent = ({
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
           {reg ? (
             <>
-              <path d={band(reg.u2, reg.l2)} fill={col} fillOpacity={0.05} stroke="none" style={{ pointerEvents: 'none' }} />
-              <path d={band(reg.u1, reg.l1)} fill={col} fillOpacity={0.09} stroke="none" style={{ pointerEvents: 'none' }} />
-              <path d={reg.u2.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
-              <path d={reg.l2.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
+              {drawing.showBands !== false && (
+                <>
+                  <path d={band(reg.u2, reg.l2)} fill={col} fillOpacity={0.05} stroke="none" style={{ pointerEvents: 'none' }} />
+                  <path d={band(reg.u1, reg.l1)} fill={col} fillOpacity={0.09} stroke="none" style={{ pointerEvents: 'none' }} />
+                  <path d={reg.u2.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
+                  <path d={reg.l2.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
+                </>
+              )}
               <path d={reg.line.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={drawing.strokeWidth || 2} strokeOpacity={strokeOpacity} style={{ cursor: 'move', pointerEvents: 'stroke' }} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} />
               {(() => {
                 const last = reg.line[reg.line.length - 1];
@@ -5845,7 +5864,7 @@ const ChartDrawingOverlayComponent = ({
       const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
       const ax = converter.timeToX(anchor.time);
       const ay = converter.priceToY(anchor.price);
-      const vw = computeAnchoredVwap(anchor.time);
+      const vw = computeAnchoredVwap(anchor.time, drawing.vwapSource || 'hlc3', drawing.band1 ?? 1, drawing.band2 ?? 2);
       const band = (up: PixelPoint[], loArr: PixelPoint[]) => {
         const top = up.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
         const bot = [...loArr].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ');
@@ -5855,8 +5874,12 @@ const ChartDrawingOverlayComponent = ({
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
           {vw && (
             <>
-              <path d={band(vw.u2, vw.l2)} fill={col} fillOpacity={0.05} stroke="none" style={{ pointerEvents: 'none' }} />
-              <path d={band(vw.u1, vw.l1)} fill={col} fillOpacity={0.09} stroke="none" style={{ pointerEvents: 'none' }} />
+              {drawing.showBands !== false && (
+                <>
+                  <path d={band(vw.u2, vw.l2)} fill={col} fillOpacity={0.05} stroke="none" style={{ pointerEvents: 'none' }} />
+                  <path d={band(vw.u1, vw.l1)} fill={col} fillOpacity={0.09} stroke="none" style={{ pointerEvents: 'none' }} />
+                </>
+              )}
               <path d={vw.line.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={drawing.strokeWidth || 2} strokeOpacity={strokeOpacity} style={{ cursor: 'move', pointerEvents: 'stroke' }} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} />
               {(() => {
                 const last = vw.line[vw.line.length - 1];
@@ -5880,12 +5903,12 @@ const ChartDrawingOverlayComponent = ({
     if (drawing.type === 'fixedVolumeProfile') {
       const p1 = drawing.points[0], p2 = drawing.points[1];
       if (!p1 || !p2) return null;
-      const vp = computeVolumeProfile(p1.time, p2.time);
+      const vp = computeVolumeProfile(p1.time, p2.time, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
       const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
       const left = Math.min(x1, x2), right = Math.max(x1, x2);
       const rangeW = Math.max(right - left, 12);
       const barMaxW = rangeW * 0.92;
-      const upCol = '#2dd4bf', downCol = '#6366f1', pocCol = '#fbbf24', frameCol = '#94a3b8';
+      const upCol = drawing.upColor || '#2dd4bf', downCol = drawing.downColor || '#6366f1', pocCol = '#fbbf24', frameCol = '#94a3b8';
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
           {vp ? (() => {
@@ -5906,7 +5929,7 @@ const ChartDrawingOverlayComponent = ({
                   const wDown = (vp.down[i] / vp.maxVol) * barMaxW;
                   const wUp = (vp.up[i] / vp.maxVol) * barMaxW;
                   const isPoc = i === vp.pocIdx;
-                  const inVA = i >= vp.vaLo && i <= vp.vaHi;
+                  const inVA = (drawing.showVA !== false) && i >= vp.vaLo && i <= vp.vaHi;
                   const op = isPoc ? 1 : inVA ? 0.85 : 0.4;
                   return (
                     <g key={i} style={{ pointerEvents: 'none' }}>
@@ -5915,11 +5938,15 @@ const ChartDrawingOverlayComponent = ({
                     </g>
                   );
                 })}
-                <line x1={left} y1={pocY} x2={right} y2={pocY} stroke={pocCol} strokeWidth={1.25} strokeOpacity={0.9} strokeDasharray="2 2" style={{ pointerEvents: 'none' }} />
-                <g style={{ pointerEvents: 'none' }}>
-                  <rect x={left + 4} y={boxTop + 4} width={tw} height={15} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={pocCol} strokeOpacity={0.5} strokeWidth={0.75} />
-                  <text x={left + 9} y={boxTop + 15} fill={pocCol} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
-                </g>
+                {drawing.showPOC !== false && (
+                  <>
+                    <line x1={left} y1={pocY} x2={right} y2={pocY} stroke={pocCol} strokeWidth={1.25} strokeOpacity={0.9} strokeDasharray="2 2" style={{ pointerEvents: 'none' }} />
+                    <g style={{ pointerEvents: 'none' }}>
+                      <rect x={left + 4} y={boxTop + 4} width={tw} height={15} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={pocCol} strokeOpacity={0.5} strokeWidth={0.75} />
+                      <text x={left + 9} y={boxTop + 15} fill={pocCol} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                    </g>
+                  </>
+                )}
               </>
             );
           })() : (() => {
