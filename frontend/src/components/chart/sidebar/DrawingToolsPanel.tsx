@@ -68,6 +68,9 @@ interface DrawingToolsPanelProps {
   calendarPanelActive?: boolean;
   onShowAlertDialog?: () => void;
   alertCount?: number;
+  // Which edge the rail is docked on. When docked right, tool tooltips and
+  // fly-out menus must open to the LEFT so they don't run off-screen.
+  railSide?: 'left' | 'right';
 }
 
 // Helper: renders a single tool button in a popover menu with star-favorite toggle
@@ -146,8 +149,12 @@ export default function DrawingToolsPanel({
   calendarPanelActive = false,
   onShowAlertDialog,
   alertCount = 0,
+  railSide = 'left',
 }: DrawingToolsPanelProps) {
   const { user } = useAuth();
+  // Fly-out side: mirror the menus/tooltips to the inner edge of the chart so a
+  // right-docked rail never opens its menus off the right side of the screen.
+  const menuSide = railSide === 'right' ? 'left' : 'right';
   const [showLoginForFavorites, setShowLoginForFavorites] = useState(false);
   const [drawingFavorites, setDrawingFavorites] = useState<string[]>(getDrawingFavorites);
   // Track which sub-tool is selected for each group's primary button display
@@ -219,7 +226,7 @@ export default function DrawingToolsPanel({
                 {primaryIcon}
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">{selectedTool}</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">{selectedTool}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         <PopoverTrigger asChild>
@@ -233,7 +240,7 @@ export default function DrawingToolsPanel({
       </div>
       {/* w-auto lets the menu hug its content instead of being a fixed 288px;
           min-w-[180px] prevents it from collapsing too small on short labels */}
-      <PopoverContent side="right" align="start" className="drawing-tool-menu w-auto min-w-[184px] p-0 bg-[#0d1117]/95 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/60 ring-1 ring-white/5 rounded-xl z-50 overflow-hidden" sideOffset={8}>
+      <PopoverContent side={menuSide} align="start" className="drawing-tool-menu w-auto min-w-[184px] p-0 bg-[#0d1117]/95 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/60 ring-1 ring-white/5 rounded-xl z-50 overflow-hidden" sideOffset={8}>
         {menuContent}
       </PopoverContent>
     </Popover>
@@ -393,7 +400,7 @@ export default function DrawingToolsPanel({
                 <MousePointer2 className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Cursor</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">Cursor</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         <div className="w-5 h-px bg-white/10 mx-auto my-1.5" />
@@ -577,7 +584,7 @@ export default function DrawingToolsPanel({
                     <span className="text-lg leading-none">{selectedEmoji}</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs lg:text-sm">Emoji / Sticker</TooltipContent>
+                <TooltipContent side={menuSide} className="text-xs lg:text-sm">Emoji / Sticker</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <PopoverTrigger asChild>
@@ -586,7 +593,7 @@ export default function DrawingToolsPanel({
               </button>
             </PopoverTrigger>
           </div>
-          <PopoverContent side="right" align="start" className="drawing-tool-menu w-auto p-2 bg-card border border-border shadow-xl rounded-lg z-50" sideOffset={8}>
+          <PopoverContent side={menuSide} align="start" className="drawing-tool-menu w-auto p-2 bg-card border border-border shadow-xl rounded-lg z-50" sideOffset={8}>
             <div className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Stickers</div>
             <div className="grid grid-cols-6 gap-1">
               {EMOJI_LIST.map((em) => (
@@ -629,7 +636,7 @@ export default function DrawingToolsPanel({
                 <LongPositionIcon className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Long Position</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">Long Position</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         {/* Short Position */}
@@ -640,7 +647,7 @@ export default function DrawingToolsPanel({
                 <ShortPositionIcon className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Short Position</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">Short Position</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         {/* Divider: creation tools above, edit/utility actions below */}
@@ -654,7 +661,7 @@ export default function DrawingToolsPanel({
                   {drawingsLocked ? <Lock className="h-[18px] w-[18px]" /> : <Unlock className="h-[18px] w-[18px]" />}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="text-xs lg:text-sm">{drawingsLocked ? 'Unlock Drawings' : 'Lock Drawings'}</TooltipContent>
+              <TooltipContent side={menuSide} className="text-xs lg:text-sm">{drawingsLocked ? 'Unlock Drawings' : 'Lock Drawings'}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}
@@ -667,7 +674,7 @@ export default function DrawingToolsPanel({
                   {drawingsHidden ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="text-xs lg:text-sm">{drawingsHidden ? 'Show Drawings' : 'Hide Drawings'}</TooltipContent>
+              <TooltipContent side={menuSide} className="text-xs lg:text-sm">{drawingsHidden ? 'Show Drawings' : 'Hide Drawings'}</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         )}
@@ -679,7 +686,7 @@ export default function DrawingToolsPanel({
                 <Eraser className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Eraser — click a drawing to delete it</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">Eraser — click a drawing to delete it</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         {/* Measure tool */}
@@ -690,7 +697,7 @@ export default function DrawingToolsPanel({
                 <Ruler className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Measure Tool</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">Measure Tool</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         {/* Paper Trading toggle removed; now handled by chevron in the bottom time bar */}
@@ -706,7 +713,7 @@ export default function DrawingToolsPanel({
                 <Camera className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Screenshot chart</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">Screenshot chart</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         <TooltipProvider delayDuration={300}>
@@ -716,7 +723,7 @@ export default function DrawingToolsPanel({
                 <Lasso className="h-[18px] w-[18px]" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs lg:text-sm">Lasso a zone for AI analysis</TooltipContent>
+            <TooltipContent side={menuSide} className="text-xs lg:text-sm">Lasso a zone for AI analysis</TooltipContent>
           </Tooltip>
         </TooltipProvider>
         <div className="w-7 lg:w-9 h-px bg-border mx-auto my-0.5" />
@@ -755,7 +762,7 @@ export default function DrawingToolsPanel({
                     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><circle cx="17.5" cy="17.5" r="4" fill="var(--background, white)" stroke="currentColor" strokeWidth="1.75" /><line x1="17.5" y1="15.5" x2="17.5" y2="17.5" /><line x1="17.5" y1="17.5" x2="19" y2="18.5" /></svg>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">Calendar</TooltipContent>
+                <TooltipContent side={menuSide} className="text-xs">Calendar</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -773,7 +780,7 @@ export default function DrawingToolsPanel({
                     )}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">Alerts</TooltipContent>
+                <TooltipContent side={menuSide} className="text-xs">Alerts</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -787,7 +794,7 @@ export default function DrawingToolsPanel({
                     <Settings className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">Settings</TooltipContent>
+                <TooltipContent side={menuSide} className="text-xs">Settings</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -806,7 +813,7 @@ export default function DrawingToolsPanel({
                     <Keyboard className="h-[18px] w-[18px]" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs lg:text-sm">Drawing Shortcuts</TooltipContent>
+                <TooltipContent side={menuSide} className="text-xs lg:text-sm">Drawing Shortcuts</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -824,7 +831,7 @@ export default function DrawingToolsPanel({
                     <Trash2 className="h-[18px] w-[18px]" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs lg:text-sm">{selectedDrawingId ? 'Delete Selected Drawing' : 'Delete (select a drawing first)'}</TooltipContent>
+                <TooltipContent side={menuSide} className="text-xs lg:text-sm">{selectedDrawingId ? 'Delete Selected Drawing' : 'Delete (select a drawing first)'}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <Popover>
@@ -833,7 +840,7 @@ export default function DrawingToolsPanel({
                   <svg width="6" height="6" viewBox="0 0 6 6"><path d="M6 0V6H0Z" fill="currentColor" /></svg>
                 </button>
               </PopoverTrigger>
-              <PopoverContent side="right" align="start" className="w-auto p-1 bg-card border border-border shadow-lg">
+              <PopoverContent side={menuSide} align="start" className="w-auto p-1 bg-card border border-border shadow-lg">
                 <div className="flex flex-col">
                   {selectedDrawingId && onDeleteSelectedDrawing && (
                     <Button variant="ghost" size="sm" className="justify-start h-8 px-3 text-xs font-normal hover:bg-destructive/10 hover:text-destructive" onClick={() => onDeleteSelectedDrawing(selectedDrawingId)}>Remove selected drawing</Button>

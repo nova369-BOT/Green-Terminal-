@@ -685,6 +685,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
         </div>
         <div className="flex-1 overflow-y-auto">
         <DrawingToolsPanel
+          railSide={railSide}
           activeTool={activeTool}
           onToolSelect={setActiveTool}
           drawings={drawings}

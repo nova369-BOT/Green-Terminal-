@@ -82,6 +82,10 @@ export type Drawing = {
   accountSize?: number;    // Long/short position sizing: account balance
   riskPercent?: number;    // Long/short position sizing: risk % of account
   feesPercent?: number;    // Long/short: round-trip fees as % of notional (net P&L / break-even)
+  // Long/short multi-target scale-out: the primary target (points[1]) is TP1,
+  // closing tp1SizePct of the position; `takeProfits` holds any extra levels.
+  tp1SizePct?: number;
+  takeProfits?: Array<{ price: number; sizePct: number }>;
   showProjection?: boolean; // Long/short: ATR volatility projection cone
   fibLevels?: number[];
   stopLoss?: ChartPoint;  // Also price/time coordinates
@@ -234,6 +238,7 @@ const ChartDrawingOverlayComponent = ({
   } | null>(null);
   const justFinishedDragging = useRef(false);
   const isDraggingRef = useRef(false); // Synchronous tracking of dragging state
+  const isErasingRef = useRef(false); // Eraser held down: swipe to erase multiple drawings
   const [cursorPosition, setCursorPosition] = useState<PixelPoint | null>(null); // Track cursor for crosshair
 
   // Helper: get drawing properties from the pre-placement settings bar if available,
@@ -676,6 +681,7 @@ const ChartDrawingOverlayComponent = ({
   // (e.g., double-click, mouse leaving overlay during brush draw)
   useEffect(() => {
     const globalMouseUp = () => {
+      isErasingRef.current = false;
       if (isDrawingBrushRef.current) {
         setBrushPath([]);
         isDrawingBrushRef.current = false;
@@ -766,6 +772,12 @@ const ChartDrawingOverlayComponent = ({
 
     // Store last pointer position for smooth tracking
     lastPointerPosRef.current = { x, y };
+
+    // Eraser swipe: while held down, erase everything the cursor passes over.
+    if (activeTool === 'eraser' && isErasingRef.current) {
+      eraseAtPixel(x, y);
+      return;
+    }
 
     // Handle measure tool dragging - only update if not frozen
     if (activeTool === 'measure' && measureState && !measureState.frozen) {
@@ -1331,11 +1343,79 @@ const ChartDrawingOverlayComponent = ({
     onSelectDrawing?.(id, pos);
   };
 
+  // Distance from a point to a segment (pixels). Shared by the eraser hit test.
+  const distToSegment = (px: number, py: number, a: PixelPoint, b: PixelPoint): number => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - a.x, py - a.y);
+    let t = ((px - a.x) * dx + (py - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
+  };
+
+  // Resolve a drawing's on-screen polyline/points for eraser proximity testing.
+  const eraserPixelsOf = (d: Drawing): PixelPoint[] => {
+    if (isBrushTool(d.type)) {
+      if (d.brushChartPoints && d.brushChartPoints.length > 0) {
+        return d.brushChartPoints.map(chartToPixel).filter((p): p is PixelPoint => p !== null);
+      }
+      const anchor = chartToPixel(d.points[0]);
+      if (anchor) {
+        const offs = d.brushPixelOffsets || d.pixelOffsets;
+        if (offs && offs.length > 0) return offs.map(o => ({ x: anchor.x + o.x, y: anchor.y + o.y }));
+        if (d.brushPixelPoints && d.brushPixelPoints.length > 0) {
+          const o0 = d.brushPixelPoints[0];
+          return d.brushPixelPoints.map(p => ({ x: anchor.x + (p.x - o0.x), y: anchor.y + (p.y - o0.y) }));
+        }
+      }
+    }
+    const pts = (d.points || []).map(chartToPixel).filter((p): p is PixelPoint => p !== null);
+    if (d.stopLoss) { const sl = chartToPixel(d.stopLoss); if (sl) pts.push(sl); }
+    return pts;
+  };
+
+  // True when the eraser cursor (radius r) is close enough to erase drawing d.
+  const isErasedBy = (d: Drawing, x: number, y: number, r: number): boolean => {
+    const pts = eraserPixelsOf(d);
+    if (pts.length === 0) return false;
+    // Single-anchor glyphs (emoji/marker/text/notes): use a size-aware radius.
+    if (pts.length === 1) {
+      const glyph = (d.type === 'emoji' || isMarkerTool(d.type)) ? (d.strokeWidth || 24) / 2 : 10;
+      return Math.hypot(x - pts[0].x, y - pts[0].y) <= r + glyph;
+    }
+    for (let i = 1; i < pts.length; i++) {
+      if (distToSegment(x, y, pts[i - 1], pts[i]) <= r) return true;
+    }
+    // Closing edge for filled shapes so the whole outline is erasable.
+    const CLOSED_SHAPES = ['rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short'];
+    if (CLOSED_SHAPES.includes(d.type) && pts.length > 2 && distToSegment(x, y, pts[pts.length - 1], pts[0]) <= r) return true;
+    return false;
+  };
+
+  // Erase every drawing under the eraser at (x,y). Used for click + swipe erase.
+  const eraseAtPixel = (x: number, y: number) => {
+    const r = 12;
+    const survivors = drawings.filter((d) => !isErasedBy(d, x, y, r));
+    if (survivors.length !== drawings.length) {
+      onDrawingsChange(survivors);
+      onSelectDrawing?.(null);
+    }
+  };
+
   const handlePointerDown = (x: number, y: number, clientX: number, clientY: number) => {
     if (!containerRef.current) return false;
 
     // If drawings are locked, don't allow dragging/resizing existing drawings
     if (isLocked) return false;
+
+    // Eraser: press-and-swipe deletes any drawing the cursor touches — including
+    // brush / highlighter strokes. We consume the gesture so the chart doesn't
+    // pan while erasing; handlePointerMove keeps erasing until pointer up.
+    if (activeTool === 'eraser') {
+      isErasingRef.current = true;
+      eraseAtPixel(x, y);
+      return true;
+    }
 
     // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
     // This allows placing new drawings on top of existing ones
@@ -2443,6 +2523,8 @@ const ChartDrawingOverlayComponent = ({
 
   // Unified pointer up handler for both mouse and touch
   const handlePointerUp = () => {
+    // End any eraser swipe.
+    isErasingRef.current = false;
     // Flush any pending RAF updates immediately for final position accuracy
     if (rafIdRef.current !== null) {
       cancelAnimationFrame(rafIdRef.current);
@@ -2551,7 +2633,19 @@ const ChartDrawingOverlayComponent = ({
             }));
           }
 
-          return { ...d, points: updatedPoints, stopLoss: updatedStopLoss, brushChartPoints: updatedBrushChartPoints, brushPixelPoints: updatedBrushPixelPoints };
+          // Keep scale-out take-profit levels attached to the position box when
+          // the whole drawing is dragged (they're absolute prices).
+          let updatedTakeProfits = d.takeProfits;
+          if (d.takeProfits && d.takeProfits.length > 0) {
+            updatedTakeProfits = d.takeProfits.map(tp => {
+              const py = converter.priceToY(tp.price);
+              if (!Number.isFinite(py)) return tp;
+              const moved = pixelToChart({ x: 0, y: py + pixDeltaY });
+              return moved ? { ...tp, price: moved.price } : tp;
+            });
+          }
+
+          return { ...d, points: updatedPoints, stopLoss: updatedStopLoss, brushChartPoints: updatedBrushChartPoints, brushPixelPoints: updatedBrushPixelPoints, takeProfits: updatedTakeProfits };
         });
 
         onDrawingsChange(updatedDrawings);
@@ -3901,6 +3995,28 @@ const ChartDrawingOverlayComponent = ({
           <line x1={minX} y1={targetY} x2={maxX} y2={targetY} stroke="transparent" strokeWidth={20} style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
           <line x1={minX} y1={entryY} x2={maxX} y2={entryY} stroke="transparent" strokeWidth={20} style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
           <line x1={minX} y1={stopLossY} x2={maxX} y2={stopLossY} stroke="transparent" strokeWidth={20} style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+
+          {/* ── Multi-target scale-out: extra take-profit levels TP2, TP3, … ──
+              Each is a dashed line across the position at its price, with a
+              right-edge dot and (when selected) a "TP· price · size%" chip. */}
+          {Array.isArray(drawing.takeProfits) && drawing.takeProfits.map((tp, ti) => {
+            const tpY = converter.priceToY(tp.price);
+            if (!Number.isFinite(tpY)) return null;
+            const label = `TP${ti + 2}  ${fmtPrice(tp.price)}  ·  ${(tp.sizePct || 0).toFixed(0)}%`;
+            const lw = label.length * 5.4 + 10;
+            return (
+              <g key={`tp-${ti}`} style={{ pointerEvents: 'none' }}>
+                <line x1={minX} y1={tpY} x2={maxX} y2={tpY} stroke={profitColor} strokeWidth={1} strokeDasharray="5,4" strokeOpacity={0.9} />
+                <circle cx={maxX} cy={tpY} r={3} fill={profitColor} />
+                {isSelected && (
+                  <>
+                    <rect x={minX + 4} y={tpY - 17} width={lw} height={15} rx={3} fill={profitColor} opacity={0.92} />
+                    <text x={minX + 4 + lw / 2} y={tpY - 6} fill="#ffffff" fontSize="10" fontWeight="600" fontFamily="system-ui, -apple-system, sans-serif" textAnchor="middle" style={{ userSelect: 'none' }}>{label}</text>
+                  </>
+                )}
+              </g>
+            );
+          })}
 
           {/* ── Two-tone overlay ──────────────────────────────────────
               Condition 1: TP/SL hit -> full zone height, width to hitX

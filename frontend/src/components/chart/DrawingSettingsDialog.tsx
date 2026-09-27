@@ -369,6 +369,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         fibLabelMode: s.fibLabelMode, showMiddleLine: s.showMiddleLine,
         entryLineColor: s.entryLineColor, accountSize: s.accountSize, riskPercent: s.riskPercent, stopLoss: s.stopLoss,
         showProjection: s.showProjection, feesPercent: s.feesPercent,
+        tp1SizePct: s.tp1SizePct, takeProfits: s.takeProfits,
       });
     }
     onOpenChange(false);
@@ -599,6 +600,44 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                     onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isFinite(v) || !drawing.stopLoss) return; update({ stopLoss: { ...drawing.stopLoss, price: v } }); }}
                     className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
                 </Row>
+                <SectionTitle>Take profits (scale-out)</SectionTitle>
+                <Row label="TP1 size %">
+                  <Input type="number" step="1" value={drawing.tp1SizePct ?? 100} placeholder="100"
+                    onChange={(e) => { const v = parseFloat(e.target.value); update({ tp1SizePct: Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : undefined }); }}
+                    className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
+                </Row>
+                {(drawing.takeProfits || []).length > 0 && (
+                  <div className="mt-1 space-y-1.5">
+                    {(drawing.takeProfits || []).map((tp, i) => (
+                      <div key={i} className="flex items-center gap-1.5 rounded-md bg-white/[0.03] px-2 py-1.5">
+                        <span className="w-8 text-[11px] font-medium text-teal-300">TP{i + 2}</span>
+                        <Input type="number" step="any" value={tp.price}
+                          onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isFinite(v)) return; const next = (drawing.takeProfits || []).map((t, j) => (j === i ? { ...t, price: v } : t)); update({ takeProfits: next }); }}
+                          className="h-7 w-20 bg-black/30 font-mono text-[12px]" title="Price" />
+                        <Input type="number" step="1" value={tp.sizePct}
+                          onChange={(e) => { const v = parseFloat(e.target.value); const next = (drawing.takeProfits || []).map((t, j) => (j === i ? { ...t, sizePct: Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0 } : t)); update({ takeProfits: next }); }}
+                          className="h-7 w-14 bg-black/30 font-mono text-[12px]" title="Size %" />
+                        <span className="text-[11px] text-slate-500">%</span>
+                        <button type="button" onClick={() => { const next = (drawing.takeProfits || []).filter((_, j) => j !== i); update({ takeProfits: next }); }} className="ml-auto text-slate-500 transition-colors hover:text-red-400" title="Remove level">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const list = drawing.takeProfits || [];
+                    const base = lsTarget ?? lsEntry ?? 0;
+                    const last = list.length ? list[list.length - 1].price : base;
+                    const stepPx = (lsEntry != null) ? (base - lsEntry) * 0.5 : 0;
+                    update({ takeProfits: [...list, { price: Number((last + stepPx).toFixed(6)), sizePct: 25 }] });
+                  }}
+                  className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-teal-400/30 py-1.5 text-[11px] font-medium text-teal-300 transition-colors hover:bg-teal-400/10"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add take-profit
+                </button>
                 <SectionTitle>Risk sizing</SectionTitle>
                 <Row label="Account size">
                   <Input type="number" step="any" value={drawing.accountSize ?? ''} placeholder="10000"
@@ -626,9 +665,21 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                   const netReward = grossReward - feeCost;
                   const netRisk = grossRisk + feeCost;
                   const netRR = netRisk > 0 ? netReward / netRisk : 0;
+                  // Multi-target scale-out: size-weighted blended reward across
+                  // TP1 (the primary target) + every extra take-profit level.
+                  const extraTPs = drawing.takeProfits || [];
+                  const allTPs = [{ price: lsTarget ?? 0, sizePct: drawing.tp1SizePct ?? 100 }, ...extraTPs];
+                  const allocPct = allTPs.reduce((a, t) => a + (t.sizePct || 0), 0);
+                  const wReward = allocPct > 0
+                    ? allTPs.reduce((a, t) => a + (t.sizePct || 0) * Math.abs((t.price ?? 0) - (lsEntry ?? 0)), 0) / allocPct
+                    : 0;
+                  const blendedRR = lsRiskPerUnit > 0 ? wReward / lsRiskPerUnit : 0;
+                  const hasScaleOut = extraTPs.length > 0;
                   return (
                     <div className="mt-2 space-y-1 rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-[11px]">
                       <div className="flex justify-between"><span className="text-slate-400">Risk / Reward</span><span className="font-mono text-teal-300">{lsRR > 0 ? lsRR.toFixed(2) : '\u2014'}</span></div>
+                      {hasScaleOut && <div className="flex justify-between"><span className="text-slate-400">Blended R/R</span><span className="font-mono text-teal-300">{blendedRR > 0 ? blendedRR.toFixed(2) : '\u2014'}</span></div>}
+                      {hasScaleOut && <div className="flex justify-between"><span className="text-slate-400">Allocated</span><span className={`font-mono ${Math.abs(allocPct - 100) < 0.5 ? 'text-slate-200' : 'text-amber-400'}`}>{allocPct.toFixed(0)}%</span></div>}
                       {feePct > 0 && <div className="flex justify-between"><span className="text-slate-400">Net R/R (fees)</span><span className="font-mono text-teal-300">{netRR > 0 ? netRR.toFixed(2) : '\u2014'}</span></div>}
                       <div className="flex justify-between"><span className="text-slate-400">Break-even</span><span className="font-mono text-slate-200">{feePct > 0 && lsEntry != null ? bePrice.toFixed(bePrice >= 100 ? 2 : 4) : '\u2014'}</span></div>
                       <div className="flex justify-between"><span className="text-slate-400">Risk amount</span><span className="font-mono text-slate-200">{lsRiskAmt > 0 ? `$${lsRiskAmt.toFixed(2)}` : '\u2014'}</span></div>
