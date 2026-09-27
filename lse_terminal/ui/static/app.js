@@ -53,6 +53,7 @@ const state = {
   symbol: null, timeframe: "1h", chartType: "candles", wlFilter: "",
   wlSets: {}, wlView: "list", wlShowChange: true, wlExpanded: {}, wlTab: "watchlist",
   activeIndicators: [],            // [{name}] params use registry defaults
+  serverIndicators: {},            // last /api/candles indicator payload (empty in hosted mode)
   favoriteIndicators: [],          // registry names starred in the picker; float to the top
   instruments: [], ws: null, lastBar: null, prices: {}, quotes: {}, candleData: [],
   logos: {},                       // symbol -> {light, dark} watchlist logo URLs
@@ -876,8 +877,11 @@ async function loadChart() {
   state.candleData = data.candles.map(([t, o, h, l, c, v]) =>
     ({ time: t, open: o, high: h, low: l, close: c, volume: v }));
   // Python-computed indicators (built-ins and the user's own) ride along and
-  // are drawn by the chart as precomputed series.
-  state.engineIndicators = data.indicators || {};
+  // are drawn by the chart as precomputed series. In hosted mode the server
+  // sends none, so the core set is computed client-side and merged in here;
+  // this is also what carries the panel's Style/Visibility onto the chart.
+  state.serverIndicators = data.indicators || {};
+  state.engineIndicators = indMergedPayload();
   pushToChart();
   state.lastBar = state.candleData[state.candleData.length - 1] || null;
   updateInstrumentBar();
@@ -1455,15 +1459,17 @@ function renderIndInspector() {
       if (inp.dataset.k === "width") o.width = Math.max(1, Math.min(6, parseInt(inp.value, 10) || 2));
       else o.color = inp.value;
       indPreviewRender();
+      if (indActiveItem(name)) indRefreshChart(); // carry the style onto the chart
     };
   });
-  // Visibility tab: show/hide each plot in the preview.
+  // Visibility tab: show/hide each plot in the preview and on the chart.
   insp.querySelectorAll("input[data-vis]").forEach((inp) => {
     inp.onchange = () => {
       const store = indStyleFor(spec);
       const o = store[inp.dataset.vis] || (store[inp.dataset.vis] = {});
       o.visible = inp.checked;
       indPreviewRender();
+      if (indActiveItem(name)) indRefreshChart();
     };
   });
   insp.querySelector(".indb-insp-foot").querySelectorAll("[data-act]").forEach((b) => {
@@ -1583,10 +1589,11 @@ function _cci(h, l, c, n) {
 
 // Build plot descriptors for the selected spec + current draft params, or null
 // when the indicator is not in the core preview set.
-function indComputePlots(spec, candles) {
+function indComputePlots(spec, candles, paramsOverride) {
   const name = (spec.name + " " + (spec.title || "")).toLowerCase();
   const has = (...ws) => ws.some((w) => name.includes(w));
-  const P = (state.indDraft && state.indDraft.name === spec.name) ? state.indDraft.params : {};
+  const P = paramsOverride
+    || ((state.indDraft && state.indDraft.name === spec.name) ? state.indDraft.params : {});
   const dflt = (k) => { const p = (spec.params || {})[k]; return p ? parseFloat(p.default) : undefined; };
   const num = (k, d) => { let v = parseFloat(P[k]); if (!isFinite(v)) v = dflt(k); return isFinite(v) ? v : d; };
   const closes = candles.map((c) => c[4]), highs = candles.map((c) => c[2]), lows = candles.map((c) => c[3]);
@@ -1624,6 +1631,66 @@ function indApplyStyle(spec, plots) {
     const o = st[p.id] || (st[p.id] = { color: p.color, width: p.width, visible: true });
     return { ...p, color: o.color, width: o.width, visible: o.visible !== false };
   });
+}
+// The label the SERVER would give this indicator (name, or name(k=v;...)), so
+// the client payload collides on the same key and wins the merge below.
+function indClientLabel(item) {
+  const ps = Object.entries(item.params || {});
+  return item.name + (ps.length ? "(" + ps.map(([k, v]) => `${k}=${v}`).join(";") + ")" : "");
+}
+// Build an engineIndicators-shaped payload for the CORE indicator set from the
+// loaded candles. This is what makes indicators actually draw on the main chart
+// in hosted mode (where /api/candles returns none) AND what carries the panel's
+// Style/Visibility onto the chart. Non-core indicators are left to the server.
+function indClientPayload() {
+  const out = {};
+  const cd = state.candleData;
+  if (!cd || !cd.length) return out;
+  const arr = cd.map((c) => [c.time, c.open, c.high, c.low, c.close, c.volume]);
+  for (const item of state.activeIndicators || []) {
+    const spec = (state.indicatorSpecs || []).find((s) => s.name === item.name);
+    if (!spec) continue;
+    const plots = indComputePlots(spec, arr, item.params || {});
+    if (!plots) continue; // non-core: leave it to the server payload
+    const st = indStyleFor(spec);
+    const series = {};
+    for (const p of plots) {
+      const o = st[p.id] || {};
+      const pts = [];
+      for (let i = 0; i < p.values.length; i++) {
+        const v = p.values[i];
+        if (v == null || !isFinite(v)) continue;
+        pts.push([Math.floor(cd[i].time / 1000), v]);
+      }
+      series[p.id] = {
+        kind: p.type === "hist" ? "histogram" : "line",
+        points: pts,
+        color: o.color || p.color,
+        width: o.width || p.width,
+        visible: o.visible !== false,
+      };
+    }
+    out[indClientLabel(item)] = { overlay: plots[0].pane === "price", series };
+  }
+  return out;
+}
+// Merge the last server payload with the client core payload. Client core wins
+// on a colliding label (drops a duplicate server entry); every other server
+// indicator passes through untouched.
+function indMergedPayload() {
+  const client = indClientPayload();
+  const merged = {};
+  for (const [k, v] of Object.entries(state.serverIndicators || {})) if (!(k in client)) merged[k] = v;
+  for (const [k, v] of Object.entries(client)) merged[k] = v;
+  return merged;
+}
+// Re-push indicators to the chart from the loaded candles WITHOUT a server
+// round-trip — used when Style/Visibility change (the maths is unchanged, only
+// colour/width/enabled), so the chart restyles instantly.
+function indRefreshChart() {
+  if (!state.candleData || !state.candleData.length) return;
+  state.engineIndicators = indMergedPayload();
+  pushToChart();
 }
 // Plot ids/labels for the Style/Visibility lists (computed on synthetic bars).
 function indPlotMeta(spec) {
