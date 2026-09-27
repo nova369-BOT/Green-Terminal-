@@ -4,7 +4,7 @@
 
 // Full Phase-2 ladder (seconds). Providers only offer labels they can serve;
 // this map is the merge/bucket authority for live ticks on any advertised TF.
-const TF_SECONDS = { "1s": 1, "5s": 5, "15s": 15, "30s": 30,
+const TF_SECONDS = { "1s": 1, "5s": 5, "10s": 10, "15s": 15, "30s": 30, "45s": 45,
                      "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
                      "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
 
@@ -789,6 +789,22 @@ async function loadChart() {
   // Level 3 button appears/disappears with the instrument (only the recorded
   // futures universe has order-by-order data)
   if (typeof l3SyncButton === "function") try { l3SyncButton(); } catch (e) { /* rail absent */ }
+  // Seconds tape (1s–45s): the candle API's finest history is 1-minute, so
+  // there are NO historical second bars to fetch. Rather than error, start an
+  // empty series and let onTick() bucket the live trade stream into second
+  // bars going forward. No socket / non-streaming provider → it stays empty
+  // and says so; we never fabricate bars to fill it.
+  if (/^\d+s$/.test(state.timeframe)) {
+    state.candleData = [];
+    state.engineIndicators = {};
+    state.lastBar = null;
+    pushToChart();
+    updateInstrumentBar();
+    status(state.ws
+      ? `building live ${state.timeframe} bars from trades…`
+      : "waiting for live trades…");
+    return;
+  }
   status(`loading ${state.symbol}…`);
   // 5000 = the engine's per-request cap: open with one full page of history
   // so deep scrollback starts loaded instead of paging immediately.
@@ -1009,10 +1025,15 @@ function onTick(t) {
     pushToChart();
     return;
   }
-  if (!state.lastBar) return;
+  // A seconds tape opens with no history, so its FIRST live trade must be
+  // allowed to start bar #1. Every other timeframe still waits for real
+  // history before a tick may extend it (a lone tick must not graft a phantom
+  // 1h bar onto a series that simply failed to load).
+  const tfIsSeconds = /^\d+s$/.test(state.timeframe);
+  if (!state.lastBar && !tfIsSeconds) return;
   const bucket = tfBucketStart(t.ts || Date.now() / 1000, state.timeframe);
   let bar = state.lastBar;
-  if (bucket > bar.time) {
+  if (!bar || bucket > bar.time) {
     bar = { time: bucket, open: t.price, high: t.price, low: t.price, close: t.price };
     state.candleData.push(bar);
   } else {

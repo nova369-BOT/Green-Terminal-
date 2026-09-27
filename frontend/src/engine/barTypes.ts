@@ -117,6 +117,11 @@ export interface TfGroup {
 // (45m, 2h, 8h, 1M, 3M, 6M) are aggregated server-side from a finer native, so
 // every rung returns real candles.
 export const TF_GROUPS: TfGroup[] = [
+  // Seconds are a LIVE tape: the candle API's finest history is 1-minute, so
+  // these have no scrollable history — they build forward by bucketing the
+  // live trade stream (see app.js onTick / tfBucketStart). Empty until trades
+  // arrive; never fabricated.
+  { label: 'Seconds', tfs: ['1s', '5s', '10s', '15s', '30s', '45s'] },
   { label: 'Minutes', tfs: ['1m', '5m', '15m', '30m', '45m'] },
   { label: 'Hours', tfs: ['1h', '2h', '4h', '8h'] },
   { label: 'Days · Weeks · Months', tfs: ['1d', '1w', '1M', '3M', '6M'] },
