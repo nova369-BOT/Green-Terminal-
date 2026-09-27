@@ -4642,3 +4642,132 @@ body { padding-bottom: 22px; padding-left: 62px; }
   display: block;
   background: #05080a;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PHASE 1 — institutional dark shell
+   Existing IDs and JavaScript contracts stay intact. This layer establishes
+   workstation hierarchy, compact density and semantic status treatment.
+   ═══════════════════════════════════════════════════════════════════════ */
+.dark body { background: var(--bg); }
+#topline {
+  min-height: 44px; gap: var(--space-3); padding: 4px var(--space-3);
+  background: var(--bg2); border-bottom-color: var(--edge);
+}
+#conn-bar { min-width: 200px; padding: 3px 6px; }
+#conn-title { font-size: 12px; letter-spacing: .035em; }
+#conn-sub { font-size: 10px; }
+#theme-toggle, #update-btn { min-height: 28px; border-radius: var(--radius-control); }
+#controls {
+  min-height: 36px; padding: 4px var(--space-3);
+  border-bottom-color: var(--brand-gold); background: var(--panel);
+}
+#controls > button, #controls select, nav#timeframes button {
+  min-height: 26px; border-radius: var(--radius-control);
+}
+nav#timeframes button.active {
+  color: var(--bg); background: var(--brand-gold); font-weight: 700;
+}
+
+#rail { background: var(--panel); border-right-color: var(--edge); }
+#rail .rail-btn { min-height: 54px; transition: color .12s, background-color .12s; }
+#rail .rail-btn span { font-size: 8.5px; letter-spacing: .06em; }
+#rail .rail-btn.active, .rail-btn.active {
+  color: var(--text); background: var(--active);
+  box-shadow: inset 3px 0 0 var(--brand-green);
+}
+#rail-mark { border-radius: var(--radius-panel); }
+
+aside#side { width: 272px; background: var(--panel); }
+#wl-tabs { min-height: 34px; }
+#wl-tabs button { padding: 8px 4px; font-size: 10px; }
+#wl-tabs button.active { border-bottom-color: var(--brand-gold); }
+#wl-search { margin: 6px 8px; border-radius: var(--radius-panel); background: var(--bg2); }
+#watchlist .wrow {
+  min-height: 38px; padding: 4px 8px; border-left-width: 3px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 62%, transparent);
+}
+#watchlist .wrow:hover { background: var(--hover); }
+#watchlist .wrow.active { border-left-color: var(--brand-gold); background: var(--active); }
+#watchlist .wsym { font-size: 12.5px; }
+#watchlist .wprice { color: var(--text); font-size: 12px; }
+#watchlist .wchg { font-size: 9.5px; }
+
+#instrument-bar {
+  min-height: 38px; gap: 9px; padding: 5px var(--space-3);
+  background: var(--panel); border-bottom-color: var(--edge);
+}
+#instrument-bar .ib-sym { font-size: 14px; letter-spacing: .025em; }
+#instrument-bar .ib-name { font-family: -apple-system, "Segoe UI", sans-serif; }
+#instrument-bar .ib-price { font-size: 15px; font-weight: 700; }
+#instrument-bar .ib-k { font-size: 9px; letter-spacing: .08em; }
+#instrument-bar .ib-v { font-size: 11px; }
+#instrument-bar .ib-sep { height: 18px; margin: 0 3px; }
+#instrument-bar .ib-live {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 20px;
+  padding: 2px 7px; border: 1px solid var(--edge); border-radius: 999px;
+  font-weight: 700;
+}
+#instrument-bar .ib-live::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+}
+#instrument-bar .ib-live.on {
+  color: var(--up); border-color: color-mix(in srgb, var(--up) 45%, var(--edge));
+  background: color-mix(in srgb, var(--up) 9%, transparent);
+}
+#instrument-bar .ib-live.warn {
+  color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, var(--edge));
+}
+#instrument-bar .ib-live.off { color: var(--dim); }
+
+#info-rail {
+  width: 224px; flex-basis: 224px; padding-top: 0;
+  background: var(--panel); border-left-color: var(--edge);
+}
+#info-rail .ir-sect { padding: 10px 12px 11px; }
+#info-rail .ir-head {
+  margin-bottom: 7px; color: var(--title); font-size: 10px; letter-spacing: .14em;
+}
+#info-rail .ir-row { padding: 2px 0; }
+#info-rail .ir-row span { font-family: -apple-system, "Segoe UI", sans-serif; }
+#info-rail .ir-row b { font-size: 11px; }
+#info-rail .ir-ind b { color: var(--brand-gold); }
+
+/* Keep the view switcher visible and keyboard-accessible. */
+#dock-handle { display: none; }
+#subrail {
+  margin-bottom: 0; padding: 5px; border-radius: 8px;
+  background: var(--panel); box-shadow: 0 8px 24px rgba(0, 0, 0, .42);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  opacity: 1; transform: none; pointer-events: auto; transition: none;
+}
+.subrail-btn {
+  border-radius: var(--radius-panel); padding: 6px 12px;
+  font-size: 10px; letter-spacing: .08em;
+}
+.subrail-btn.active { color: var(--bg); background: var(--brand-gold); }
+
+#term-status {
+  gap: 0; height: 24px; padding: 0 8px; background: var(--bg2);
+}
+#term-status .ts-cell {
+  min-height: 100%; gap: 5px; padding: 0 10px;
+  border-right: 1px solid color-mix(in srgb, var(--edge) 72%, transparent);
+}
+#term-status .ts-cell:first-child { padding-left: 2px; }
+#term-status .ts-right { margin-left: auto; border-right: 0; }
+#term-status .ts-v.warn { color: var(--warning); }
+body { padding-bottom: 24px; }
+#rail { bottom: 24px; }
+body.ws-fullscreen #charts { bottom: 24px; }
+
+@media (max-width: 1280px) {
+  #info-rail { width: 196px; flex-basis: 196px; }
+  aside#side { width: 236px; }
+  #instrument-bar .ib-name, #instrument-bar .ib-meta { display: none; }
+  #term-status .ts-cell:nth-child(2), #term-status .ts-cell:nth-child(8) { display: none; }
+}
+@media (max-width: 980px) {
+  #info-rail { display: none !important; }
+  #instrument-bar { gap: 6px; }
+  #instrument-bar #ib-volume { display: none; }
+}
