@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { X, GripVertical, Palette, Crosshair, SlidersHorizontal } from 'lucide-react';
+import { X, GripVertical, Palette, Crosshair, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
 import { AdvancedColorPicker } from './AdvancedColorPicker';
 import type { Drawing, ChartPoint } from './ChartDrawingOverlay';
 
@@ -203,6 +203,12 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
     const next = levels.map((l, i) => (i === idx ? { ...l, ...patch } : l));
     update({ levelStyles: next });
   };
+  const addLevel = () => {
+    update({ levelStyles: [...levels, { value: 1, visible: true, color }] });
+  };
+  const removeLevel = (idx: number) => {
+    update({ levelStyles: levels.filter((_, i) => i !== idx) });
+  };
 
   const title = TYPE_LABELS[type] || 'Drawing';
 
@@ -368,15 +374,26 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                         step="0.001"
                         value={lvl.value}
                         onChange={(e) => setLevel(i, { value: parseFloat(e.target.value) || 0 })}
-                        className="h-7 w-20 bg-black/30 font-mono text-[12px]"
+                        className="h-7 w-16 bg-black/30 font-mono text-[12px]"
                       />
+                      <span className="w-11 text-right font-mono text-[10px] text-slate-500">{(lvl.value * 100).toFixed(1)}%</span>
                       {useOneColor ? (
                         <div className="h-6 w-6 rounded-md border border-white/10 opacity-40" style={{ backgroundColor: color }} title="Using one color" />
                       ) : (
                         <ColorSwatch value={lvl.color} onChange={(v) => setLevel(i, { color: v })} title={`Level ${lvl.value} color`} />
                       )}
+                      <button type="button" onClick={() => removeLevel(i)} className="ml-auto text-slate-500 transition-colors hover:text-red-400" title="Remove level">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   ))}
+                  <button
+                    type="button"
+                    onClick={addLevel}
+                    className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-teal-400/30 py-1.5 text-[11px] font-medium text-teal-300 transition-colors hover:bg-teal-400/10"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add level
+                  </button>
                 </div>
               </>
             )}
