@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { X, GripVertical, Palette, Crosshair, SlidersHorizontal, Plus, Trash2 } from 'lucide-react';
 import { AdvancedColorPicker } from './AdvancedColorPicker';
 import type { Drawing, ChartPoint } from './ChartDrawingOverlay';
+import { getToolSettings, type Setting } from './tools/toolRegistry';
 
 // ---------------------------------------------------------------------------
 // Green Terminal — advanced per-drawing settings panel.
@@ -139,8 +140,6 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const hasFill = FILL_TYPES.has(type);
   const hasText = TEXT_TYPES.has(type) || INLINE_LABEL_TYPES.has(type);
   const isLevelTool = LEVEL_TYPES.has(type);
-  const isEmoji = type === 'emoji';
-  const isMarker = ['markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'].includes(type);
   const isFib = type === 'fibonacci' || type === 'fibExtension';
   const isGannBox = type === 'gannBox';
   const canExtendLine = LINE_EXTEND_TYPES.has(type);
@@ -189,6 +188,93 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const lineStyle = drawing.lineStyle || 'solid';
   const fillColor = drawing.fillColor || '#2dd4bf';
   const fillOpacity = drawing.fillOpacity ?? 20;
+
+  // Schema-driven contextual settings: each tool declares its own controls in
+  // the tool registry, so only relevant options render. Empty schema => legacy.
+  const schemaSettings = getToolSettings(type);
+  const useSchema = schemaSettings.length > 0;
+  const dv = (k: string, fb: unknown) => {
+    const v = (drawing as unknown as Record<string, unknown>)[k];
+    return v === undefined || v === null ? fb : v;
+  };
+  const renderSetting = (st: Setting, i: number) => {
+    switch (st.kind) {
+      case 'section':
+        return <SectionTitle key={i}>{st.label}</SectionTitle>;
+      case 'note':
+        return <p key={i} className="mt-2 text-[10.5px] leading-relaxed text-slate-500">{st.text}</p>;
+      case 'color':
+        return (
+          <Row key={i} label={st.label}>
+            <ColorSwatch
+              value={dv(st.key, color) as string}
+              onChange={(v) => update({ [st.key]: v } as Partial<Drawing>)}
+              showOpacity={!!st.opacityKey}
+              opacity={st.opacityKey ? (dv(st.opacityKey, 100) as number) : undefined}
+              onOpacityChange={st.opacityKey ? (v: number) => update({ [st.opacityKey!]: v } as Partial<Drawing>) : undefined}
+              title={st.label}
+            />
+          </Row>
+        );
+      case 'slider':
+        return (
+          <Row key={i} label={st.label}>
+            <Slider value={[dv(st.key, st.fallback) as number]} min={st.min} max={st.max} step={st.step} onValueChange={(v) => update({ [st.key]: v[0] } as Partial<Drawing>)} className="w-32" />
+            <span className="w-9 text-right font-mono text-[11px] text-slate-400">{dv(st.key, st.fallback) as number}{st.suffix || ''}</span>
+          </Row>
+        );
+      case 'toggle':
+        return (
+          <Row key={i} label={st.label}>
+            <Switch checked={!!dv(st.key, false)} onCheckedChange={(c) => update({ [st.key]: c } as Partial<Drawing>)} />
+          </Row>
+        );
+      case 'segmented':
+        return (
+          <Row key={i} label={st.label}>
+            <div className="flex gap-1">
+              {st.options.map((o) => (
+                <button key={o.value} type="button" onClick={() => update({ [st.key]: o.value } as Partial<Drawing>)} className={`rounded-md px-2 py-1 text-[11px] transition-colors ${dv(st.key, st.fallback) === o.value ? 'bg-teal-400/15 text-teal-200' : 'text-slate-400 hover:bg-white/5'}`}>{o.label}</button>
+              ))}
+            </div>
+          </Row>
+        );
+      case 'lineStyle':
+        return (
+          <Row key={i} label={st.label}>
+            <div className="flex gap-1">
+              {LINE_STYLES.map((ls) => (
+                <button key={ls.id} type="button" onClick={() => update({ lineStyle: ls.id })} className={`flex h-7 w-11 items-center justify-center rounded-md border transition-colors ${lineStyle === ls.id ? 'border-teal-400/60 bg-teal-400/15' : 'border-white/10 hover:bg-white/5'}`} title={ls.label}>
+                  <svg width="30" height="8" viewBox="0 0 30 8"><line x1="1" y1="4" x2="29" y2="4" stroke={lineStyle === ls.id ? '#2dd4bf' : '#94a3b8'} strokeWidth="2" strokeDasharray={ls.dash} strokeLinecap="round" /></svg>
+                </button>
+              ))}
+            </div>
+          </Row>
+        );
+      case 'fill':
+        return (
+          <Fragment key={i}>
+            <SectionTitle>Background</SectionTitle>
+            <Row label="Fill">
+              <Switch checked={!!drawing.fillColor} onCheckedChange={(c) => update({ fillColor: c ? (drawing.fillColor || fillColor) : undefined })} />
+            </Row>
+            {!!drawing.fillColor && (
+              <>
+                <Row label="Fill color">
+                  <ColorSwatch value={fillColor} onChange={(v) => update({ fillColor: v })} showOpacity opacity={fillOpacity} onOpacityChange={(v) => update({ fillOpacity: v })} title="Fill color" />
+                </Row>
+                <Row label="Fill opacity">
+                  <Slider value={[fillOpacity]} min={0} max={100} step={1} onValueChange={(v) => update({ fillOpacity: v[0] })} className="w-32" />
+                  <span className="w-9 text-right font-mono text-[11px] text-slate-400">{fillOpacity}%</span>
+                </Row>
+              </>
+            )}
+          </Fragment>
+        );
+      default:
+        return null;
+    }
+  };
   const showLabels = drawing.showLabels !== false;
   const useOneColor = !!drawing.useOneColor;
 
@@ -330,103 +416,64 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         {/* ---------------- LOOK ---------------- */}
         <TabsContent value="style" className="mt-0 px-4 pb-2">
           <ScrollArea className="h-[320px] pr-3">
-            {isEmoji ? (
-              <>
-                {/* Emoji is a glyph sticker: colour/thickness/line-style do not apply.
-                    Only size (stored in strokeWidth) and opacity are meaningful. */}
-                <SectionTitle>Emoji</SectionTitle>
-                <Row label="Size">
-                  <Slider value={[strokeWidth || 28]} min={12} max={200} step={2} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
-                  <span className="w-8 text-right font-mono text-[11px] text-slate-400">{strokeWidth || 28}</span>
-                </Row>
-                <Row label="Opacity">
-                  <Slider value={[opacity]} min={10} max={100} step={1} onValueChange={(v) => update({ opacity: v[0] })} className="w-32" />
-                  <span className="w-9 text-right font-mono text-[11px] text-slate-400">{opacity}%</span>
-                </Row>
-                <p className="mt-2 text-[10.5px] leading-relaxed text-slate-500">Tip: drag the teal handle at the emoji's corner to resize it directly on the chart.</p>
-              </>
-            ) : isMarker ? (
-              <>
-                {/* Marker is a single-anchor icon: colour, size and opacity are the
-                    only meaningful controls (no thickness / line-style / fill). */}
-                <SectionTitle>Marker</SectionTitle>
-                <Row label="Color">
-                  <ColorSwatch value={color} onChange={(v) => update({ color: v })} showOpacity opacity={opacity} onOpacityChange={(v) => update({ opacity: v })} title="Marker color" />
-                </Row>
-                <Row label="Size">
-                  <Slider value={[strokeWidth || 16]} min={10} max={120} step={2} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
-                  <span className="w-8 text-right font-mono text-[11px] text-slate-400">{strokeWidth || 16}</span>
-                </Row>
-                <p className="mt-2 text-[10.5px] leading-relaxed text-slate-500">Tip: drag the teal handle at the marker's corner to resize it on the chart.</p>
-              </>
+            {useSchema ? (
+              schemaSettings.map((st, i) => renderSetting(st, i))
             ) : (
-            <>
-            <SectionTitle>Line</SectionTitle>
-            <Row label={isLongShort ? 'Profit color' : 'Color'}>
-              <ColorSwatch value={color} onChange={(v) => update({ color: v })} showOpacity={!isLongShort} opacity={opacity} onOpacityChange={(v) => update({ opacity: v })} title={isLongShort ? 'Profit color' : 'Line color'} />
-            </Row>
-            <Row label="Thickness">
-              <Slider value={[strokeWidth]} min={1} max={8} step={1} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
-              <span className="w-6 text-right font-mono text-[11px] text-slate-400">{strokeWidth}</span>
-            </Row>
-            <Row label="Style">
-              <div className="flex gap-1">
-                {LINE_STYLES.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => update({ lineStyle: s.id })}
-                    className={`flex h-7 w-11 items-center justify-center rounded-md border transition-colors ${lineStyle === s.id ? 'border-teal-400/60 bg-teal-400/15' : 'border-white/10 hover:bg-white/5'}`}
-                    title={s.label}
-                  >
-                    <svg width="30" height="8" viewBox="0 0 30 8"><line x1="1" y1="4" x2="29" y2="4" stroke={lineStyle === s.id ? '#2dd4bf' : '#94a3b8'} strokeWidth="2" strokeDasharray={s.dash} strokeLinecap="round" /></svg>
-                  </button>
-                ))}
-              </div>
-            </Row>
-            </>
-            )}
-
-            {hasFill && (
               <>
-                <SectionTitle>Background</SectionTitle>
-                {!isLongShort && (
-                  <Row label="Fill">
-                    <Switch checked={!!drawing.fillColor} onCheckedChange={(c) => update({ fillColor: c ? (drawing.fillColor || fillColor) : undefined })} />
-                  </Row>
-                )}
-                {(isLongShort || !!drawing.fillColor) && (
+                <SectionTitle>Line</SectionTitle>
+                <Row label={isLongShort ? 'Profit color' : 'Color'}>
+                  <ColorSwatch value={color} onChange={(v) => update({ color: v })} showOpacity={!isLongShort} opacity={opacity} onOpacityChange={(v) => update({ opacity: v })} title={isLongShort ? 'Profit color' : 'Line color'} />
+                </Row>
+                <Row label="Thickness">
+                  <Slider value={[strokeWidth]} min={1} max={8} step={1} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
+                  <span className="w-6 text-right font-mono text-[11px] text-slate-400">{strokeWidth}</span>
+                </Row>
+                <Row label="Style">
+                  <div className="flex gap-1">
+                    {LINE_STYLES.map((ls) => (
+                      <button key={ls.id} type="button" onClick={() => update({ lineStyle: ls.id })} className={`flex h-7 w-11 items-center justify-center rounded-md border transition-colors ${lineStyle === ls.id ? 'border-teal-400/60 bg-teal-400/15' : 'border-white/10 hover:bg-white/5'}`} title={ls.label}>
+                        <svg width="30" height="8" viewBox="0 0 30 8"><line x1="1" y1="4" x2="29" y2="4" stroke={lineStyle === ls.id ? '#2dd4bf' : '#94a3b8'} strokeWidth="2" strokeDasharray={ls.dash} strokeLinecap="round" /></svg>
+                      </button>
+                    ))}
+                  </div>
+                </Row>
+                {hasFill && (
                   <>
-                    <Row label={isLongShort ? 'Stop color' : 'Fill color'}>
-                      <ColorSwatch value={fillColor} onChange={(v) => update({ fillColor: v })} showOpacity={!isLongShort} opacity={fillOpacity} onOpacityChange={(v) => update({ fillOpacity: v })} title={isLongShort ? 'Stop color' : 'Fill color'} />
-                    </Row>
+                    <SectionTitle>Background</SectionTitle>
                     {!isLongShort && (
-                      <Row label="Fill opacity">
-                        <Slider value={[fillOpacity]} min={0} max={100} step={1} onValueChange={(v) => update({ fillOpacity: v[0] })} className="w-32" />
-                        <span className="w-9 text-right font-mono text-[11px] text-slate-400">{fillOpacity}%</span>
+                      <Row label="Fill">
+                        <Switch checked={!!drawing.fillColor} onCheckedChange={(c) => update({ fillColor: c ? (drawing.fillColor || fillColor) : undefined })} />
                       </Row>
+                    )}
+                    {(isLongShort || !!drawing.fillColor) && (
+                      <>
+                        <Row label={isLongShort ? 'Stop color' : 'Fill color'}>
+                          <ColorSwatch value={fillColor} onChange={(v) => update({ fillColor: v })} showOpacity={!isLongShort} opacity={fillOpacity} onOpacityChange={(v) => update({ fillOpacity: v })} title={isLongShort ? 'Stop color' : 'Fill color'} />
+                        </Row>
+                        {!isLongShort && (
+                          <Row label="Fill opacity">
+                            <Slider value={[fillOpacity]} min={0} max={100} step={1} onValueChange={(v) => update({ fillOpacity: v[0] })} className="w-32" />
+                            <span className="w-9 text-right font-mono text-[11px] text-slate-400">{fillOpacity}%</span>
+                          </Row>
+                        )}
+                      </>
                     )}
                   </>
                 )}
-              </>
-            )}
-
-            {hasText && (
-              <>
-                <SectionTitle>Text</SectionTitle>
-                <Row label="Text color">
-                  <ColorSwatch value={drawing.textColor || color} onChange={(v) => update({ textColor: v })} title="Text color" />
-                </Row>
-                <Row label="Font size">
-                  <Slider value={[drawing.textFontSize ?? 14]} min={8} max={48} step={1} onValueChange={(v) => update({ textFontSize: v[0] })} className="w-32" />
-                  <span className="w-6 text-right font-mono text-[11px] text-slate-400">{drawing.textFontSize ?? 14}</span>
-                </Row>
-                <Row label="Bold">
-                  <Switch checked={!!drawing.textBold} onCheckedChange={(c) => update({ textBold: c })} />
-                </Row>
-                <Row label="Italic">
-                  <Switch checked={!!drawing.textItalic} onCheckedChange={(c) => update({ textItalic: c })} />
-                </Row>
+                {hasText && (
+                  <>
+                    <SectionTitle>Text</SectionTitle>
+                    <Row label="Text color">
+                      <ColorSwatch value={drawing.textColor || color} onChange={(v) => update({ textColor: v })} title="Text color" />
+                    </Row>
+                    <Row label="Font size">
+                      <Slider value={[drawing.textFontSize ?? 14]} min={8} max={48} step={1} onValueChange={(v) => update({ textFontSize: v[0] })} className="w-32" />
+                      <span className="w-6 text-right font-mono text-[11px] text-slate-400">{drawing.textFontSize ?? 14}</span>
+                    </Row>
+                    <Row label="Bold"><Switch checked={!!drawing.textBold} onCheckedChange={(c) => update({ textBold: c })} /></Row>
+                    <Row label="Italic"><Switch checked={!!drawing.textItalic} onCheckedChange={(c) => update({ textItalic: c })} /></Row>
+                  </>
+                )}
               </>
             )}
 
