@@ -428,15 +428,17 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                   <Slider value={[strokeWidth]} min={1} max={8} step={1} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
                   <span className="w-6 text-right font-mono text-[11px] text-slate-400">{strokeWidth}</span>
                 </Row>
-                <Row label="Style">
-                  <div className="flex gap-1">
-                    {LINE_STYLES.map((ls) => (
-                      <button key={ls.id} type="button" onClick={() => update({ lineStyle: ls.id })} className={`flex h-7 w-11 items-center justify-center rounded-md border transition-colors ${lineStyle === ls.id ? 'border-teal-400/60 bg-teal-400/15' : 'border-white/10 hover:bg-white/5'}`} title={ls.label}>
-                        <svg width="30" height="8" viewBox="0 0 30 8"><line x1="1" y1="4" x2="29" y2="4" stroke={lineStyle === ls.id ? '#2dd4bf' : '#94a3b8'} strokeWidth="2" strokeDasharray={ls.dash} strokeLinecap="round" /></svg>
-                      </button>
-                    ))}
-                  </div>
-                </Row>
+                {!isLongShort && (
+                  <Row label="Style">
+                    <div className="flex gap-1">
+                      {LINE_STYLES.map((ls) => (
+                        <button key={ls.id} type="button" onClick={() => update({ lineStyle: ls.id })} className={`flex h-7 w-11 items-center justify-center rounded-md border transition-colors ${lineStyle === ls.id ? 'border-teal-400/60 bg-teal-400/15' : 'border-white/10 hover:bg-white/5'}`} title={ls.label}>
+                          <svg width="30" height="8" viewBox="0 0 30 8"><line x1="1" y1="4" x2="29" y2="4" stroke={lineStyle === ls.id ? '#2dd4bf' : '#94a3b8'} strokeWidth="2" strokeDasharray={ls.dash} strokeLinecap="round" /></svg>
+                        </button>
+                      ))}
+                    </div>
+                  </Row>
+                )}
                 {hasFill && (
                   <>
                     <SectionTitle>Background</SectionTitle>
