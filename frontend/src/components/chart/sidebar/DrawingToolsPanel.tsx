@@ -151,7 +151,7 @@ export default function DrawingToolsPanel({
   const [showLoginForFavorites, setShowLoginForFavorites] = useState(false);
   const [drawingFavorites, setDrawingFavorites] = useState<string[]>(getDrawingFavorites);
   // Track which sub-tool is selected for each group's primary button display
-  const [selectedTrendTool, setSelectedTrendTool] = useState<'trend' | 'trendRay' | 'parallelChannel' | 'straightArrow'>('trend');
+  const [selectedTrendTool, setSelectedTrendTool] = useState<'trend' | 'trendRay' | 'parallelChannel' | 'straightArrow' | 'flatChannel' | 'regressionTrend'>('trend');
   const [selectedLineTool, setSelectedLineTool] = useState<'horizontal' | 'horizontalRay' | 'vertical' | 'line' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline'>('horizontal');
   const [selectedFibTool, setSelectedFibTool] = useState<'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime'>('fibonacci');
   const [selectedShapeTool, setSelectedShapeTool] = useState<'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart'>('rectangle');
@@ -163,7 +163,7 @@ export default function DrawingToolsPanel({
   const [selectedElliottTool, setSelectedElliottTool] = useState<'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo'>('elliottImpulse');
   const [selectedTextTool, setSelectedTextTool] = useState<'text' | 'note' | 'callout' | 'priceLabel' | 'signpost'>('text');
   const [selectedEmoji, setSelectedEmoji] = useState<string>(emojiSelection.current);
-  const [selectedVolumeTool, setSelectedVolumeTool] = useState<'anchoredVwap' | 'fixedVolumeProfile'>('anchoredVwap');
+  const [selectedVolumeTool, setSelectedVolumeTool] = useState<'anchoredVwap' | 'fixedVolumeProfile' | 'anchoredVolumeProfile'>('anchoredVwap');
   // Popover open states
   const [trendToolMenuOpen, setTrendToolMenuOpen] = useState(false);
   const [lineToolMenuOpen, setLineToolMenuOpen] = useState(false);
@@ -178,6 +178,8 @@ export default function DrawingToolsPanel({
   const [textToolMenuOpen, setTextToolMenuOpen] = useState(false);
   const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
   const [volumeToolMenuOpen, setVolumeToolMenuOpen] = useState(false);
+  const [selectedCycleTool, setSelectedCycleTool] = useState<'cyclicLines' | 'sineLine'>('cyclicLines');
+  const [cycleToolMenuOpen, setCycleToolMenuOpen] = useState(false);
 
   // Auth-gated favorite toggle: show login modal if not signed in
   const handleToggleFavorite = useCallback((toolId: string) => {
@@ -244,6 +246,7 @@ export default function DrawingToolsPanel({
     parallelChannel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="18" x2="22" y2="10" /><line x1="2" y1="10" x2="22" y2="2" /></svg>,
     straightArrow: <ArrowRight className="h-[18px] w-[18px]" />,
     flatChannel: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="4" x2="22" y2="4" /><line x1="2" y1="20" x2="16" y2="6" /></svg>,
+    regressionTrend: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="19" x2="21" y2="6" /><circle cx="7" cy="16" r="1.1" fill="currentColor" stroke="none" /><circle cx="11" cy="15" r="1.1" fill="currentColor" stroke="none" /><circle cx="15" cy="9" r="1.1" fill="currentColor" stroke="none" /><circle cx="19" cy="9" r="1.1" fill="currentColor" stroke="none" /></svg>,
   };
   const pitchforkIcons: Record<string, React.ReactNode> = {
     pitchfork: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="9" y2="12" /><line x1="9" y1="4" x2="9" y2="20" /><line x1="9" y1="4" x2="22" y2="4" /><line x1="9" y1="12" x2="22" y2="12" /><line x1="9" y1="20" x2="22" y2="20" /></svg>,
@@ -290,10 +293,16 @@ export default function DrawingToolsPanel({
   const volumeIcons: Record<string, React.ReactNode> = {
     anchoredVwap: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18c4 0 5-11 9-11s5 8 9 8" /><circle cx="3" cy="18" r="1.8" fill="currentColor" /></svg>,
     fixedVolumeProfile: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="4" x2="4" y2="20" /><line x1="4" y1="6.5" x2="12" y2="6.5" /><line x1="4" y1="10.5" x2="20" y2="10.5" /><line x1="4" y1="14.5" x2="10" y2="14.5" /><line x1="4" y1="18.5" x2="15" y2="18.5" /></svg>,
+    anchoredVolumeProfile: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="4" x2="5" y2="20" /><line x1="5" y1="7" x2="12" y2="7" /><line x1="5" y1="11" x2="19" y2="11" /><line x1="5" y1="15" x2="10" y2="15" /><circle cx="5" cy="20" r="1.7" fill="currentColor" /></svg>,
   };
   const volumeLabels: Record<string, string> = {
-    anchoredVwap: 'Anchored VWAP', fixedVolumeProfile: 'Fixed Range Volume Profile',
+    anchoredVwap: 'Anchored VWAP', fixedVolumeProfile: 'Fixed Range Volume Profile', anchoredVolumeProfile: 'Anchored Volume Profile',
   };
+  const cycleIcons: Record<string, React.ReactNode> = {
+    cyclicLines: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="3" x2="5" y2="21" /><line x1="12" y1="3" x2="12" y2="21" opacity="0.75" /><line x1="19" y1="3" x2="19" y2="21" opacity="0.55" /></svg>,
+    sineLine: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12 Q 7 3 11 12 T 19 12" /></svg>,
+  };
+  const cycleLabels: Record<string, string> = { cyclicLines: 'Cyclic Lines', sineLine: 'Sine Line' };
   const lineIcons: Record<string, React.ReactNode> = {
     horizontal: <Minus className="h-[18px] w-[18px]" />,
     horizontalRay: <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="4" cy="12" r="1.5" fill="currentColor" /><line x1="5.5" y1="12" x2="20" y2="12" /><polyline points="17,9 20,12 17,15" /></svg>,
@@ -386,7 +395,7 @@ export default function DrawingToolsPanel({
         {/* Trend Lines Group */}
         {renderToolGroup(
           trendToolMenuOpen, setTrendToolMenuOpen, selectedTrendTool,
-          ['trend', 'trendRay', 'parallelChannel', 'straightArrow', 'flatChannel'],
+          ['trend', 'trendRay', 'parallelChannel', 'straightArrow', 'flatChannel', 'regressionTrend'],
           trendIcons[selectedTrendTool],
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Trend Lines</div>
@@ -396,6 +405,7 @@ export default function DrawingToolsPanel({
               { id: 'parallelChannel', label: 'Parallel Channel' },
               { id: 'straightArrow', label: 'Arrow' },
               { id: 'flatChannel', label: 'Flat Top/Bottom' },
+              { id: 'regressionTrend', label: 'Regression Trend' },
             ].map(t => (
               <ToolMenuItem key={t.id} toolId={t.id} label={t.label} icon={trendIcons[t.id]} isActive={activeTool === t.id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedTrendTool, setTrendToolMenuOpen, t.id)} onToggleFavorite={handleToggleFavorite} />
             ))}
@@ -584,12 +594,24 @@ export default function DrawingToolsPanel({
         {/* Volume Group */}
         {renderToolGroup(
           volumeToolMenuOpen, setVolumeToolMenuOpen, selectedVolumeTool,
-          ['anchoredVwap', 'fixedVolumeProfile'],
+          ['anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile'],
           volumeIcons[selectedVolumeTool],
           <div className="flex flex-col gap-px py-1">
             <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Volume</div>
-            {['anchoredVwap', 'fixedVolumeProfile'].map(id => (
+            {['anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile'].map(id => (
               <ToolMenuItem key={id} toolId={id} label={volumeLabels[id]} icon={volumeIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedVolumeTool, setVolumeToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
+            ))}
+          </div>
+        )}
+        {/* Cycles Group */}
+        {renderToolGroup(
+          cycleToolMenuOpen, setCycleToolMenuOpen, selectedCycleTool,
+          ['cyclicLines', 'sineLine'],
+          cycleIcons[selectedCycleTool],
+          <div className="flex flex-col gap-px py-1">
+            <div className="px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Cycles</div>
+            {['cyclicLines', 'sineLine'].map(id => (
+              <ToolMenuItem key={id} toolId={id} label={cycleLabels[id]} icon={cycleIcons[id]} isActive={activeTool === id} drawingFavorites={drawingFavorites} onSelect={makeSelectHandler(setSelectedCycleTool, setCycleToolMenuOpen, id)} onToggleFavorite={handleToggleFavorite} />
             ))}
           </div>
         )}
