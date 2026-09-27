@@ -47,6 +47,7 @@ const FILL_TYPES = new Set<string>([
 const INLINE_LABEL_TYPES = new Set<string>(['trend', 'line', 'rectangle']);
 const TEXT_TYPES = new Set<string>(['text', 'note', 'callout', 'signpost', 'priceLabel']);
 const LEVEL_TYPES = new Set<string>(['gannBox', 'fibonacci', 'fibExtension']);
+const LINE_EXTEND_TYPES = new Set<string>(['trend', 'line', 'ray', 'trendRay', 'extendedLine', 'straightArrow', 'infoLine']);
 
 const TYPE_LABELS: Record<string, string> = {
   gannBox: 'Gann Box', gannSquare: 'Gann Square', gannFan: 'Gann Fan', gannSquareFixed: 'Gann Square Fixed',
@@ -136,6 +137,9 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const hasFill = FILL_TYPES.has(type);
   const hasText = TEXT_TYPES.has(type) || INLINE_LABEL_TYPES.has(type);
   const isLevelTool = LEVEL_TYPES.has(type);
+  const isFib = type === 'fibonacci' || type === 'fibExtension';
+  const isGannBox = type === 'gannBox';
+  const canExtendLine = LINE_EXTEND_TYPES.has(type);
   const isFreehand = (drawing.points?.length || 0) > 6 || type === 'brush' || type === 'highlighter';
 
   // Snapshot for Cancel/revert.
@@ -241,6 +245,9 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         textFontSize: s.textFontSize, textBold: s.textBold, textItalic: s.textItalic,
         text: s.text, levelStyles: s.levelStyles, useOneColor: s.useOneColor,
         showLabels: s.showLabels, locked: s.locked, points: s.points,
+        reverse: s.reverse, extendLeft: s.extendLeft, extendRight: s.extendRight,
+        topLabels: s.topLabels, bottomLabels: s.bottomLabels, gannAngles: s.gannAngles,
+        fibLabelMode: s.fibLabelMode,
       });
     }
     onOpenChange(false);
@@ -370,6 +377,47 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                 </div>
               </>
             )}
+
+            {isFib && (
+              <>
+                <SectionTitle>Fib options</SectionTitle>
+                <Row label="Reverse"><Switch checked={!!drawing.reverse} onCheckedChange={(c) => update({ reverse: c })} /></Row>
+                <Row label="Extend left"><Switch checked={!!drawing.extendLeft} onCheckedChange={(c) => update({ extendLeft: c })} /></Row>
+                <Row label="Extend right"><Switch checked={!!drawing.extendRight} onCheckedChange={(c) => update({ extendRight: c })} /></Row>
+                <Row label="Labels">
+                  <div className="flex gap-1">
+                    {(['percent', 'price', 'both'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => update({ fibLabelMode: m })}
+                        className={`rounded-md px-2 py-1 text-[11px] transition-colors ${(drawing.fibLabelMode || 'both') === m ? 'bg-teal-400/15 text-teal-200' : 'text-slate-400 hover:bg-white/5'}`}
+                      >
+                        {m === 'percent' ? '%' : m === 'price' ? 'Price' : 'Both'}
+                      </button>
+                    ))}
+                  </div>
+                </Row>
+              </>
+            )}
+
+            {isGannBox && (
+              <>
+                <SectionTitle>Gann options</SectionTitle>
+                <Row label="Reverse"><Switch checked={!!drawing.reverse} onCheckedChange={(c) => update({ reverse: c })} /></Row>
+                <Row label="Top labels"><Switch checked={drawing.topLabels !== false} onCheckedChange={(c) => update({ topLabels: c })} /></Row>
+                <Row label="Bottom labels"><Switch checked={drawing.bottomLabels !== false} onCheckedChange={(c) => update({ bottomLabels: c })} /></Row>
+                <Row label="Angles"><Switch checked={!!drawing.gannAngles} onCheckedChange={(c) => update({ gannAngles: c })} /></Row>
+              </>
+            )}
+
+            {canExtendLine && (
+              <>
+                <SectionTitle>Line options</SectionTitle>
+                <Row label="Extend left"><Switch checked={!!drawing.extendLeft} onCheckedChange={(c) => update({ extendLeft: c })} /></Row>
+                <Row label="Extend right"><Switch checked={!!drawing.extendRight} onCheckedChange={(c) => update({ extendRight: c })} /></Row>
+              </>
+            )}
           </ScrollArea>
         </TabsContent>
 
@@ -429,7 +477,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
               <Slider value={[opacity]} min={0} max={100} step={1} onValueChange={(v) => update({ opacity: v[0] })} className="w-32" />
               <span className="w-9 text-right font-mono text-[11px] text-slate-400">{opacity}%</span>
             </Row>
-            {(isLevelTool || type.startsWith('gann') || type.startsWith('fib')) && (
+            {isFib && (
               <Row label="Show labels">
                 <Switch checked={showLabels} onCheckedChange={(c) => update({ showLabels: c })} />
               </Row>

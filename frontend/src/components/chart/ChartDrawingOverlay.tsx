@@ -86,6 +86,13 @@ export type Drawing = {
   levelStyles?: { value: number; visible: boolean; color: string }[];
   useOneColor?: boolean; // Level tools: paint every level with the base `color`.
   showLabels?: boolean;  // Level tools: show/hide level labels (default true).
+  reverse?: boolean;      // Fib/Gann: flip level order.
+  extendLeft?: boolean;   // Lines/Fib: extend to the left edge.
+  extendRight?: boolean;  // Lines/Fib: extend to the right edge.
+  topLabels?: boolean;    // Gann Box: labels along the top edge (default true).
+  bottomLabels?: boolean; // Gann Box: labels along the bottom edge (default true).
+  gannAngles?: boolean;   // Gann Box: draw diagonal angle lines.
+  fibLabelMode?: 'percent' | 'price' | 'both'; // Fib label content.
   // Inline text-label styling for drawings that carry a `text` payload (trend, line, rectangle). Separate from the type='text' drawing, which reuses strokeWidth as fontSize.
   textFontSize?: number;
   textBold?: boolean;
@@ -4110,16 +4117,22 @@ const ChartDrawingOverlayComponent = ({
       const nx = -dy / segLen;
       const ny = dx / segLen;
       const sideSign = ny > 0 ? -1 : 1;
+      const ux = dx / segLen, uy = dy / segLen;
+      const EXT = 6000;
+      const eX1 = drawing.extendLeft ? p1.x - ux * EXT : p1.x;
+      const eY1 = drawing.extendLeft ? p1.y - uy * EXT : p1.y;
+      const eX2 = drawing.extendRight ? p2.x + ux * EXT : p2.x;
+      const eY2 = drawing.extendRight ? p2.y + uy * EXT : p2.y;
       const labelX = midX + nx * 12 * sideSign;
       const labelY = midY + ny * 12 * sideSign;
 
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
           <line
-            x1={p1.x}
-            y1={p1.y}
-            x2={p2.x}
-            y2={p2.y}
+            x1={eX1}
+            y1={eY1}
+            x2={eX2}
+            y2={eY2}
             stroke={drawingColor}
             strokeWidth={drawingStrokeWidth}
             strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
@@ -4128,10 +4141,10 @@ const ChartDrawingOverlayComponent = ({
             style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }}
           />
           <line
-            x1={p1.x}
-            y1={p1.y}
-            x2={p2.x}
-            y2={p2.y}
+            x1={eX1}
+            y1={eY1}
+            x2={eX2}
+            y2={eY2}
             stroke={drawingColor}
             strokeWidth={drawingStrokeWidth}
             strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
@@ -4842,7 +4855,12 @@ const ChartDrawingOverlayComponent = ({
         ? drawing.levelStyles
         : GB_DEF_R.map((v, i) => ({ value: v, visible: true, color: GB_DEF_C[i] }));
       const gbOne = !!drawing.useOneColor;
-      const gbShowLabels = drawing.showLabels !== false;
+      const gbTop = drawing.topLabels !== false;
+      const gbBot = drawing.bottomLabels !== false;
+      const gbShowLabels = gbTop || gbBot;
+      const gbRev = !!drawing.reverse;
+      const gbAngles = !!drawing.gannAngles;
+      const gpos = (fv: number) => (gbRev ? 1 - fv : fv);
       const ratios = gbLevels.map(l => l.value);
       const LVLC = gbLevels.map(l => (gbOne ? drawingColor : l.color));
       const GBVIS = gbLevels.map(l => l.visible !== false);
@@ -4859,17 +4877,17 @@ const ChartDrawingOverlayComponent = ({
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
           {ratios.slice(0, -1).map((fv, i) => {
-            const yA = y0 + h * fv, yB = y0 + h * ratios[i + 1];
+            const yA = y0 + h * gpos(fv), yB = y0 + h * gpos(ratios[i + 1]);
             if (!GBVIS[i]) return null;
             return <rect key={`gb-hb-${i}`} x={x0} y={Math.min(yA, yB)} width={w} height={Math.abs(yB - yA)} fill={LVLC[i]} fillOpacity={0.055} style={{ pointerEvents: 'none' }} />;
           })}
           {ratios.slice(0, -1).map((fv, i) => {
-            const xA = x0 + w * fv, xB = x0 + w * ratios[i + 1];
+            const xA = x0 + w * gpos(fv), xB = x0 + w * gpos(ratios[i + 1]);
             if (!GBVIS[i]) return null;
             return <rect key={`gb-vb-${i}`} x={Math.min(xA, xB)} y={y0} width={Math.abs(xB - xA)} height={h} fill={LVLC[i]} fillOpacity={0.04} style={{ pointerEvents: 'none' }} />;
           })}
           {ratios.map((fv, i) => {
-            const yl = y0 + h * fv;
+            const yl = y0 + h * gpos(fv);
             const c = LVLC[i];
             if (!GBVIS[i]) return null;
             return (
@@ -4881,17 +4899,23 @@ const ChartDrawingOverlayComponent = ({
             );
           })}
           {ratios.map((fv, i) => {
-            const xl = x0 + w * fv;
+            const xl = x0 + w * gpos(fv);
             const c = LVLC[i];
             if (!GBVIS[i]) return null;
             return (
               <g key={`gb-t-${i}`}>
                 <line x1={xl} y1={y0} x2={xl} y2={y1} stroke={c} strokeWidth={1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
-                {gbShowLabels && gbPill(xl, y0 - 6, String(fv), c, 'middle')}
-                {gbShowLabels && gbPill(xl, y1 + 15, String(fv), c, 'middle')}
+                {gbTop && gbPill(xl, y0 - 6, String(fv), c, 'middle')}
+                {gbBot && gbPill(xl, y1 + 15, String(fv), c, 'middle')}
               </g>
             );
           })}
+          {gbAngles && (
+            <>
+              <line x1={x0} y1={y0} x2={x1} y2={y1} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.55} strokeDasharray="5,3" style={{ pointerEvents: 'none' }} />
+              <line x1={x0} y1={y1} x2={x1} y2={y0} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.55} strokeDasharray="5,3" style={{ pointerEvents: 'none' }} />
+            </>
+          )}
           <rect x={x0} y={y0} width={w} height={h} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeOpacity={0.8} style={{ pointerEvents: 'none' }} />
           <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
           {(isHovered || isSelected) && (
@@ -5324,6 +5348,11 @@ const ChartDrawingOverlayComponent = ({
       const fibOne = !!drawing.useOneColor;
       const fibShowLabels = drawing.showLabels !== false;
       const levels = fibStyles ? fibStyles.map(s => s.value) : (drawing.fibLevels || [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
+      const fibRev = !!drawing.reverse;
+      const fibLabelMode = drawing.fibLabelMode || 'both';
+      const fibCW = (containerRef.current?.clientWidth || 1200) - (chartBounds?.priceAxisWidth || 0);
+      const fibLX = drawing.extendLeft ? 0 : Math.min(p1.x, p2.x);
+      const fibRX = drawing.extendRight ? fibCW : Math.max(p1.x, p2.x);
 
       // For fibExtension, remap so the topmost level lands on the second handle
       // (i.e. the bounding rectangle covers all levels, not just 0-100%). For
@@ -5356,7 +5385,8 @@ const ChartDrawingOverlayComponent = ({
             style={{ cursor: 'move', pointerEvents: 'all' }}
           />
           {levels.map((level, li) => {
-            const t = level / maxLevel;
+            const t0 = level / maxLevel;
+            const t = fibRev ? (1 - t0) : t0;
             const y = p1.y + (p2.y - p1.y) * t;
             const price = startChart.price + priceRange * t;
             const percentage = (level * 100).toFixed(1);
@@ -5367,9 +5397,9 @@ const ChartDrawingOverlayComponent = ({
             return (
               <g key={li} opacity={strokeOpacity}>
                 <line
-                  x1={Math.min(p1.x, p2.x)}
+                  x1={fibLX}
                   y1={y}
-                  x2={Math.max(p1.x, p2.x)}
+                  x2={fibRX}
                   y2={y}
                   stroke={lineC}
                   strokeWidth="1"
@@ -5378,14 +5408,14 @@ const ChartDrawingOverlayComponent = ({
                 />
                 {fibShowLabels && (
                 <text
-                  x={Math.max(p1.x, p2.x) + 5}
+                  x={fibRX + 5}
                   y={y - 2}
                   fill={lineC}
                   fontSize="11"
                   fontWeight="600"
                   style={{ pointerEvents: 'none', userSelect: 'none' }}
                 >
-                  {percentage}% ({price.toFixed(2)})
+                  {fibLabelMode === 'percent' ? `${percentage}%` : fibLabelMode === 'price' ? price.toFixed(2) : `${percentage}% (${price.toFixed(2)})`}
                 </text>
                 )}
               </g>
