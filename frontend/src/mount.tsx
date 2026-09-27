@@ -575,7 +575,10 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const [railSide, setRailSide] = useState<'left' | 'right'>(() => {
     try { return (localStorage.getItem('gt-rail-side') as 'left' | 'right') || 'left'; } catch { return 'left'; }
   });
-  const [railDropSide, setRailDropSide] = useState<'left' | 'right' | null>(null);
+  // While dragging the rail grip we track live cursor position + the side it
+  // would snap to, so a floating "ghost" chip can follow the pointer and make
+  // the drag genuinely visible (not just a static edge tint).
+  const [railDrag, setRailDrag] = useState<{ x: number; y: number; side: 'left' | 'right' } | null>(null);
   const commitRailSide = (side: 'left' | 'right') => {
     setRailSide(side);
     try { localStorage.setItem('gt-rail-side', side); } catch { /* ignore */ }
@@ -583,14 +586,16 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const beginRailDrag = (e: React.MouseEvent) => {
     e.preventDefault();
     const pick = (x: number): 'left' | 'right' => (x > window.innerWidth / 2 ? 'right' : 'left');
-    const move = (ev: MouseEvent) => setRailDropSide(pick(ev.clientX));
+    const move = (ev: MouseEvent) => setRailDrag({ x: ev.clientX, y: ev.clientY, side: pick(ev.clientX) });
     const up = (ev: MouseEvent) => {
       commitRailSide(pick(ev.clientX));
-      setRailDropSide(null);
+      setRailDrag(null);
+      document.body.style.userSelect = '';
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
     };
-    setRailDropSide(pick(e.clientX));
+    setRailDrag({ x: e.clientX, y: e.clientY, side: pick(e.clientX) });
+    document.body.style.userSelect = 'none';
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   };
@@ -625,10 +630,30 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
 
   return (
     <div className="relative h-full w-full flex">
-      {railDropSide && (
+      {railDrag && (
         <>
-          <div className={`pointer-events-none absolute inset-y-0 left-0 z-50 w-16 transition-colors ${railDropSide === 'left' ? 'bg-teal-400/15 border-r-2 border-teal-400' : ''}`} />
-          <div className={`pointer-events-none absolute inset-y-0 right-0 z-50 w-16 transition-colors ${railDropSide === 'right' ? 'bg-teal-400/15 border-l-2 border-teal-400' : ''}`} />
+          {/* Drop-zone previews: the target edge lights up teal so you can see
+              where the rail will land before releasing. */}
+          <div className={`pointer-events-none absolute inset-y-0 left-0 z-50 w-16 transition-all duration-150 ${railDrag.side === 'left' ? 'bg-gradient-to-r from-teal-400/25 to-transparent border-r-2 border-teal-400' : ''}`} />
+          <div className={`pointer-events-none absolute inset-y-0 right-0 z-50 w-16 transition-all duration-150 ${railDrag.side === 'right' ? 'bg-gradient-to-l from-teal-400/25 to-transparent border-l-2 border-teal-400' : ''}`} />
+          {/* Floating drag ghost that follows the cursor — makes the move
+              tactile and shows exactly what's being docked and where. */}
+          <div
+            className="pointer-events-none fixed z-[70] flex items-center gap-2 rounded-lg border border-teal-400/60 bg-[var(--panel)] px-2.5 py-1.5 shadow-xl shadow-black/50 backdrop-blur-sm"
+            style={{ left: railDrag.x + 16, top: railDrag.y + 16 }}
+          >
+            <div className="grid grid-cols-3 grid-rows-2 gap-[3px]">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <span key={i} className="h-[3px] w-[3px] rounded-full bg-teal-400" />
+              ))}
+            </div>
+            <span className="whitespace-nowrap text-[11px] font-semibold tracking-wide text-foreground/90">
+              Dock {railDrag.side}
+            </span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railDrag.side === 'left' ? 'scaleX(-1)' : undefined }}>
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          </div>
         </>
       )}
       {/* Tool rail: the chart's drawing-tools panel, so every one of the
@@ -640,15 +665,22 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
         style={{ order: railSide === 'right' ? 2 : 0 }}
       >
         <div
-          className="group flex h-6 shrink-0 items-center justify-center cursor-grab active:cursor-grabbing border-b border-[var(--edge)] hover:bg-white/[0.05]"
+          className={`group flex h-7 shrink-0 items-center justify-center border-b border-[var(--edge)] ${railDrag ? 'cursor-grabbing' : 'cursor-grab'}`}
           onMouseDown={beginRailDrag}
           onDoubleClick={toggleRailSide}
           title="Drag to dock left or right · double-click to flip side"
         >
-          <div className="flex gap-[3px]">
-            <span className="h-1 w-1 rounded-full bg-foreground/25 transition-colors group-hover:bg-teal-400/80" />
-            <span className="h-1 w-1 rounded-full bg-foreground/25 transition-colors group-hover:bg-teal-400/80" />
-            <span className="h-1 w-1 rounded-full bg-foreground/25 transition-colors group-hover:bg-teal-400/80" />
+          {/* Grip: a 6-dot matrix inside a soft pill that lifts to teal on
+              hover/drag — reads instantly as a drag handle, our own style. */}
+          <div className={`flex items-center gap-2 rounded-full border px-2.5 py-1 transition-all duration-150 ${railDrag ? 'border-teal-400/60 bg-teal-400/15' : 'border-transparent group-hover:border-teal-400/30 group-hover:bg-teal-400/10'}`}>
+            <div className="grid grid-cols-3 grid-rows-2 gap-[3px]">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <span
+                  key={i}
+                  className={`h-[3px] w-[3px] rounded-full transition-colors duration-150 ${railDrag ? 'bg-teal-400' : 'bg-foreground/30 group-hover:bg-teal-400'}`}
+                />
+              ))}
+            </div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
