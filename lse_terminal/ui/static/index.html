@@ -107,95 +107,6 @@ document.documentElement.setAttribute("data-theme",
   <div id="lasso-card" class="hidden" role="status" aria-label="Zone dossier"></div>
   <!-- Focus mode: double-click a grid pane to edit it solo; this is the way back. -->
   <button id="focus-back" class="hidden" type="button" title="Back to the chart grid">‹ Grid</button>
-  <div id="controls">
-  <!-- No data-source dropdown: the active rail tab decides the source.
-       MARKETS is live LSE data (API key), BACKTEST / MY DATA are the
-       user's own imported files. -->
-  <!-- Symbol search now lives once, in the sidebar (#wl-filter). The old
-       toolbar search box was removed so there is only one search. -->
-  <!-- Item 5: the timeframe rail (#timeframes) and its cTrader-style "⋮ more"
-       menu (#bar-type-slot) were MOVED to the right end of the toolbar; they
-       now live just before the right-hand #sl-slot group below. The "⋮ more"
-       menu (LSEChart.mountTimeframeSelector) owns bar type AND timeframe,
-       including custom / monthly resolutions. -->
-  <!-- Dedicated advanced Bar-style menu (feature 2): 15 chart types across 4
-       groups, with search + live descriptions. Mounted by the chart bundle
-       (LSEChart.mountChartTypeMenu); drives state.chartType only. -->
-  <span id="chart-type-slot" title="Chart / bar style"></span>
-  <!-- Hidden <select> kept in the DOM as the workspace load/save source of
-       truth for the chart type. The Bar-style menu writes its .value and fires
-       change; the shell reads it on save/restore. -->
-  <select id="chart-type" title="Chart type" style="display:none">
-    <option value="candles">Candles</option>
-    <option value="bars">OHLC</option>
-    <option value="line">Line</option>
-    <option value="area">Area</option>
-    <option value="heikinAshi">Heikin Ashi</option>
-    <option value="renko">Renko</option>
-    <!-- Advanced Bar-style types (values match engine ChartType keys). -->
-    <option value="hollowCandle">Hollow candles</option>
-    <option value="volumeCandle">Volume candles</option>
-    <option value="lineMarkers">Line with markers</option>
-    <option value="stepLine">Step line</option>
-    <option value="hlcArea">HLC area</option>
-    <option value="baseline">Baseline</option>
-    <option value="lineBreak">Line break</option>
-    <option value="kagi">Kagi</option>
-    <option value="pointFigure">Point &amp; Figure</option>
-  </select>
-  <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
-  <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for
-       an instant dossier of the real candles inside. Same ids the boot path
-       binds; the layer + card live at body level below. -->
-  <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
-  <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
-       prefixes read as decoration, not chrome.
-       The &#402; on Indicators stays: it is the recognised
-       function-glyph convention on charting toolbars. -->
-  <!-- No My Data button here: the MY DATA rail tab above is the single door to
-       imports; a second toolbar copy of the same tab was
-       duplicate chrome. -->
-  <!-- No Assistant / AI header buttons: the AI lives in the permanent right
-       rail, a fixture like the left sidebar, so it
-       needs no toggle in the toolbar. -->
-  <button id="bt-open" title="Backtest a strategy" class="hidden">&#9654;</button>
-  <!-- Chart layout sits last and is pushed flush right by CSS (margin-left:auto):
-       it configures the chart's appearance rather than selecting what is drawn,
-       so it is separated from the symbol/timeframe/indicator group on the left. -->
-  <!-- Screen layout: the site's Layout picker (grid presets + sync toggles),
-       mounted here by the chart bundle (LSEChart.mountLayoutButton). -->
-  <!-- Level 3 data: shown only when the configured key's plan carries MBO
-       access AND the charted instrument maps to a recorded futures contract
-       (/api/mbo/status). For everyone else the button never exists, so the
-       toolbar advertises nothing the plan cannot serve. -->
-  <button id="l3-open" class="hidden" title="Order-by-order flow for this instrument">Level 3 data</button>
-  <!-- Right group order: layout grid, then Templates,
-       then Chart layout. Templates is the toolbar door to the same store as
-       the chart's right-click "Chart template" submenu (the menu stays
-       AND gets a visible button). No separate Appearance
-       button: colours live inside the Chart layout panel (a short-lived
-       split into its own button was reverted). -->
-  <!-- Item 5: timeframe rail + its "⋮ more" menu, moved here to the RIGHT.
-       nav#timeframes carries margin-left:auto (CSS), so it becomes the
-       leftmost item of the right-hand toolbar cluster — the rail sits on the
-       right, beside the layout / workspace controls. -->
-  <nav id="timeframes"></nav>
-  <span id="bar-type-slot" title="Timeframe & bar type"></span>
-  <span id="sl-slot"></span>
-  <button id="tpl-open" title="Save this chart setup, or apply a saved one">Templates</button>
-  <button id="cs-open" title="Colours, candles, background, axis">Chart layout</button>
-  <!-- Workspace actions ride the command bar's right group (same ids the
-       boot path binds; the old #ws-controls strip is gone). -->
-  <span class="ws-sep" aria-hidden="true"></span>
-  <button id="ws-full" class="ws-btn" title="Maximise the chart workspace">Fullscreen</button>
-  <button id="ws-save" class="ws-btn" title="Save instrument, timeframe, chart type, indicators">Save</button>
-  <button id="ws-load" class="ws-btn" title="Reload the last saved workspace">Load</button>
-  <button id="ws-reset" class="ws-btn" title="Reset workspace to defaults">Reset</button>
-  <button id="cam-shot" class="ws-btn" type="button" title="Screenshot chart"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><circle cx="8" cy="9" r="2.6"/><path d="M5.5 4.5 6.2 3h3.6l.7 1.5"/></svg></button>
-  <!-- Fullscreen exit pill: hidden unless ws-fullscreen (CSS). Replaces the
-       text Fullscreen button up here, so the way out is one brass pill. -->
-  <button id="ws-exit" class="ws-btn" type="button" title="Exit fullscreen (Esc)" aria-label="Exit fullscreen"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M14 10v4h-4M2 10v4h4"/></svg></button>
-  </div>
 </header>
 <!-- Indicator browser: replaces the old add-dropdown. A searchable list of
      every registered indicator (built-ins + the user's own); click toggles it
@@ -369,6 +280,94 @@ def my_ind(df, length=20):
     <div id="watchlist"></div>
   </aside>
   <section id="charts">
+    <!-- Command bar: lives at the TOP of #charts (moved out of <header>) so
+         it sits above the chart only and the watchlist column can start at
+         the top, level with the toolbar. ids/handlers unchanged. -->
+  <div id="controls">
+  <!-- No data-source dropdown: the active rail tab decides the source.
+       MARKETS is live LSE data (API key), BACKTEST / MY DATA are the
+       user's own imported files. -->
+  <!-- Symbol search now lives once, in the sidebar (#wl-filter). The old
+       toolbar search box was removed so there is only one search. -->
+  <!-- Toolbar order (user layout): the timeframe rail LEADS at the far left,
+       then its cTrader-style "⋮ more" menu (#bar-type-slot), then the Candles
+       bar-style picker and the Indicators button. The "⋮ more" menu
+       (LSEChart.mountTimeframeSelector) owns bar type AND timeframe, including
+       custom / monthly resolutions. -->
+  <nav id="timeframes"></nav>
+  <span id="bar-type-slot" title="Timeframe & bar type"></span>
+  <!-- Dedicated advanced Bar-style menu (feature 2): 15 chart types across 4
+       groups, with search + live descriptions. Mounted by the chart bundle
+       (LSEChart.mountChartTypeMenu); drives state.chartType only. -->
+  <span id="chart-type-slot" title="Chart / bar style"></span>
+  <!-- Hidden <select> kept in the DOM as the workspace load/save source of
+       truth for the chart type. The Bar-style menu writes its .value and fires
+       change; the shell reads it on save/restore. -->
+  <select id="chart-type" title="Chart type" style="display:none">
+    <option value="candles">Candles</option>
+    <option value="bars">OHLC</option>
+    <option value="line">Line</option>
+    <option value="area">Area</option>
+    <option value="heikinAshi">Heikin Ashi</option>
+    <option value="renko">Renko</option>
+    <!-- Advanced Bar-style types (values match engine ChartType keys). -->
+    <option value="hollowCandle">Hollow candles</option>
+    <option value="volumeCandle">Volume candles</option>
+    <option value="lineMarkers">Line with markers</option>
+    <option value="stepLine">Step line</option>
+    <option value="hlcArea">HLC area</option>
+    <option value="baseline">Baseline</option>
+    <option value="lineBreak">Line break</option>
+    <option value="kagi">Kagi</option>
+    <option value="pointFigure">Point &amp; Figure</option>
+  </select>
+  <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
+  <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for
+       an instant dossier of the real candles inside. Same ids the boot path
+       binds; the layer + card live at body level below. -->
+  <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
+  <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
+       prefixes read as decoration, not chrome.
+       The &#402; on Indicators stays: it is the recognised
+       function-glyph convention on charting toolbars. -->
+  <!-- No My Data button here: the MY DATA rail tab above is the single door to
+       imports; a second toolbar copy of the same tab was
+       duplicate chrome. -->
+  <!-- No Assistant / AI header buttons: the AI lives in the permanent right
+       rail, a fixture like the left sidebar, so it
+       needs no toggle in the toolbar. -->
+  <button id="bt-open" title="Backtest a strategy" class="hidden">&#9654;</button>
+  <!-- Chart layout sits last and is pushed flush right by CSS (margin-left:auto):
+       it configures the chart's appearance rather than selecting what is drawn,
+       so it is separated from the symbol/timeframe/indicator group on the left. -->
+  <!-- Screen layout: the site's Layout picker (grid presets + sync toggles),
+       mounted here by the chart bundle (LSEChart.mountLayoutButton). -->
+  <!-- Level 3 data: shown only when the configured key's plan carries MBO
+       access AND the charted instrument maps to a recorded futures contract
+       (/api/mbo/status). For everyone else the button never exists, so the
+       toolbar advertises nothing the plan cannot serve. -->
+  <button id="l3-open" class="hidden" title="Order-by-order flow for this instrument">Level 3 data</button>
+  <!-- Right group order: layout grid, then Templates,
+       then Chart layout. Templates is the toolbar door to the same store as
+       the chart's right-click "Chart template" submenu (the menu stays
+       AND gets a visible button). No separate Appearance
+       button: colours live inside the Chart layout panel (a short-lived
+       split into its own button was reverted). -->
+  <span id="sl-slot"></span>
+  <button id="tpl-open" title="Save this chart setup, or apply a saved one">Templates</button>
+  <button id="cs-open" title="Colours, candles, background, axis">Chart layout</button>
+  <!-- Workspace actions ride the command bar's right group (same ids the
+       boot path binds; the old #ws-controls strip is gone). -->
+  <span class="ws-sep" aria-hidden="true"></span>
+  <button id="ws-full" class="ws-btn" title="Maximise the chart workspace">Fullscreen</button>
+  <button id="ws-save" class="ws-btn" title="Save instrument, timeframe, chart type, indicators">Save</button>
+  <button id="ws-load" class="ws-btn" title="Reload the last saved workspace">Load</button>
+  <button id="ws-reset" class="ws-btn" title="Reset workspace to defaults">Reset</button>
+  <button id="cam-shot" class="ws-btn" type="button" title="Screenshot chart"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><circle cx="8" cy="9" r="2.6"/><path d="M5.5 4.5 6.2 3h3.6l.7 1.5"/></svg></button>
+  <!-- Fullscreen exit pill: hidden unless ws-fullscreen (CSS). Replaces the
+       text Fullscreen button up here, so the way out is one brass pill. -->
+  <button id="ws-exit" class="ws-btn" type="button" title="Exit fullscreen (Esc)" aria-label="Exit fullscreen"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M14 10v4h-4M2 10v4h4"/></svg></button>
+  </div>
     <!-- Phase 2 instrument header: real values from the data layer only
          (quotes, candles, provider status). No hardcoded prices. -->
     <div id="instrument-bar" class="hidden" aria-label="Instrument summary">
