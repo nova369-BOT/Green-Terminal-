@@ -546,6 +546,32 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     [indicators]
   );
 
+  // Dockable drawing-tools rail: drag the grip to snap it to the left or right
+  // edge of the chart. Preference persists across sessions.
+  const [railSide, setRailSide] = useState<'left' | 'right'>(() => {
+    try { return (localStorage.getItem('gt-rail-side') as 'left' | 'right') || 'left'; } catch { return 'left'; }
+  });
+  const [railDropSide, setRailDropSide] = useState<'left' | 'right' | null>(null);
+  const commitRailSide = (side: 'left' | 'right') => {
+    setRailSide(side);
+    try { localStorage.setItem('gt-rail-side', side); } catch { /* ignore */ }
+  };
+  const beginRailDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const pick = (x: number): 'left' | 'right' => (x > window.innerWidth / 2 ? 'right' : 'left');
+    const move = (ev: MouseEvent) => setRailDropSide(pick(ev.clientX));
+    const up = (ev: MouseEvent) => {
+      commitRailSide(pick(ev.clientX));
+      setRailDropSide(null);
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    setRailDropSide(pick(e.clientX));
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  const toggleRailSide = () => commitRailSide(railSide === 'left' ? 'right' : 'left');
+
   // Backtest fills are rendered through the chart's own position-line layer,
   // which is what draws entry markers on the live charts. Live sim positions
   // ride the same layer with their real ids so select/modify/close route back
@@ -575,11 +601,33 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
 
   return (
     <div className="relative h-full w-full flex">
+      {railDropSide && (
+        <>
+          <div className={`pointer-events-none absolute inset-y-0 left-0 z-50 w-16 transition-colors ${railDropSide === 'left' ? 'bg-teal-400/15 border-r-2 border-teal-400' : ''}`} />
+          <div className={`pointer-events-none absolute inset-y-0 right-0 z-50 w-16 transition-colors ${railDropSide === 'right' ? 'bg-teal-400/15 border-l-2 border-teal-400' : ''}`} />
+        </>
+      )}
       {/* Tool rail: the chart's drawing-tools panel, so every one of the
           engine's 33 drawing tools is reachable exactly as on the live chart. */}
       {/* The rail wears the SHELL's chrome vars, not the chart palette: it
           must follow the terminal's light/dark class like every other panel. */}
-      <div className="shrink-0 border-r border-[var(--edge)] bg-[var(--panel)] overflow-y-auto">
+      <div
+        className={`shrink-0 flex flex-col bg-[var(--panel)] border-[var(--edge)] ${railSide === 'right' ? 'border-l' : 'border-r'}`}
+        style={{ order: railSide === 'right' ? 2 : 0 }}
+      >
+        <div
+          className="group flex h-6 shrink-0 items-center justify-center cursor-grab active:cursor-grabbing border-b border-[var(--edge)] hover:bg-white/[0.05]"
+          onMouseDown={beginRailDrag}
+          onDoubleClick={toggleRailSide}
+          title="Drag to dock left or right · double-click to flip side"
+        >
+          <div className="flex gap-[3px]">
+            <span className="h-1 w-1 rounded-full bg-foreground/25 transition-colors group-hover:bg-teal-400/80" />
+            <span className="h-1 w-1 rounded-full bg-foreground/25 transition-colors group-hover:bg-teal-400/80" />
+            <span className="h-1 w-1 rounded-full bg-foreground/25 transition-colors group-hover:bg-teal-400/80" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
         <DrawingToolsPanel
           activeTool={activeTool}
           onToolSelect={setActiveTool}
@@ -595,12 +643,13 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           onClearIndicators={() => handleIndicatorsChange(DEFAULT_INDICATOR_CONFIG)}
           onOpenSettings={openIndicatorBrowser}
         />
+        </div>
       </div>
 
       <div
         ref={chartAreaRef}
         className="relative flex-1 min-w-0"
-        style={flipped ? { transform: 'scaleY(-1)' } : undefined}
+        style={{ order: 1, ...(flipped ? { transform: 'scaleY(-1)' as const } : {}) }}
         onContextMenu={(e) => {
           e.preventDefault();
           setTplOpen(false);

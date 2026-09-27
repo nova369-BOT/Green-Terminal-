@@ -289,21 +289,22 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
 
   return createPortal(
     <div
-      className="fixed z-[9999] w-[380px] select-none overflow-hidden rounded-xl border border-teal-400/20 bg-[#0b0f14]/95 text-slate-200 shadow-[0_0_40px_-8px_rgba(45,212,191,0.35)] backdrop-blur-xl"
+      className="fixed z-[9999] w-[360px] select-none overflow-hidden rounded-2xl border border-white/10 bg-[#0d1117]/[0.98] text-slate-200 shadow-2xl shadow-black/70 ring-1 ring-white/5 backdrop-blur-2xl"
       style={{ left: pos.x, top: pos.y }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Header (drag handle) */}
       <div
-        className="flex cursor-grab items-center gap-2 border-b border-white/5 px-4 py-3 active:cursor-grabbing"
+        className="flex cursor-grab items-center gap-2.5 border-b border-white/[0.06] bg-white/[0.02] px-4 py-3 active:cursor-grabbing"
         onMouseDown={(e) => { dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }; }}
       >
-        <GripVertical className="h-3.5 w-3.5 text-slate-600" />
-        <span className="h-2 w-2 rounded-full bg-teal-400 shadow-[0_0_8px_2px_rgba(45,212,191,0.6)]" />
-        <span className="text-[14px] font-semibold text-slate-100">{title}</span>
-        <span className="ml-auto text-[10px] font-normal uppercase tracking-widest text-slate-500">Inspector</span>
-        <button type="button" className="ml-1 text-slate-500 hover:text-slate-200" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></button>
+        <GripVertical className="h-4 w-4 shrink-0 text-slate-600" />
+        <div className="flex min-w-0 flex-col leading-tight">
+          <span className="truncate text-[13.5px] font-semibold tracking-tight text-slate-50">{title}</span>
+          <span className="text-[9px] font-medium uppercase tracking-[0.18em] text-teal-300/60">Object settings</span>
+        </div>
+        <button type="button" className="ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-md text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-100" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></button>
       </div>
 
       {/* Green Terminal signature layout: a vertical icon rail on the left
@@ -616,9 +617,9 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         </div>
       </Tabs>
 
-      <div className="flex items-center justify-end gap-2 border-t border-white/5 px-4 py-3">
-        <Button variant="ghost" size="sm" className="text-[12px] text-slate-400 hover:text-slate-200" onClick={handleCancel}>Cancel</Button>
-        <Button size="sm" className="bg-teal-500 text-[12px] font-semibold text-black hover:bg-teal-400" onClick={() => onOpenChange(false)}>Done</Button>
+      <div className="flex items-center justify-end gap-2 border-t border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+        <Button variant="ghost" size="sm" className="h-8 text-[12px] text-slate-400 hover:bg-white/5 hover:text-slate-200" onClick={handleCancel}>Cancel</Button>
+        <Button size="sm" className="h-8 bg-teal-500 px-4 text-[12px] font-semibold text-black shadow-sm shadow-teal-500/30 hover:bg-teal-400" onClick={() => onOpenChange(false)}>Done</Button>
       </div>
     </div>,
     document.body,
