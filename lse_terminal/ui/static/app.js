@@ -10528,6 +10528,13 @@ document.addEventListener("dblclick", (e) => {
   focusEnter(typeof st.activePanel === "number" ? st.activePanel : 0);
 });
 if ($("focus-back")) $("focus-back").onclick = focusExit;
+// The per-pane header's ⤢ button (rendered by TerminalMultiGrid) asks the shell
+// to focus that pane solo. Decoupled via a DOM event so the React island needs
+// no direct handle on the shell's focus machinery.
+window.addEventListener("gt-focus-pane", (e) => {
+  const i = e && e.detail && typeof e.detail.index === "number" ? e.detail.index : 0;
+  focusEnter(i);
+});
 
 /* ═══ Top-tools dock: Lasso + camera live in the TOPLINE (upper bar) in ══
    normal mode and ride the fullscreen command strip in ws-fullscreen. ONE
@@ -10567,6 +10574,14 @@ function paneGrid() {
 }
 function paneBadgesUpdate() {
   let wrap = $("pane-badges");
+  // Pane badges RETIRED. Each pane now carries its own interactive header
+  // (pair picker + timeframe/bar selector + a ⤢ focus button), so the old
+  // top-left overlay badge only duplicated that info AND covered the pair
+  // picker on first load. Keep the element hidden; the header's ⤢ button
+  // dispatches "gt-focus-pane" which drives focusEnter() below.
+  if (wrap) wrap.classList.add("hidden");
+  return;
+  // eslint-disable-next-line no-unreachable
   const ls = window.LSEChart && window.LSEChart.layoutStore;
   const st = ls && ls.get ? ls.get() : null;
   const grid = paneGrid();
@@ -10587,13 +10602,8 @@ function paneBadgesUpdate() {
     const { sym, tf } = focusPanePair(i);
     const b = document.createElement("div");
     b.className = "pane-badge" + (st.activePanel === i ? " active" : "");
-    // Anchor to the pane's BOTTOM-left: the pane's TOP now carries the
-    // interactive per-pane header (pair picker + timeframe/bar selector), and a
-    // top-anchored badge sat right on top of the pair picker — so on first load
-    // the read-only "SYM · TF" badge hid the change-of-pair control. Bottom-left
-    // keeps the badge (and its focus button) visible without covering it.
     b.style.left = (r.left + 6) + "px";
-    b.style.top = (r.bottom - 30) + "px";   // 24px badge height + 6px margin
+    b.style.top = (r.top + 6) + "px";
     const label = document.createElement("button");
     label.type = "button"; label.className = "pb-label";
     label.textContent = `${sym} · ${tf}`;

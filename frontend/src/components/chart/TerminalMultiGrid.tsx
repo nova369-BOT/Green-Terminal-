@@ -157,7 +157,30 @@ function Panel({
         }}
       >
         <PaneSymbolBrowser value={symbol} onChange={onSymbolChange} compact />
-        <TimeframeMegaSelector value={{ timeframe, chartType }} onChange={onBarChange} compact />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <TimeframeMegaSelector value={{ timeframe, chartType }} onChange={onBarChange} compact />
+          {/* Focus this pane solo (replaces the old overlay badge's ⤢). Asks
+              the shell via a DOM event so this island stays decoupled. */}
+          <button
+            type="button"
+            title="Focus this pane"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onActivate();
+              window.dispatchEvent(new CustomEvent('gt-focus-pane', { detail: { index } }));
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 22, height: 22, flex: '0 0 auto', cursor: 'pointer',
+              background: 'transparent', color: 'var(--dim, #9aa79d)',
+              border: '1px solid var(--edge, #2a2e39)', borderRadius: 4,
+              fontSize: 13, lineHeight: 1,
+            }}
+          >
+            ⤢
+          </button>
+        </div>
       </div>
 
       <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>
