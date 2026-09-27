@@ -13,38 +13,54 @@
    tokens key off the same class; the calendar reads these same vars). Never
    hardcode a hex below the two palette blocks. */
 :root {
-  /* DARK (default): racing-green terminal. Floor #05080a, panels tile
-     visibly above it; depth comes from the floor/surface gap. Ink is warm
-     ivory, secondary text sage, up/down grove/oxblood, brass reserved for
-     brand marks, active rails and focus rings. */
-  --bg: #05080a; --panel: #0a0f0c; --edge: #1d2b23;
-  /* Machined top edge for major surfaces; invisible in light theme. */
+  /* PHASE 1 — canonical dark palette. These tokens are the single source of
+     truth for the static shell and the React chart islands. Color communicates
+     hierarchy and state; it is never used as decoration or an invented feed
+     signal. */
+  --bg: #080c0a;           /* application canvas */
+  --panel: #0c1210;        /* primary chrome and panels */
+  --bg2: #0a100d;          /* recessed wells and chart-adjacent bands */
+  --item: #0d1511;         /* rows and compact controls */
+  --hover: #12201a;        /* hover surface */
+  --active: #143024;       /* selected surface */
+  --raise: #013220;        /* primary action */
+  --raise-h: #024a30;      /* primary action hover */
+  --edge: #203027;         /* standard one-pixel divider */
   --hairline: rgba(244, 241, 232, .05);
-  /* --dim readability floor; sage grey-green. */
-  --text: #f4f1e8; --dim: #9aa79d; --up: #1f9d55; --down: #c04a5e;
-  /* Brand mark's two candles: grove green up, brushed brass down-candle.
-     Both stay visible on the racing panel; the SHAPE is what identifies it. */
-  --logo-up: #1f9d55; --logo-down: #b08d57;
-  --bg2: #0c1210;          /* code wells, previews */
-  --hover: #12201a;        /* card + row hover fills */
-  --active: #143024;       /* selected rows, racing-tinted active surface */
-  --quote: #0c1210;        /* the user's chat turn */
-  --item: #0d1311;         /* keybar, list items */
-  --raise: #013220; --raise-h: #024a30;   /* primary (Run/OK) buttons */
-  --line-strong: #b08d57;  /* focus borders, login card border */
-  --accent-bar: #b08d57;   /* active tab underline / selected row bar */
-  --title: #c9c2ae;        /* section + table headers, col-header warm grey */
-  --dash: #2c3b32;         /* dashed drop-zone border */
-  --scroll: #2c3b32; --scroll-h: #4a5f52; /* grove scrollbar thumbs */
-  --err: #e0657a; --err-bg: #1c0f12; --err-edge: #5c2430;
-  --ohlcv-bg: #0e3a2a; --ohlcv-tx: #7fd6a8;
+
+  --text: #f4f1e8;        /* warm ivory primary text */
+  --dim: #9aa79d;         /* sage secondary text */
+  --title: #c9c2ae;       /* section and column headings */
+  --up: #0f9d58;          /* positive market data / healthy live state */
+  --down: #c04a5e;        /* negative market data / destructive state */
+  --warning: #d4af37;     /* delayed/reconnecting state */
+  --brand-green: #0f9d58;
+  --brand-gold: #d4af37;
+  --logo-up: var(--brand-green);
+  --logo-down: var(--brand-gold);
+  --line-strong: var(--brand-gold);
+  --accent-bar: var(--brand-gold);
+
+  --quote: var(--bg2);
+  --dash: #2c3b32;
+  --scroll: #2c3b32;
+  --scroll-h: #4a5f52;
+  --err: #e0657a;
+  --err-bg: #1c0f12;
+  --err-edge: #5c2430;
+  --ohlcv-bg: #0e3a2a;
+  --ohlcv-tx: #7fd6a8;
   --shadow: rgba(0, 0, 0, .55);
   --overlay: rgba(0, 0, 0, .62);
   --legend-shadow: 0 1px 2px #000;
+  --radius-control: 2px;
+  --radius-panel: 4px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
   --mono: ui-monospace, "Cascadia Code", SFMono-Regular, Consolas, monospace;
-  /* Code EDITOR font (workspace editor + its terminal): VS Code's Windows
-     default is Consolas, so it leads. Cascadia Mono (not Code) second: same
-     family Windows ships, minus the ligatures VS Code also defaults off. */
   --code-font: Consolas, "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, "Courier New", monospace;
 }
 html:not(.dark) {

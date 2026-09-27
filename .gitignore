@@ -31,3 +31,6 @@ lse_terminal/ui/static/assets/research/
 .dev-data/
 desktop/build-*.log
 desktop/*.log
+
+# Local design previews used for approval; never shipped as application assets.
+design/

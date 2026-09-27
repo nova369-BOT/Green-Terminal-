@@ -56,19 +56,23 @@ export default {
         'glass-border': 'var(--glass-border)',
       },
       borderRadius: {
-        md: '10px',
-        lg: '12px',
+        sm: 'var(--radius-control, 2px)',
+        md: 'var(--radius-panel, 4px)',
+        lg: 'var(--radius-panel, 4px)',
       },
       backgroundImage: {
-        'gradient-primary': 'var(--gradient-primary)',
-        'gradient-premium': 'var(--gradient-premium)',
-        'gradient-neon': 'var(--gradient-neon)',
+        // Kept as compatibility aliases for existing class names. Phase 1
+        // deliberately uses flat terminal surfaces rather than gradients.
+        'gradient-primary': 'none',
+        'gradient-premium': 'none',
+        'gradient-neon': 'none',
       },
       boxShadow: {
-        'glow-blue': '0 0 12px hsla(140, 43%, 42%, 0.15)',
-        'glow-green': '0 0 12px hsla(140, 43%, 42%, 0.15)',
-        'glow-pink': '0 0 12px hsla(0, 84%, 60%, 0.15)',
-        'glow-purple': '0 0 12px hsla(250, 75%, 60%, 0.15)',
+        // Legacy names remain valid without producing neon halos.
+        'glow-blue': '0 0 0 1px var(--edge, #203027)',
+        'glow-green': '0 0 0 1px var(--edge, #203027)',
+        'glow-pink': '0 0 0 1px var(--edge, #203027)',
+        'glow-purple': '0 0 0 1px var(--edge, #203027)',
       },
       animation: {
         'pulse-glow': 'pulseGlow 2s ease-in-out infinite',

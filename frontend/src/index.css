@@ -13,37 +13,39 @@
    The neon tokens are aliased to the terminal's data palette on purpose:
    chrome stays neutral, nothing glows. */
 :root {
-  --popover: var(--panel, #151619);
-  --popover-foreground: var(--text, #e6e8ea);
-  --card: var(--panel, #151619);
-  --border: var(--edge, #26282c);
-  --input: var(--edge, #26282c);
-  --ring: var(--line-strong, #3a3d42);
-  --muted: var(--hover, #1a1c20);
-  --muted-foreground: var(--dim, #8b8e94);
-  --accent: var(--active, #1b1d20);
-  --accent-foreground: var(--text, #e6e8ea);
-  --primary: var(--text, #e6e8ea);
-  --secondary: var(--hover, #1a1c20);
-  --success: var(--up, #21b3a4);
-  --warning: #c58435;
-  --destructive: var(--down, #f0426c);
+  /* React islands inherit the shell palette instead of defining a competing
+     theme. Literal fallbacks match Phase 1 so standalone development and the
+     embedded production build render identically. */
+  --popover: var(--panel, #0c1210);
+  --popover-foreground: var(--text, #f4f1e8);
+  --card: var(--panel, #0c1210);
+  --border: var(--edge, #203027);
+  --input: var(--edge, #203027);
+  --ring: var(--line-strong, #d4af37);
+  --muted: var(--hover, #12201a);
+  --muted-foreground: var(--dim, #9aa79d);
+  --accent: var(--active, #143024);
+  --accent-foreground: var(--text, #f4f1e8);
+  --primary: var(--raise, #013220);
+  --primary-foreground: var(--text, #f4f1e8);
+  --secondary: var(--item, #0d1511);
+  --success: var(--up, #0f9d58);
+  --warning: var(--brand-gold, #d4af37);
+  --destructive: var(--down, #c04a5e);
   --destructive-foreground: #ffffff;
-  --text-primary: var(--text, #e6e8ea);
-  --text-secondary: var(--dim, #8b8e94);
-  --text-dim: var(--dim, #8b8e94);
-  --glass-bg: var(--panel, #151619);
-  --glass-border: var(--edge, #26282c);
-  --neon-green: var(--up, #21b3a4);
-  --neon-pink: var(--down, #f0426c);
-  /* Accent chrome is neutral on purpose: the ported neon blue/purple/gold
-     looked like a toy. Only up/down keep color, and only for DATA (candles,
-     P&L sign); the green BUY / red SELL order buttons and the green/red
-     last-price tag were also made neutral (BacktestTradingPanel,
-     PRICE_TAG_NEUTRAL), so no chrome carries these tokens any more. */
-  --electric-blue: var(--dim, #8b8e94);
-  --neon-purple: var(--dim, #8b8e94);
-  --neon-gold: var(--dim, #8b8e94);
+  --text-primary: var(--text, #f4f1e8);
+  --text-secondary: var(--dim, #9aa79d);
+  --text-dim: var(--dim, #9aa79d);
+  --glass-bg: var(--panel, #0c1210);
+  --glass-border: var(--edge, #203027);
+
+  /* Legacy utility names remain API-compatible while resolving to the
+     restrained semantic palette. No token below implies a visual glow. */
+  --neon-green: var(--up, #0f9d58);
+  --neon-pink: var(--down, #c04a5e);
+  --electric-blue: var(--dim, #9aa79d);
+  --neon-purple: var(--dim, #9aa79d);
+  --neon-gold: var(--brand-gold, #d4af37);
 }
 
 /* Cache-bust: forces a new asset hash after an outage where immutable
