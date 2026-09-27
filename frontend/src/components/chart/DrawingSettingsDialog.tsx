@@ -139,6 +139,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const hasFill = FILL_TYPES.has(type);
   const hasText = TEXT_TYPES.has(type) || INLINE_LABEL_TYPES.has(type);
   const isLevelTool = LEVEL_TYPES.has(type);
+  const isEmoji = type === 'emoji';
   const isFib = type === 'fibonacci' || type === 'fibExtension';
   const isGannBox = type === 'gannBox';
   const canExtendLine = LINE_EXTEND_TYPES.has(type);
@@ -328,6 +329,23 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         {/* ---------------- LOOK ---------------- */}
         <TabsContent value="style" className="mt-0 px-4 pb-2">
           <ScrollArea className="h-[320px] pr-3">
+            {isEmoji ? (
+              <>
+                {/* Emoji is a glyph sticker: colour/thickness/line-style do not apply.
+                    Only size (stored in strokeWidth) and opacity are meaningful. */}
+                <SectionTitle>Emoji</SectionTitle>
+                <Row label="Size">
+                  <Slider value={[strokeWidth || 28]} min={12} max={200} step={2} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
+                  <span className="w-8 text-right font-mono text-[11px] text-slate-400">{strokeWidth || 28}</span>
+                </Row>
+                <Row label="Opacity">
+                  <Slider value={[opacity]} min={10} max={100} step={1} onValueChange={(v) => update({ opacity: v[0] })} className="w-32" />
+                  <span className="w-9 text-right font-mono text-[11px] text-slate-400">{opacity}%</span>
+                </Row>
+                <p className="mt-2 text-[10.5px] leading-relaxed text-slate-500">Tip: drag the teal handle at the emoji's corner to resize it directly on the chart.</p>
+              </>
+            ) : (
+            <>
             <SectionTitle>Line</SectionTitle>
             <Row label={isLongShort ? 'Profit color' : 'Color'}>
               <ColorSwatch value={color} onChange={(v) => update({ color: v })} showOpacity={!isLongShort} opacity={opacity} onOpacityChange={(v) => update({ opacity: v })} title={isLongShort ? 'Profit color' : 'Line color'} />
@@ -351,6 +369,8 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                 ))}
               </div>
             </Row>
+            </>
+            )}
 
             {hasFill && (
               <>

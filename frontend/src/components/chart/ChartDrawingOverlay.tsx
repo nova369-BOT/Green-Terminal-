@@ -892,6 +892,17 @@ const ChartDrawingOverlayComponent = ({
           d.id === draggingId ? { ...d, stopLoss: chartPoint } : d
         );
         scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex === 970) {
+        // Emoji resize: scale glyph size (stored in strokeWidth) from the anchor centre
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || d.type !== 'emoji') return d;
+          const center = chartToPixel(d.points[0]);
+          if (!center) return d;
+          const half = Math.max(Math.abs(x - center.x), Math.abs(y - center.y));
+          const newFs = Math.round(Math.max(12, Math.min(200, half * 2)));
+          return { ...d, strokeWidth: newFs };
+        });
+        scheduleRAFUpdate(updatedDrawings);
       } else if (dragPointIndex >= 980 && dragPointIndex <= 988) {
         // Long/short position corner handles and line drags
         const updatedDrawings = drawings.map((d) => {
@@ -2134,6 +2145,16 @@ const ChartDrawingOverlayComponent = ({
       if (drawing.type === 'emoji' && pixels.length >= 1) {
         const p = pixels[0];
         const fs = drawing.strokeWidth || 28;
+        // Resize handle (bottom-right corner) takes priority when this emoji is selected
+        if (selectedDrawingId === drawing.id) {
+          const hx = p.x + fs / 2 + 3, hy = p.y + fs / 2 + 3;
+          if (Math.sqrt((x - hx) ** 2 + (y - hy) ** 2) < 10) {
+            hitAnyDrawing = true;
+            startDragging(drawing.id);
+            setDragPointIndex(970);
+            return true;
+          }
+        }
         if (Math.abs(x - p.x) <= fs / 2 + 4 && Math.abs(y - p.y) <= fs / 2 + 4) {
           hitAnyDrawing = true;
           const firstPointPixel = chartToPixel(drawing.points[0]);
@@ -5985,6 +6006,7 @@ const ChartDrawingOverlayComponent = ({
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
           {showHandles && isSelected && <rect x={p.x - fontSize / 2 - 3} y={p.y - fontSize / 2 - 3} width={fontSize + 6} height={fontSize + 6} rx={4} fill="none" stroke="#2dd4bf" strokeWidth={1} strokeDasharray="3 2" style={{ pointerEvents: 'none' }} />}
+          {showHandles && isSelected && <rect x={p.x + fontSize / 2 - 1} y={p.y + fontSize / 2 - 1} width={8} height={8} rx={2} fill="#2dd4bf" stroke="#0b0f14" strokeWidth={1} style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />}
           <text x={p.x} y={p.y} fontSize={fontSize} textAnchor="middle" dominantBaseline="central" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', userSelect: 'none', pointerEvents: 'all' }}>{drawing.text}</text>
         </g>
       );
