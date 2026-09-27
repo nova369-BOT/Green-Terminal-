@@ -76,6 +76,9 @@ export type Drawing = {
   fillColor?: string;  // Fill color for shapes like rectangles (null/undefined = transparent)
   fillOpacity?: number;  // 0-100, default 100
   borderColor?: string; // Border color for long/short positions
+  entryLineColor?: string; // Long/short position: entry line colour
+  accountSize?: number;    // Long/short position sizing: account balance
+  riskPercent?: number;    // Long/short position sizing: risk % of account
   fibLevels?: number[];
   stopLoss?: ChartPoint;  // Also price/time coordinates
   stopLossPointIndex?: number;
@@ -3684,7 +3687,7 @@ const ChartDrawingOverlayComponent = ({
       // Custom colors - color is for profit zone, fillColor is for loss zone
       const profitColor = drawing.color || '#22c55e';
       const lossColor = drawing.fillColor || '#ef4444';
-      const entryColor = '#4b5563';
+      const entryColor = drawing.entryLineColor || '#4b5563';
 
       // Zone fill colours matching TradingView; both zones filled equally
       const profitFill = drawing.color
@@ -3842,14 +3845,21 @@ const ChartDrawingOverlayComponent = ({
               ? Math.abs(targetPrice - entryPrice)
               : Math.abs(lastClose - entryPrice);
             const pnlSign = (isLong ? lastClose >= entryPrice : lastClose <= entryPrice) ? '+' : '-';
-            const qty = Math.round(Math.abs(targetPrice - entryPrice) / (entryPrice * 0.0001));
+            const riskPerUnit = Math.abs(entryPrice - stopLossPrice);
+            const hasSizing = !!(drawing.accountSize && drawing.riskPercent && riskPerUnit > 0);
+            const riskAmount = hasSizing ? (drawing.accountSize! * drawing.riskPercent! / 100) : 0;
+            const qty = hasSizing
+              ? Math.max(0, Math.round(riskAmount / riskPerUnit))
+              : Math.round(Math.abs(targetPrice - entryPrice) / (entryPrice * 0.0001));
             const cx = minX + width / 2;
 
             // Auto-size: ~5.5px per char for 11px font, 10px padding
             const tpText = `Target  ${fmtPrice(targetPrice)}  (${targetPercent.toFixed(2)}%)  ${targetPips.toFixed(0)} pips`;
             const slText = `Stop  ${fmtPrice(stopLossPrice)}  (${stopLossPercent.toFixed(2)}%)  ${stopLossPips.toFixed(0)} pips`;
             const entryLine1 = `${pnlLabel}: ${pnlSign}${fmtPrice(pnlValue)}  ·  Qty: ${qty}`;
-            const entryLine2 = `Risk/reward ratio: ${riskRewardRatio.toFixed(2)}`;
+            const entryLine2 = hasSizing
+              ? `R:R ${riskRewardRatio.toFixed(2)}  ·  Risk $${riskAmount.toFixed(0)}`
+              : `Risk/reward ratio: ${riskRewardRatio.toFixed(2)}`;
 
             const tpW = tpText.length * 5.5 + 10;
             const slW = slText.length * 5.5 + 10;

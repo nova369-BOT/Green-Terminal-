@@ -143,6 +143,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const isGannBox = type === 'gannBox';
   const canExtendLine = LINE_EXTEND_TYPES.has(type);
   const isParallelChannel = type === 'parallelChannel';
+  const isLongShort = type === 'long' || type === 'short';
   const isFreehand = (drawing.points?.length || 0) > 6 || type === 'brush' || type === 'highlighter';
 
   // Snapshot for Cancel/revert.
@@ -187,6 +188,16 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const fillOpacity = drawing.fillOpacity ?? 20;
   const showLabels = drawing.showLabels !== false;
   const useOneColor = !!drawing.useOneColor;
+
+  // Long/short position sizing readouts (safe when fields are absent).
+  const lsEntry = drawing.points?.[0]?.price;
+  const lsTarget = drawing.points?.[1]?.price;
+  const lsStop = drawing.stopLoss?.price;
+  const lsRiskPerUnit = (lsEntry != null && lsStop != null) ? Math.abs(lsEntry - lsStop) : 0;
+  const lsReward = (lsEntry != null && lsTarget != null) ? Math.abs(lsTarget - lsEntry) : 0;
+  const lsRR = lsRiskPerUnit > 0 ? lsReward / lsRiskPerUnit : 0;
+  const lsRiskAmt = (drawing.accountSize && drawing.riskPercent) ? (drawing.accountSize * drawing.riskPercent / 100) : 0;
+  const lsSize = (lsRiskAmt > 0 && lsRiskPerUnit > 0) ? lsRiskAmt / lsRiskPerUnit : 0;
 
   // Effective per-level styles (initialize from defaults when absent).
   const levels: LevelStyle[] = useMemo(() => {
@@ -264,6 +275,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         reverse: s.reverse, extendLeft: s.extendLeft, extendRight: s.extendRight,
         topLabels: s.topLabels, bottomLabels: s.bottomLabels, gannAngles: s.gannAngles,
         fibLabelMode: s.fibLabelMode, showMiddleLine: s.showMiddleLine,
+        entryLineColor: s.entryLineColor, accountSize: s.accountSize, riskPercent: s.riskPercent, stopLoss: s.stopLoss,
       });
     }
     onOpenChange(false);
@@ -311,8 +323,8 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         <TabsContent value="style" className="mt-0 px-4 pb-2">
           <ScrollArea className="h-[320px] pr-3">
             <SectionTitle>Line</SectionTitle>
-            <Row label="Color">
-              <ColorSwatch value={color} onChange={(v) => update({ color: v })} showOpacity opacity={opacity} onOpacityChange={(v) => update({ opacity: v })} title="Line color" />
+            <Row label={isLongShort ? 'Profit color' : 'Color'}>
+              <ColorSwatch value={color} onChange={(v) => update({ color: v })} showOpacity={!isLongShort} opacity={opacity} onOpacityChange={(v) => update({ opacity: v })} title={isLongShort ? 'Profit color' : 'Line color'} />
             </Row>
             <Row label="Thickness">
               <Slider value={[strokeWidth]} min={1} max={8} step={1} onValueChange={(v) => update({ strokeWidth: v[0] })} className="w-32" />
@@ -337,13 +349,15 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
             {hasFill && (
               <>
                 <SectionTitle>Background</SectionTitle>
-                <Row label="Fill color">
-                  <ColorSwatch value={fillColor} onChange={(v) => update({ fillColor: v })} showOpacity opacity={fillOpacity} onOpacityChange={(v) => update({ fillOpacity: v })} title="Fill color" />
+                <Row label={isLongShort ? 'Stop color' : 'Fill color'}>
+                  <ColorSwatch value={fillColor} onChange={(v) => update({ fillColor: v })} showOpacity={!isLongShort} opacity={fillOpacity} onOpacityChange={(v) => update({ fillOpacity: v })} title={isLongShort ? 'Stop color' : 'Fill color'} />
                 </Row>
+                {!isLongShort && (
                 <Row label="Fill opacity">
                   <Slider value={[fillOpacity]} min={0} max={100} step={1} onValueChange={(v) => update({ fillOpacity: v[0] })} className="w-32" />
                   <span className="w-9 text-right font-mono text-[11px] text-slate-400">{fillOpacity}%</span>
                 </Row>
+                )}
               </>
             )}
 
@@ -452,6 +466,47 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                 <Row label="Extend left"><Switch checked={!!drawing.extendLeft} onCheckedChange={(c) => update({ extendLeft: c })} /></Row>
                 <Row label="Extend right"><Switch checked={!!drawing.extendRight} onCheckedChange={(c) => update({ extendRight: c })} /></Row>
                 <Row label="Middle line"><Switch checked={drawing.showMiddleLine !== false} onCheckedChange={(c) => update({ showMiddleLine: c })} /></Row>
+              </>
+            )}
+
+            {isLongShort && (
+              <>
+                <SectionTitle>Position</SectionTitle>
+                <Row label="Entry line color">
+                  <ColorSwatch value={drawing.entryLineColor || '#94a3b8'} onChange={(v) => update({ entryLineColor: v })} title="Entry line color" />
+                </Row>
+                <SectionTitle>Prices</SectionTitle>
+                <Row label="Entry">
+                  <Input type="number" step="any" value={lsEntry ?? 0}
+                    onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isFinite(v)) return; const next = (drawing.points || []).map((p, j) => (j === 0 ? { ...p, price: v } : p)); update({ points: next }); }}
+                    className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
+                </Row>
+                <Row label="Target">
+                  <Input type="number" step="any" value={lsTarget ?? 0}
+                    onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isFinite(v)) return; const next = (drawing.points || []).map((p, j) => (j === 1 ? { ...p, price: v } : p)); update({ points: next }); }}
+                    className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
+                </Row>
+                <Row label="Stop">
+                  <Input type="number" step="any" value={lsStop ?? 0}
+                    onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isFinite(v) || !drawing.stopLoss) return; update({ stopLoss: { ...drawing.stopLoss, price: v } }); }}
+                    className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
+                </Row>
+                <SectionTitle>Risk sizing</SectionTitle>
+                <Row label="Account size">
+                  <Input type="number" step="any" value={drawing.accountSize ?? ''} placeholder="10000"
+                    onChange={(e) => { const v = parseFloat(e.target.value); update({ accountSize: Number.isFinite(v) ? v : undefined }); }}
+                    className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
+                </Row>
+                <Row label="Risk %">
+                  <Input type="number" step="0.1" value={drawing.riskPercent ?? ''} placeholder="1"
+                    onChange={(e) => { const v = parseFloat(e.target.value); update({ riskPercent: Number.isFinite(v) ? v : undefined }); }}
+                    className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
+                </Row>
+                <div className="mt-2 space-y-1 rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-[11px]">
+                  <div className="flex justify-between"><span className="text-slate-400">Risk / Reward</span><span className="font-mono text-teal-300">{lsRR > 0 ? lsRR.toFixed(2) : '\u2014'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Risk amount</span><span className="font-mono text-slate-200">{lsRiskAmt > 0 ? `$${lsRiskAmt.toFixed(2)}` : '\u2014'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Position size</span><span className="font-mono text-slate-200">{lsSize > 0 ? lsSize.toFixed(2) : '\u2014'}</span></div>
+                </div>
               </>
             )}
           </ScrollArea>
