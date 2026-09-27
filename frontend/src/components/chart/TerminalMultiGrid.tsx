@@ -51,11 +51,13 @@ const LAYOUTS: Record<LayoutType, { count: number; cols: number; rows: number }>
 const STAGGER = ['1h', '4h', '1d', '15m', '5m', '1w', '30m', '1m'];
 
 function Panel({
+  index,
   symbol, timeframe, chartType, colors, active, onActivate,
   onSymbolChange, onBarChange,
   syncedCrosshairTime, onCrosshairMove, syncedViewportTime, onViewportTimeChange,
   quote,
 }: {
+  index: number;
   symbol: string; timeframe: string; chartType: ChartType; colors: any; active: boolean;
   onActivate: () => void;
   onSymbolChange: (sym: string) => void;
@@ -67,6 +69,10 @@ function Panel({
   quote?: { bid: number; ask: number } | null;
 }) {
   const [candles, setCandles] = useState<Candle[]>([]);
+  // Explicit load state so an empty pane shows WHY it's empty instead of a
+  // black box: 'loading' while fetching/retrying, 'empty' once retries are
+  // exhausted with no data, 'ready' once bars arrive.
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'empty'>('loading');
   // Timezone must be forwarded to ProChart: its prop default is 'UTC', which
   // ignores the user's Timezone setting (data.timezone, default "local").
   const chartSettings = useChartSettings();
@@ -75,28 +81,51 @@ function Panel({
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
     setCandles([]);
-    const load = async () => {
+    setLoadState('loading');
+
+    const toCandles = (rows: any[]): Candle[] => rows.map((r: any) => ({
+      time: Date.parse(r.timestamp),
+      open: r.open, high: r.high, low: r.low, close: r.close,
+      volume: r.volume,
+    }));
+    const fetchRows = () => fetchLocalCandles('multi_panel', { symbol, timeframe, limit: 500 });
+
+    // Steady live-tail refresh once a pane has data.
+    const tick = async () => {
       try {
-        // fetchLocalCandles(tableName, options): the explicit symbol/timeframe
-        // overrides bypass table-name resolution entirely; rows arrive as
-        // {timestamp: ISO, o,h,l,c,v} and ProChart wants {time: ms, ...}.
-        const rows = await fetchLocalCandles('multi_panel', {
-          symbol, timeframe, limit: 500,
-        });
-        if (!cancelled && rows?.length) {
-          setCandles(rows.map((r: any) => ({
-            time: Date.parse(r.timestamp),
-            open: r.open, high: r.high, low: r.low, close: r.close,
-            volume: r.volume,
-          })));
-        }
-      } catch { /* panel stays empty; next timer retries */ }
+        const rows = await fetchRows();
+        if (!cancelled && rows?.length) setCandles(toCandles(rows));
+      } catch { /* keep last bars; try again next tick */ }
+      if (!cancelled) timer = setTimeout(tick, 10_000);
     };
-    load();
-    const t = setInterval(load, 10_000);   // live-ish tail refresh
-    return () => { cancelled = true; clearInterval(t); };
-  }, [symbol, timeframe]);
+
+    // Initial load with retry + exponential backoff. Empty first responses are
+    // common when eight panes hit the engine at once; we retry a few times
+    // before declaring the pane genuinely empty.
+    const load = async () => {
+      let rows: any[] | undefined;
+      try { rows = await fetchRows(); } catch { rows = undefined; }
+      if (cancelled) return;
+      if (rows?.length) {
+        setCandles(toCandles(rows));
+        setLoadState('ready');
+        timer = setTimeout(tick, 10_000);
+        return;
+      }
+      attempts += 1;
+      if (attempts >= 4) { setLoadState('empty'); return; }
+      const delay = Math.min(400 * 2 ** attempts, 8_000);
+      timer = setTimeout(load, delay);
+    };
+
+    // Stagger the first fetch by pane index so all panes don't hammer the
+    // engine on the same frame (a cause of the throttled blank panes).
+    timer = setTimeout(load, Math.min(index * 120, 1_000));
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [symbol, timeframe, index]);
 
   // Display-only series transform (Heikin Ashi / Renko), exactly as the main
   // chart does it in mount.tsx: source candles stay raw, ProChart draws the
@@ -132,7 +161,7 @@ function Panel({
       </div>
 
       <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>
-        {displayCandles.length > 0 && (
+        {displayCandles.length > 0 ? (
           <ProChart
             candles={displayCandles}
             symbol={symbol}
@@ -151,6 +180,20 @@ function Panel({
             brokerBid={quote?.bid ?? null}
             brokerAsk={quote?.ask ?? null}
           />
+        ) : (
+          // Honest empty/loading state — never a silent black pane.
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+            padding: 12, color: 'var(--dim, #9aa79d)',
+            font: '12px system-ui, sans-serif',
+          }}>
+            {loadState === 'empty' ? (
+              <span>No data for <b style={{ color: 'var(--text, #f4f1e8)' }}>{symbol}</b> · {timeframe}</span>
+            ) : (
+              <span style={{ opacity: 0.85 }}>Loading {symbol} · {timeframe}…</span>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -210,6 +253,7 @@ export default function TerminalMultiGrid({
         return (
           <Panel
             key={i}
+            index={i}
             symbol={sym}
             timeframe={tf}
             chartType={ct}

@@ -10587,8 +10587,13 @@ function paneBadgesUpdate() {
     const { sym, tf } = focusPanePair(i);
     const b = document.createElement("div");
     b.className = "pane-badge" + (st.activePanel === i ? " active" : "");
+    // Anchor to the pane's BOTTOM-left: the pane's TOP now carries the
+    // interactive per-pane header (pair picker + timeframe/bar selector), and a
+    // top-anchored badge sat right on top of the pair picker — so on first load
+    // the read-only "SYM · TF" badge hid the change-of-pair control. Bottom-left
+    // keeps the badge (and its focus button) visible without covering it.
     b.style.left = (r.left + 6) + "px";
-    b.style.top = (r.top + 6) + "px";
+    b.style.top = (r.bottom - 30) + "px";   // 24px badge height + 6px margin
     const label = document.createElement("button");
     label.type = "button"; label.className = "pb-label";
     label.textContent = `${sym} · ${tf}`;
