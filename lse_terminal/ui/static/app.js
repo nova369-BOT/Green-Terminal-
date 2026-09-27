@@ -1388,6 +1388,26 @@ function renderIndInspector() {
       }).join("")
     : `<div class="indb-insp-empty" style="padding:8px">This indicator has no parameters.</div>`;
 
+  // Style / Visibility lists, built from the indicator's plots. Seed defaults
+  // so the colour swatches show the real plot colours immediately.
+  const plotMeta = indPlotMeta(spec);
+  const st = indStyleFor(spec);
+  if (plotMeta) for (const pl of plotMeta) { if (!st[pl.id]) st[pl.id] = { color: pl.color, width: pl.width, visible: true }; }
+  const notCore = `<div class="indb-insp-empty" style="padding:8px">This indicator renders on the chart when added. The styled live preview covers the core set: moving averages, RSI, MACD, Bollinger, Stochastic, CCI and ATR.</div>`;
+  const styleHtml = plotMeta ? plotMeta.map((pl) => {
+    const o = st[pl.id];
+    return `<div class="indb-field"><span>${pl.label}</span>` +
+      `<span style="display:flex;gap:6px;align-items:center">` +
+      `<input type="color" data-style="${pl.id}" data-k="color" value="${o.color}" title="Colour">` +
+      `<input type="number" data-style="${pl.id}" data-k="width" value="${o.width}" min="1" max="6" step="1" style="width:52px" title="Line width">` +
+      `</span></div>`;
+  }).join("") : notCore;
+  const visHtml = plotMeta ? plotMeta.map((pl) => {
+    const o = st[pl.id];
+    return `<label class="indb-field"><span>${pl.label}</span>` +
+      `<input type="checkbox" data-vis="${pl.id}" ${o.visible !== false ? "checked" : ""}></label>`;
+  }).join("") : notCore;
+
   insp.innerHTML =
     `<div class="indb-insp-head">` +
       `<span class="indb-insp-title">${spec.title}</span>` +
@@ -1402,8 +1422,8 @@ function renderIndInspector() {
       `</div>` +
       `<div class="indb-insp-tabpane">` +
         (tab === "inputs" ? inputsHtml :
-         tab === "style" ? `<div class="indb-insp-empty" style="padding:8px">Colours &amp; line widths arrive with Part B.</div>` :
-         `<div class="indb-insp-empty" style="padding:8px">Per-plot show/hide arrives with Part B.</div>`) +
+         tab === "style" ? styleHtml :
+         visHtml) +
       `</div>` +
     `</div>` +
     `<div class="indb-insp-foot">` +
@@ -1425,6 +1445,25 @@ function renderIndInspector() {
       state.indDraft.params[inp.dataset.param] = inp.value;
       indPreviewSchedule();
       if (indActiveItem(name)) indApplyDraft(name); // live-update the chart too
+    };
+  });
+  // Style tab: colour + line width per plot, restyling the live preview.
+  insp.querySelectorAll("input[data-style]").forEach((inp) => {
+    inp.oninput = () => {
+      const store = indStyleFor(spec);
+      const o = store[inp.dataset.style] || (store[inp.dataset.style] = {});
+      if (inp.dataset.k === "width") o.width = Math.max(1, Math.min(6, parseInt(inp.value, 10) || 2));
+      else o.color = inp.value;
+      indPreviewRender();
+    };
+  });
+  // Visibility tab: show/hide each plot in the preview.
+  insp.querySelectorAll("input[data-vis]").forEach((inp) => {
+    inp.onchange = () => {
+      const store = indStyleFor(spec);
+      const o = store[inp.dataset.vis] || (store[inp.dataset.vis] = {});
+      o.visible = inp.checked;
+      indPreviewRender();
     };
   });
   insp.querySelector(".indb-insp-foot").querySelectorAll("[data-act]").forEach((b) => {
@@ -1466,30 +1505,198 @@ function indPvMsg(ctx, w, ht, msg) {
   ctx.textBaseline = "middle";
   ctx.fillText(msg, w / 2, ht / 2);
 }
-function indDrawCandles(ctx, w, ht, candles) {
-  if (!candles.length) { indPvMsg(ctx, w, ht, "No candles"); return; }
-  const padY = 8;
-  let lo = Infinity, hi = -Infinity;
-  for (const c of candles) { lo = Math.min(lo, c[3]); hi = Math.max(hi, c[2]); }
-  if (!(hi > lo)) { indPvMsg(ctx, w, ht, "No range"); return; }
-  const n = candles.length;
-  const cw = w / n;
-  const yOf = (p) => padY + (1 - (p - lo) / (hi - lo)) * (ht - padY * 2);
-  const up = indCssCol("--up", "#63b26a");
-  const down = indCssCol("--down", "#d16d6d");
+/* ---- client-side core indicator maths ----
+   The engine skips indicators in hosted mode (the browser computes them), so
+   the preview computes a core set here to work everywhere. Each helper returns
+   an array aligned to the input, null until it has enough history. */
+const IND_PALETTE = ["#5b9bd5", "#d9a441", "#63b26a", "#b57bd5", "#d16d6d", "#4fb3a9"];
+function _sma(a, n) {
+  const o = Array(a.length).fill(null); let s = 0;
+  for (let i = 0; i < a.length; i++) { s += a[i]; if (i >= n) s -= a[i - n]; if (i >= n - 1) o[i] = s / n; }
+  return o;
+}
+function _ema(a, n) {
+  const o = Array(a.length).fill(null); const k = 2 / (n + 1); let e = null;
+  for (let i = 0; i < a.length; i++) { const v = a[i]; e = (e == null) ? v : v * k + e * (1 - k); if (i >= n - 1) o[i] = e; }
+  return o;
+}
+function _wma(a, n) {
+  const o = Array(a.length).fill(null); const d = n * (n + 1) / 2;
+  for (let i = n - 1; i < a.length; i++) { let s = 0; for (let j = 0; j < n; j++) s += a[i - j] * (n - j); o[i] = s / d; }
+  return o;
+}
+function _stddev(a, n) {
+  const o = Array(a.length).fill(null);
+  for (let i = n - 1; i < a.length; i++) {
+    let m = 0; for (let j = 0; j < n; j++) m += a[i - j]; m /= n;
+    let v = 0; for (let j = 0; j < n; j++) { const d = a[i - j] - m; v += d * d; }
+    o[i] = Math.sqrt(v / n);
+  }
+  return o;
+}
+function _rsi(a, n) {
+  const o = Array(a.length).fill(null); let g = 0, l = 0;
+  for (let i = 1; i < a.length; i++) {
+    const ch = a[i] - a[i - 1], up = Math.max(0, ch), dn = Math.max(0, -ch);
+    if (i <= n) { g += up; l += dn; if (i === n) { g /= n; l /= n; o[i] = 100 - 100 / (1 + (l === 0 ? 100 : g / l)); } }
+    else { g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n; o[i] = 100 - 100 / (1 + (l === 0 ? 100 : g / l)); }
+  }
+  return o;
+}
+function _macd(a, f, s, sig) {
+  const ef = _ema(a, f), es = _ema(a, s);
+  const macd = a.map((_, i) => (ef[i] != null && es[i] != null) ? ef[i] - es[i] : null);
+  const sigLine = _ema(macd.map((v) => v == null ? 0 : v), sig).map((v, i) => macd[i] == null ? null : v);
+  const hist = macd.map((v, i) => (v != null && sigLine[i] != null) ? v - sigLine[i] : null);
+  return { macd, signal: sigLine, hist };
+}
+function _wilder(a, n) {
+  const o = Array(a.length).fill(null); let e = null, seen = 0;
+  for (let i = 0; i < a.length; i++) { if (a[i] == null) continue; seen++; e = (e == null) ? a[i] : (e * (n - 1) + a[i]) / n; if (seen >= n) o[i] = e; }
+  return o;
+}
+function _atr(h, l, c, n) {
+  const tr = Array(c.length).fill(null);
+  for (let i = 0; i < c.length; i++) tr[i] = (i === 0) ? h[i] - l[i]
+    : Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1]));
+  return _wilder(tr, n);
+}
+function _stoch(h, l, c, k, d) {
+  const kk = Array(c.length).fill(null);
+  for (let i = k - 1; i < c.length; i++) {
+    let hh = -Infinity, ll = Infinity;
+    for (let j = 0; j < k; j++) { hh = Math.max(hh, h[i - j]); ll = Math.min(ll, l[i - j]); }
+    kk[i] = hh === ll ? 50 : (c[i] - ll) / (hh - ll) * 100;
+  }
+  const dd = _sma(kk.map((v) => v == null ? 0 : v), d).map((v, i) => kk[i] == null ? null : v);
+  return { k: kk, d: dd };
+}
+function _cci(h, l, c, n) {
+  const tp = c.map((_, i) => (h[i] + l[i] + c[i]) / 3);
+  const ma = _sma(tp, n); const o = Array(c.length).fill(null);
+  for (let i = n - 1; i < c.length; i++) {
+    let md = 0; for (let j = 0; j < n; j++) md += Math.abs(tp[i - j] - ma[i]); md /= n;
+    o[i] = md === 0 ? 0 : (tp[i] - ma[i]) / (0.015 * md);
+  }
+  return o;
+}
+
+// Build plot descriptors for the selected spec + current draft params, or null
+// when the indicator is not in the core preview set.
+function indComputePlots(spec, candles) {
+  const name = (spec.name + " " + (spec.title || "")).toLowerCase();
+  const has = (...ws) => ws.some((w) => name.includes(w));
+  const P = (state.indDraft && state.indDraft.name === spec.name) ? state.indDraft.params : {};
+  const dflt = (k) => { const p = (spec.params || {})[k]; return p ? parseFloat(p.default) : undefined; };
+  const num = (k, d) => { let v = parseFloat(P[k]); if (!isFinite(v)) v = dflt(k); return isFinite(v) ? v : d; };
+  const closes = candles.map((c) => c[4]), highs = candles.map((c) => c[2]), lows = candles.map((c) => c[3]);
+  const lenKey = ["length", "period", "len", "window", "lookback", "n"].find((k) => (spec.params || {})[k] !== undefined);
+  const L = Math.max(1, Math.round(num(lenKey || "length", 14)));
+  const mk = (id, label, pane, type, values, ci) =>
+    ({ id, label, pane, type, values, color: IND_PALETTE[ci % IND_PALETTE.length], width: type === "hist" ? 1 : 2, visible: true });
+  if (has("bollinger", "bband")) {
+    const m = _sma(closes, L), sd = _stddev(closes, L), mult = num("mult", num("stddev", 2)) || 2;
+    return [mk("upper", "Upper", "price", "line", m.map((v, i) => v == null ? null : v + mult * sd[i]), 0),
+            mk("mid", "Basis", "price", "line", m, 1),
+            mk("lower", "Lower", "price", "line", m.map((v, i) => v == null ? null : v - mult * sd[i]), 0)];
+  }
+  if (has("macd")) {
+    const r = _macd(closes, Math.round(num("fast", 12)), Math.round(num("slow", 26)), Math.round(num("signal", 9)));
+    return [mk("macd", "MACD", "sub", "line", r.macd, 0), mk("signal", "Signal", "sub", "line", r.signal, 1), mk("hist", "Histogram", "sub", "hist", r.hist, 2)];
+  }
+  if (has("rsi")) return [mk("rsi", "RSI " + L, "sub", "line", _rsi(closes, L), 0)];
+  if (has("stoch")) {
+    const r = _stoch(highs, lows, closes, Math.round(num("k", L)), Math.round(num("d", 3)));
+    return [mk("k", "%K", "sub", "line", r.k, 0), mk("d", "%D", "sub", "line", r.d, 1)];
+  }
+  if (has("cci")) return [mk("cci", "CCI " + L, "sub", "line", _cci(highs, lows, closes, L), 0)];
+  if (has("atr")) return [mk("atr", "ATR " + L, "sub", "line", _atr(highs, lows, closes, L), 0)];
+  if (has("ema")) return [mk("ema", "EMA " + L, "price", "line", _ema(closes, L), 0)];
+  if (has("wma")) return [mk("wma", "WMA " + L, "price", "line", _wma(closes, L), 0)];
+  if (has("sma") || has("moving average")) return [mk("sma", "SMA " + L, "price", "line", _sma(closes, L), 0)];
+  return null;
+}
+// Merge saved style/visibility overrides (state.indStyle) onto computed plots.
+function indStyleFor(spec) { state.indStyle = state.indStyle || {}; return state.indStyle[spec.name] || (state.indStyle[spec.name] = {}); }
+function indApplyStyle(spec, plots) {
+  const st = indStyleFor(spec);
+  return plots.map((p) => {
+    const o = st[p.id] || (st[p.id] = { color: p.color, width: p.width, visible: true });
+    return { ...p, color: o.color, width: o.width, visible: o.visible !== false };
+  });
+}
+// Plot ids/labels for the Style/Visibility lists (computed on synthetic bars).
+function indPlotMeta(spec) {
+  const synth = []; let p = 100;
+  for (let i = 0; i < 140; i++) { const o = p, c = p + Math.sin(i / 5) * 0.8; synth.push([i, o, Math.max(o, c) + 0.5, Math.min(o, c) - 0.5, c, 100]); p = c; }
+  const plots = indComputePlots(spec, synth);
+  return plots ? plots.map((pl) => ({ id: pl.id, label: pl.label, type: pl.type, color: pl.color, width: pl.width })) : null;
+}
+
+function _drawLine(ctx, x, w, n, p, yOf) {
+  ctx.strokeStyle = p.color; ctx.lineWidth = p.width || 2; ctx.beginPath();
+  let started = false;
   for (let i = 0; i < n; i++) {
-    const [, o, h, l, c] = candles[i];
-    const x = i * cw + cw / 2;
-    const green = c >= o;
-    ctx.strokeStyle = ctx.fillStyle = green ? up : down;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, yOf(h));
-    ctx.lineTo(x, yOf(l));
-    ctx.stroke();
-    const bw = Math.max(1, cw * 0.62);
-    const yo = yOf(o), yc = yOf(c);
-    ctx.fillRect(x - bw / 2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
+    const v = p.values[i];
+    if (v == null || !isFinite(v)) { started = false; continue; }
+    const cx = x + i * (w / n) + (w / n) / 2, cy = yOf(v);
+    if (!started) { ctx.moveTo(cx, cy); started = true; } else ctx.lineTo(cx, cy);
+  }
+  ctx.stroke();
+}
+function _drawPricePane(ctx, x, y, w, h, candles, plots) {
+  const padY = 8; let lo = Infinity, hi = -Infinity;
+  for (const c of candles) { lo = Math.min(lo, c[3]); hi = Math.max(hi, c[2]); }
+  for (const p of plots) for (const v of p.values) if (v != null && isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (!(hi > lo)) { indPvMsg(ctx, w, h, "No range"); return; }
+  const n = candles.length, cw = w / n;
+  const yOf = (v) => y + padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
+  const up = indCssCol("--up", "#63b26a"), down = indCssCol("--down", "#d16d6d");
+  for (let i = 0; i < n; i++) {
+    const [, o, hh, ll, c] = candles[i];
+    const cx = x + i * cw + cw / 2, green = c >= o;
+    ctx.strokeStyle = ctx.fillStyle = green ? up : down; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, yOf(hh)); ctx.lineTo(cx, yOf(ll)); ctx.stroke();
+    const bw = Math.max(1, cw * 0.62), yo = yOf(o), yc = yOf(c);
+    ctx.fillRect(cx - bw / 2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
+  }
+  for (const p of plots) _drawLine(ctx, x, w, n, p, yOf);
+}
+function _drawSubPane(ctx, x, y, w, h, plots) {
+  const padY = 6; let lo = Infinity, hi = -Infinity;
+  for (const p of plots) for (const v of p.values) if (v != null && isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const hasHist = plots.some((p) => p.type === "hist");
+  if (hasHist) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (!(hi > lo)) { if (!isFinite(lo)) { indPvMsg(ctx, w, h, "No data"); return; } hi = lo + 1; lo -= 1; }
+  const n = plots[0].values.length, cw = w / n;
+  const yOf = (v) => y + padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
+  if (lo < 0 && hi > 0) { ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, yOf(0)); ctx.lineTo(x + w, yOf(0)); ctx.stroke(); }
+  const down = indCssCol("--down", "#d16d6d");
+  for (const p of plots) {
+    if (p.type === "hist") {
+      const bw = Math.max(1, cw * 0.6);
+      for (let i = 0; i < n; i++) { const v = p.values[i]; if (v == null || !isFinite(v)) continue; const cx = x + i * cw + cw / 2, y0 = yOf(0), y1 = yOf(v); ctx.fillStyle = v >= 0 ? p.color : down; ctx.fillRect(cx - bw / 2, Math.min(y0, y1), bw, Math.max(1, Math.abs(y1 - y0))); }
+    } else { _drawLine(ctx, x, w, n, p, yOf); }
+  }
+}
+function indDrawPreview(ctx, w, ht, candles, spec) {
+  if (!candles.length) { indPvMsg(ctx, w, ht, "No candles"); return; }
+  let plots = spec ? indComputePlots(spec, candles) : null;
+  if (plots) plots = indApplyStyle(spec, plots).filter((p) => p.visible !== false);
+  const subPlots = plots ? plots.filter((p) => p.pane === "sub") : [];
+  const pricePlots = plots ? plots.filter((p) => p.pane === "price") : [];
+  const gap = 8;
+  const priceH = subPlots.length ? Math.round(ht * 0.62) : ht;
+  _drawPricePane(ctx, 0, 0, w, priceH, candles, pricePlots);
+  if (subPlots.length) {
+    ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, priceH + gap / 2); ctx.lineTo(w, priceH + gap / 2); ctx.stroke();
+    _drawSubPane(ctx, 0, priceH + gap, w, ht - priceH - gap, subPlots);
+  }
+  if (spec && !plots) {
+    ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("preview: candles \u2014 add to chart to compute " + spec.name, w / 2, ht - 4);
   }
 }
 async function indPreviewRender() {
@@ -1507,16 +1714,12 @@ async function indPreviewRender() {
   if (!state.provider || !state.symbol) { indPvMsg(ctx, w, ht, "Chart a symbol to preview"); return; }
   const spec = (state.indicatorSpecs || []).find((s) => s.name === state.indSelected);
   const seq = (state.indPvSeq = (state.indPvSeq || 0) + 1);
+  // Candles only: indicators are computed client-side above so the preview
+  // works in hosted mode (where /api/candles returns no indicators).
   let data;
   try {
-    let q = "";
-    if (spec) {
-      const ps = Object.entries(indDraftToParams(spec));
-      q = spec.name + (ps.length ? ":" + ps.map(([k, v]) => `${k}=${v}`).join(";") : "");
-    }
     const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
-      `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
-      `&limit=160&indicators=${encodeURIComponent(q)}`;
+      `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}&limit=160&indicators=`;
     const r = await fetch(url);
     if (!r.ok) throw new Error("http");
     data = await r.json();
@@ -1525,7 +1728,7 @@ async function indPreviewRender() {
     return;
   }
   if (seq !== state.indPvSeq) return;
-  indDrawCandles(ctx, w, ht, data.candles || []);
+  indDrawPreview(ctx, w, ht, data.candles || [], spec);
 }
 
 // The parameter editor: one input per spec param (already typed and bounded
