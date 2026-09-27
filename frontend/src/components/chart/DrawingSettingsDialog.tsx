@@ -204,7 +204,14 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
     update({ levelStyles: next });
   };
   const addLevel = () => {
-    update({ levelStyles: [...levels, { value: 1, visible: true, color }] });
+    // Smart default: fill the next standard Fibonacci value not already present,
+    // otherwise extend by +0.618 beyond the current maximum.
+    const FIB_SEQUENCE = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.414, 1.618, 2, 2.618, 3.618, 4.236];
+    const existing = new Set(levels.map((l) => l.value));
+    const nextInSeq = FIB_SEQUENCE.find((v) => !existing.has(v));
+    const maxVal = levels.length ? Math.max(...levels.map((l) => l.value)) : 0;
+    const val = nextInSeq !== undefined ? nextInSeq : Math.round((maxVal + 0.618) * 1000) / 1000;
+    update({ levelStyles: [...levels, { value: val, visible: true, color }] });
   };
   const removeLevel = (idx: number) => {
     update({ levelStyles: levels.filter((_, i) => i !== idx) });
