@@ -5956,7 +5956,7 @@ const ChartDrawingOverlayComponent = ({
           <line x1={p.x} y1={p.y} x2={p.x} y2={topY} stroke={col} strokeWidth={1.5} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'stroke' }} />
           <circle cx={p.x} cy={p.y} r={2.5} fill={col} />
           <rect x={p.x} y={topY - boxH} width={boxW} height={boxH} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
-          <text x={p.x + 7} y={topY - boxH / 2 + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={600} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          <text x={p.x + 7} y={topY - boxH / 2 + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
           {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
         </g>
       );
@@ -5967,7 +5967,7 @@ const ChartDrawingOverlayComponent = ({
       const p = pixels[0];
       const price = drawing.points[0].price;
       const label = drawing.text && drawing.text.trim().length > 0 ? drawing.text : price.toFixed(price < 1 ? 6 : 2);
-      const fontSize = 12;
+      const fontSize = drawing.strokeWidth || 12;
       const padX = 7;
       const boxW = label.length * fontSize * 0.62 + padX * 2;
       const boxH = fontSize + 8;
@@ -5976,7 +5976,7 @@ const ChartDrawingOverlayComponent = ({
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
           <path d={`M ${p.x} ${p.y} L ${p.x + 6} ${p.y - 5} L ${p.x + 6} ${p.y + 5} Z`} fill={col} style={{ pointerEvents: 'all' }} />
           <rect x={p.x + 6} y={p.y - boxH / 2} width={boxW} height={boxH} rx={4} fill="#0b0f14" fillOpacity={0.9} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
-          <text x={p.x + 6 + padX} y={p.y + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={600} style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
+          <text x={p.x + 6 + padX} y={p.y + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
           {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
         </g>
       );
@@ -5998,7 +5998,7 @@ const ChartDrawingOverlayComponent = ({
           <line x1={ccx} y1={ccy} x2={anchorPx.x} y2={anchorPx.y} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.75} style={{ pointerEvents: 'none' }} />
           <circle cx={anchorPx.x} cy={anchorPx.y} r={3} fill={col} style={{ pointerEvents: 'all' }} />
           <rect x={boxPx.x} y={boxPx.y} width={boxW} height={boxH} rx={5} fill="#0b0f14" fillOpacity={0.9} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
-          <text x={boxPx.x + padX} y={boxPx.y + boxH - padY - 1} fill={col} fontSize={fontSize} fontWeight={600} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          <text x={boxPx.x + padX} y={boxPx.y + boxH - padY - 1} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
           {showHandles && isSelected && (
             <>
               <circle cx={anchorPx.x} cy={anchorPx.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
@@ -6020,7 +6020,7 @@ const ChartDrawingOverlayComponent = ({
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
           <rect x={p.x} y={p.y - boxH} width={boxW} height={boxH} rx={5} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeOpacity={0.7} strokeWidth={1} style={{ pointerEvents: 'all' }} />
-          <text x={p.x + padX} y={p.y - padY - 1} fill={col} fontSize={fontSize} fontWeight={600} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          <text x={p.x + padX} y={p.y - padY - 1} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
           {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
         </g>
       );
@@ -6044,6 +6044,8 @@ const ChartDrawingOverlayComponent = ({
       const p = pixels[0];
       // Use strokeWidth directly as font size (default 14px)
       const fontSize = drawing.strokeWidth || 14;
+      const fw = drawing.textBold === false ? 400 : 700;
+      const fst = drawing.textItalic ? 'italic' : 'normal';
 
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
@@ -6053,7 +6055,8 @@ const ChartDrawingOverlayComponent = ({
             fill={drawing.color || '#64748b'}
             fillOpacity={strokeOpacity}
             fontSize={fontSize}
-            fontWeight="bold"
+            fontWeight={fw}
+            fontStyle={fst}
             onMouseEnter={() => setHoveredDrawingId(drawing.id)}
             onMouseLeave={() => setHoveredDrawingId(null)}
             style={{ cursor: 'move', userSelect: 'none', pointerEvents: 'all' }}

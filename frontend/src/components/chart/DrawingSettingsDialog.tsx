@@ -226,7 +226,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
       case 'toggle':
         return (
           <Row key={i} label={st.label}>
-            <Switch checked={!!dv(st.key, false)} onCheckedChange={(c) => update({ [st.key]: c } as Partial<Drawing>)} />
+            <Switch checked={!!dv(st.key, st.fallback ?? false)} onCheckedChange={(c) => update({ [st.key]: c } as Partial<Drawing>)} />
           </Row>
         );
       case 'segmented':

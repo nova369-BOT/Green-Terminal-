@@ -25,7 +25,7 @@ export type Setting =
   | { kind: 'note'; text: string }
   | { kind: 'color'; key: string; label: string; opacityKey?: string }
   | { kind: 'slider'; key: string; label: string; min: number; max: number; step: number; fallback: number; suffix?: string }
-  | { kind: 'toggle'; key: string; label: string }
+  | { kind: 'toggle'; key: string; label: string; fallback?: boolean }
   | { kind: 'segmented'; key: string; label: string; options: { value: string; label: string }[]; fallback: string }
   | { kind: 'lineStyle'; label: string }
   | { kind: 'fill' };
@@ -56,7 +56,6 @@ const FILL_SET = new Set<string>([
 const LEGACY_SET = new Set<string>([
   'long', 'short',
   'anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile', 'regressionTrend',
-  ...TEXT_SET,
 ]);
 
 export const isMarkerType = (t: string): boolean => MARKER_SET.has(t);
@@ -90,6 +89,17 @@ export function getToolSettings(type: string): Setting[] {
       { kind: 'color', key: 'color', label: 'Color', opacityKey: 'opacity' },
       { kind: 'slider', key: 'strokeWidth', label: 'Size', min: 10, max: 120, step: 2, fallback: 16 },
       { kind: 'note', text: "Tip: drag the teal handle at the marker's corner to resize it on the chart." },
+    ];
+  }
+  if (TEXT_SET.has(type)) {
+    // Text/label family: the renderer reads color + strokeWidth (font size) +
+    // textBold/textItalic. Those are the only functional controls.
+    return [
+      { kind: 'section', label: 'Text' },
+      { kind: 'color', key: 'color', label: 'Text color', opacityKey: 'opacity' },
+      { kind: 'slider', key: 'strokeWidth', label: 'Font size', min: 8, max: 72, step: 1, fallback: 14 },
+      { kind: 'toggle', key: 'textBold', label: 'Bold', fallback: true },
+      { kind: 'toggle', key: 'textItalic', label: 'Italic', fallback: false },
     ];
   }
   if (LEGACY_SET.has(type)) return [];
