@@ -198,6 +198,9 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
   const lsRR = lsRiskPerUnit > 0 ? lsReward / lsRiskPerUnit : 0;
   const lsRiskAmt = (drawing.accountSize && drawing.riskPercent) ? (drawing.accountSize * drawing.riskPercent / 100) : 0;
   const lsSize = (lsRiskAmt > 0 && lsRiskPerUnit > 0) ? lsRiskAmt / lsRiskPerUnit : 0;
+  const lsDenom = lsRiskPerUnit + lsReward;
+  const lsPTP = lsDenom > 0 ? lsRiskPerUnit / lsDenom : 0;
+  const lsExpR = lsPTP * lsRR - (1 - lsPTP);
 
   // Effective per-level styles (initialize from defaults when absent).
   const levels: LevelStyle[] = useMemo(() => {
@@ -276,6 +279,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         topLabels: s.topLabels, bottomLabels: s.bottomLabels, gannAngles: s.gannAngles,
         fibLabelMode: s.fibLabelMode, showMiddleLine: s.showMiddleLine,
         entryLineColor: s.entryLineColor, accountSize: s.accountSize, riskPercent: s.riskPercent, stopLoss: s.stopLoss,
+        showProjection: s.showProjection,
       });
     }
     onOpenChange(false);
@@ -511,10 +515,13 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                     onChange={(e) => { const v = parseFloat(e.target.value); update({ riskPercent: Number.isFinite(v) ? v : undefined }); }}
                     className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
                 </Row>
+                <Row label="Projection (ATR cone)"><Switch checked={drawing.showProjection !== false} onCheckedChange={(c) => update({ showProjection: c })} /></Row>
                 <div className="mt-2 space-y-1 rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-[11px]">
                   <div className="flex justify-between"><span className="text-slate-400">Risk / Reward</span><span className="font-mono text-teal-300">{lsRR > 0 ? lsRR.toFixed(2) : '\u2014'}</span></div>
                   <div className="flex justify-between"><span className="text-slate-400">Risk amount</span><span className="font-mono text-slate-200">{lsRiskAmt > 0 ? `$${lsRiskAmt.toFixed(2)}` : '\u2014'}</span></div>
                   <div className="flex justify-between"><span className="text-slate-400">Position size</span><span className="font-mono text-slate-200">{lsSize > 0 ? lsSize.toFixed(2) : '\u2014'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Win prob (est.)</span><span className="font-mono text-teal-300">{lsPTP > 0 ? `${(lsPTP * 100).toFixed(0)}%` : '\u2014'}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-400">Expectancy (est.)</span><span className="font-mono text-slate-200">{lsDenom > 0 ? `${lsExpR >= 0 ? '+' : ''}${lsExpR.toFixed(2)}R` : '\u2014'}</span></div>
                 </div>
               </>
             )}

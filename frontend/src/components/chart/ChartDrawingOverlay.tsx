@@ -79,6 +79,7 @@ export type Drawing = {
   entryLineColor?: string; // Long/short position: entry line colour
   accountSize?: number;    // Long/short position sizing: account balance
   riskPercent?: number;    // Long/short position sizing: risk % of account
+  showProjection?: boolean; // Long/short: ATR volatility projection cone
   fibLevels?: number[];
   stopLoss?: ChartPoint;  // Also price/time coordinates
   stopLossPointIndex?: number;
@@ -3724,10 +3725,52 @@ const ChartDrawingOverlayComponent = ({
         }
       }
 
+      // ── Smart Position: ATR volatility projection cone (real OHLC) ──
+      const showProjection = drawing.showProjection !== false;
+      let conePath: string | null = null;
+      if (showProjection && candlesProp && candlesProp.length > 3) {
+        const cs = candlesProp;
+        let trSum = 0, trN = 0;
+        for (let i = Math.max(1, cs.length - 14); i < cs.length; i++) {
+          const tr = Math.max(cs[i].high - cs[i].low, Math.abs(cs[i].high - cs[i - 1].close), Math.abs(cs[i].low - cs[i - 1].close));
+          if (Number.isFinite(tr)) { trSum += tr; trN++; }
+        }
+        const atr = trN > 0 ? trSum / trN : 0;
+        let pxPerBar = 8;
+        if (cs.length >= 2) {
+          const xa = converter.timeToX(cs[cs.length - 2].time);
+          const xb = converter.timeToX(cs[cs.length - 1].time);
+          if (xa !== null && xb !== null && Math.abs(xb - xa) > 0.5) pxPerBar = Math.abs(xb - xa);
+        }
+        if (atr > 0) {
+          const steps = 24;
+          const up: string[] = [];
+          const dn: string[] = [];
+          for (let sIdx = 0; sIdx <= steps; sIdx++) {
+            const x = minX + (maxX - minX) * (sIdx / steps);
+            const bars = Math.max(0, (x - minX) / pxPerBar);
+            const band = atr * Math.sqrt(bars);
+            const yUp = converter.priceToY(entryPrice + band);
+            const yDn = converter.priceToY(entryPrice - band);
+            if (!Number.isFinite(yUp) || !Number.isFinite(yDn)) continue;
+            up.push(`${x},${yUp}`);
+            dn.push(`${x},${yDn}`);
+          }
+          if (up.length > 1) conePath = `M ${up.join(' L ')} L ${dn.reverse().join(' L ')} Z`;
+        }
+      }
+
       return (
         <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}
           onMouseEnter={() => setHoveredDrawingId(drawing.id)}
           onMouseLeave={() => setHoveredDrawingId(null)}>
+          {/* ATR volatility projection cone (drawn behind everything) */}
+          {conePath && (
+            <>
+              <path d={conePath} fill="#2dd4bf" fillOpacity={0.08} stroke="none" style={{ pointerEvents: 'none' }} />
+              <path d={conePath} fill="none" stroke="#2dd4bf" strokeOpacity={0.3} strokeWidth={1} strokeDasharray="4,4" style={{ pointerEvents: 'none' }} />
+            </>
+          )}
           {/* Profit zone fill: full width, full height */}
           <rect
             x={minX}
@@ -3916,6 +3959,27 @@ const ChartDrawingOverlayComponent = ({
                   </text>
                 </g>
               </>
+            );
+          })()}
+
+          {/* Smart Position analytics chip (model estimate, gambler's-ruin barrier prob) */}
+          {isSelected && (() => {
+            const distTP = Math.abs(targetPrice - entryPrice);
+            const distSL = Math.abs(entryPrice - stopLossPrice);
+            const denom = distTP + distSL;
+            if (denom <= 0) return null;
+            const pTP = distSL / denom;
+            const rr = distSL > 0 ? distTP / distSL : 0;
+            const expR = pTP * rr - (1 - pTP);
+            const chipTop = Math.min(profitTop, stopLossTop);
+            const line1 = `Win ~${(pTP * 100).toFixed(0)}%  ·  E ${expR >= 0 ? '+' : ''}${expR.toFixed(2)}R`;
+            const chipW = line1.length * 6.2 + 16;
+            return (
+              <g style={{ pointerEvents: 'none' }}>
+                <rect x={minX + 6} y={chipTop + 6} width={chipW} height={30} rx={5} fill="rgba(11,15,20,0.9)" stroke="#2dd4bf" strokeOpacity={0.35} />
+                <text x={minX + 6 + chipW / 2} y={chipTop + 19} fill="#5eead4" fontSize="11" fontWeight="600" fontFamily="system-ui, -apple-system, sans-serif" textAnchor="middle">{line1}</text>
+                <text x={minX + 6 + chipW / 2} y={chipTop + 30} fill="rgba(148,163,184,0.8)" fontSize="8" fontWeight="500" fontFamily="system-ui, -apple-system, sans-serif" textAnchor="middle">est. · volatility model</text>
+              </g>
             );
           })()}
 
