@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { X, GripVertical } from 'lucide-react';
+import { X, GripVertical, Palette, Crosshair, SlidersHorizontal } from 'lucide-react';
 import { AdvancedColorPicker } from './AdvancedColorPicker';
 import type { Drawing, ChartPoint } from './ChartDrawingOverlay';
 
@@ -263,18 +263,28 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         <GripVertical className="h-3.5 w-3.5 text-slate-600" />
         <span className="h-2 w-2 rounded-full bg-teal-400 shadow-[0_0_8px_2px_rgba(45,212,191,0.6)]" />
         <span className="text-[14px] font-semibold text-slate-100">{title}</span>
-        <span className="ml-auto text-[10px] font-normal uppercase tracking-widest text-slate-500">Settings</span>
+        <span className="ml-auto text-[10px] font-normal uppercase tracking-widest text-slate-500">Inspector</span>
         <button type="button" className="ml-1 text-slate-500 hover:text-slate-200" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></button>
       </div>
 
-      <Tabs defaultValue="style" className="w-full">
-        <TabsList className="mx-4 mt-3 grid w-[calc(100%-2rem)] grid-cols-3 bg-white/5">
-          <TabsTrigger value="style" className="text-[12px] data-[state=active]:bg-teal-400/15 data-[state=active]:text-teal-200">Style</TabsTrigger>
-          <TabsTrigger value="coords" className="text-[12px] data-[state=active]:bg-teal-400/15 data-[state=active]:text-teal-200">Coordinates</TabsTrigger>
-          <TabsTrigger value="visibility" className="text-[12px] data-[state=active]:bg-teal-400/15 data-[state=active]:text-teal-200">Visibility</TabsTrigger>
+      {/* Green Terminal signature layout: a vertical icon rail on the left
+          (deliberately unlike TradingView's top Style/Coordinates/Visibility
+          tabs) with our own section names — Look / Anchors / Options. */}
+      <Tabs defaultValue="style" orientation="vertical" className="flex w-full items-stretch">
+        <TabsList className="flex h-auto flex-col gap-1 rounded-none border-r border-white/5 bg-black/20 p-2">
+          <TabsTrigger value="style" className="flex w-[70px] flex-col gap-1 rounded-lg px-1 py-2 text-[10px] font-medium text-slate-400 data-[state=active]:bg-teal-400/15 data-[state=active]:text-teal-200">
+            <Palette className="h-4 w-4" /> Look
+          </TabsTrigger>
+          <TabsTrigger value="coords" className="flex w-[70px] flex-col gap-1 rounded-lg px-1 py-2 text-[10px] font-medium text-slate-400 data-[state=active]:bg-teal-400/15 data-[state=active]:text-teal-200">
+            <Crosshair className="h-4 w-4" /> Anchors
+          </TabsTrigger>
+          <TabsTrigger value="visibility" className="flex w-[70px] flex-col gap-1 rounded-lg px-1 py-2 text-[10px] font-medium text-slate-400 data-[state=active]:bg-teal-400/15 data-[state=active]:text-teal-200">
+            <SlidersHorizontal className="h-4 w-4" /> Options
+          </TabsTrigger>
         </TabsList>
 
-        {/* ---------------- STYLE ---------------- */}
+        <div className="min-w-0 flex-1">
+        {/* ---------------- LOOK ---------------- */}
         <TabsContent value="style" className="mt-0 px-4 pb-2">
           <ScrollArea className="h-[320px] pr-3">
             <SectionTitle>Line</SectionTitle>
@@ -448,6 +458,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
             )}
           </ScrollArea>
         </TabsContent>
+        </div>
       </Tabs>
 
       <div className="flex items-center justify-end gap-2 border-t border-white/5 px-4 py-3">
