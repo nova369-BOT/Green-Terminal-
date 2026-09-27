@@ -104,6 +104,21 @@ export const DrawingEditToolbar = ({
   const isLongShort = drawing.type === 'long' || drawing.type === 'short';
   const isFibonacci = drawing.type === 'fibonacci';
   const isText = drawing.type === 'text';
+  // Emoji & markers store their GLYPH SIZE in strokeWidth (not a line width),
+  // on very different scales (emoji 12–200, marker 10–120). The generic 0–8
+  // "Width" slider mis-scales them badly, so this tool group gets a correctly
+  // ranged "Size" control instead.
+  const MARKER_TYPES = new Set([
+    'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare',
+    'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown',
+  ]);
+  const isEmoji = drawing.type === 'emoji';
+  const isMarker = MARKER_TYPES.has(drawing.type);
+  const isSizeTool = isEmoji || isMarker;
+  const sizeLabel = isSizeTool ? 'Size' : 'Width';
+  const sizeMin = isEmoji ? 12 : isMarker ? 10 : 0;
+  const sizeMax = isEmoji ? 200 : isMarker ? 120 : 8;
+  const sizeStep = isSizeTool ? 2 : 1;
   // Drawings that carry an inline text label via drawing.text (rendered by ChartDrawingOverlay's renderInlineLabel). The toolbar exposes a font/size/bold/italic popover for these.
   const supportsInlineLabel = drawing.type === 'trend' || drawing.type === 'line' || drawing.type === 'rectangle';
   const labelFontSize = drawing.textFontSize ?? 13;
@@ -256,8 +271,8 @@ export const DrawingEditToolbar = ({
 
       <div className="w-px h-5 bg-border/40 mx-0.5" />
 
-      {/* Color Picker - Hide for long/short since they have separate TP/SL color pickers */}
-      {!isLongShort && (
+      {/* Color Picker - Hide for long/short (separate TP/SL pickers) and emoji (a glyph has no stroke color) */}
+      {!isLongShort && !isEmoji && (
         <Popover>
           <PopoverTrigger asChild>
             <Button
@@ -284,7 +299,7 @@ export const DrawingEditToolbar = ({
         </Popover>
       )}
 
-      {/* Stroke Width - Hide for text drawings (they use font size instead) */}
+      {/* Stroke Width / glyph Size - Hide for text drawings (they use font size instead) */}
       {!isText && (
         <Popover>
           <PopoverTrigger asChild>
@@ -292,7 +307,7 @@ export const DrawingEditToolbar = ({
               variant="ghost"
               size="sm"
               className="h-7 px-2 gap-1 hover:bg-muted text-xs font-mono"
-              title="Line Width"
+              title={isSizeTool ? 'Size' : 'Line Width'}
             >
               <div
                 className="w-4 rounded-full bg-current"
@@ -305,15 +320,15 @@ export const DrawingEditToolbar = ({
           <PopoverContent className="w-40 p-3" side="top" align="center">
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Width</span>
+                <span>{sizeLabel}</span>
                 <span>{strokeWidth}px</span>
               </div>
               <Slider
-                value={[strokeWidth]}
+                value={[Math.min(sizeMax, Math.max(sizeMin, strokeWidth))]}
                 onValueChange={handleStrokeWidthChange}
-                min={0}
-                max={8}
-                step={1}
+                min={sizeMin}
+                max={sizeMax}
+                step={sizeStep}
                 className="w-full"
               />
             </div>
@@ -321,8 +336,8 @@ export const DrawingEditToolbar = ({
         </Popover>
       )}
 
-      {/* Line Style - Hide for text drawings */}
-      {!isText && (
+      {/* Line Style - Hide for text drawings and glyph tools (emoji/markers) */}
+      {!isText && !isSizeTool && (
         <Popover>
           <PopoverTrigger asChild>
             <Button
