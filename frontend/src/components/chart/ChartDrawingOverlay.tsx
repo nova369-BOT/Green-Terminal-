@@ -846,16 +846,31 @@ const ChartDrawingOverlayComponent = ({
     if (draggingId && dragPointIndex !== null) {
       // Update crosshair via direct DOM during point dragging, no React re-renders
       const clampedPoint = clampToChartArea({ x, y });
+      // Emoji (970) / marker (971) resize is a SIZE gesture, not a coordinate
+      // placement. The full-chart crosshair guide + price/time badges belong to
+      // point placement only — during a resize they render as a stray "unending
+      // line" across the chart, so suppress them entirely for these handles.
+      const isResizeHandle = dragPointIndex === 970 || dragPointIndex === 971;
       const hLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-h`);
       const vLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-v`);
       if (hLine && vLine) {
-        hLine.setAttribute('y1', String(clampedPoint.y));
-        hLine.setAttribute('y2', String(clampedPoint.y));
-        vLine.setAttribute('x1', String(clampedPoint.x));
-        vLine.setAttribute('x2', String(clampedPoint.x));
-        hLine.style.display = '';
-        vLine.style.display = '';
+        if (isResizeHandle) {
+          hLine.style.display = 'none';
+          vLine.style.display = 'none';
+        } else {
+          hLine.setAttribute('y1', String(clampedPoint.y));
+          hLine.setAttribute('y2', String(clampedPoint.y));
+          vLine.setAttribute('x1', String(clampedPoint.x));
+          vLine.setAttribute('x2', String(clampedPoint.x));
+          hLine.style.display = '';
+          vLine.style.display = '';
+        }
       }
+      if (isResizeHandle) {
+        // Clear any lingering placement badges, then run the resize update below.
+        updateCursorBadges({ x: -9999, y: -9999 }, []);
+        // fall through to the drawing-update logic (dragPointIndex 970/971)
+      } else {
       // Show badges for all drawing points: the dragged point at cursor position,
       // other points at their original (undragged) positions.
       const pointDragDrawing = drawings.find(d => d.id === draggingId);
@@ -874,6 +889,7 @@ const ChartDrawingOverlayComponent = ({
         updateCursorBadges(clampedPoint, allPts);
       } else {
         updateCursorBadges(clampedPoint);
+      }
       }
 
       const drawing = drawings.find((d) => d.id === draggingId);
