@@ -18,7 +18,7 @@ import { emojiSelection } from "../emojiStore";
 const EMOJI_LIST = ['📈','📉','🚀','💰','🔥','⭐','✅','❌','⚠️','🎯','💎','🐂','🐻','👀','🤑','😱','🟢','🔴','⏰','📌','💡','🏆','❤️','👍'];
 import {
   Star, Plus, X, Minus, Type, Square, RectangleHorizontal, Paintbrush,
-  ArrowUpCircle, ArrowDownCircle, Trash2, Lock, Unlock, Eye, EyeOff, Ruler, Keyboard,
+  ArrowUpCircle, ArrowDownCircle, Trash2, Lock, Unlock, Eye, EyeOff, Ruler, Eraser, Keyboard,
   ArrowRight, MoveVertical, Circle, Triangle, RotateCw,
   Octagon, Diamond, Pentagon, Hexagon, Heart, ArrowBigRight, Highlighter,
   MousePointer2, DollarSign, Settings, Bell, Camera, Lasso, ArrowUp, ArrowDown
@@ -671,6 +671,17 @@ export default function DrawingToolsPanel({
             </Tooltip>
           </TooltipProvider>
         )}
+        {/* Eraser tool: click any drawing to delete it; stays active for repeated erasing */}
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className={`relative h-9 w-9 rounded-lg transition-colors ${activeTool === 'eraser' ? 'text-electric-blue before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2.5px] before:bg-electric-blue before:rounded-r' : 'text-foreground/80 hover:bg-white/[0.07] hover:text-foreground'}`} onClick={() => onToolSelect(activeTool === 'eraser' ? null : 'eraser')}>
+                <Eraser className="h-[18px] w-[18px]" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs lg:text-sm">Eraser — click a drawing to delete it</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         {/* Measure tool */}
         <TooltipProvider delayDuration={300}>
           <Tooltip>

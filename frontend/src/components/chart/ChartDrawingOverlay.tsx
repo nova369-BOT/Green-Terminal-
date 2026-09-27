@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment 
 import { flushSync } from 'react-dom';
 import { emojiSelection } from './emojiStore';
 
-export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | 'emoji' | 'note' | 'callout' | 'priceLabel' | 'signpost' | 'anchoredVwap' | 'fixedVolumeProfile' | 'anchoredVolumeProfile' | 'regressionTrend' | 'cyclicLines' | 'sineLine' | 'innerFork' | 'splitChannel' | 'timeArcs' | null;
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | 'emoji' | 'note' | 'callout' | 'priceLabel' | 'signpost' | 'anchoredVwap' | 'fixedVolumeProfile' | 'anchoredVolumeProfile' | 'regressionTrend' | 'cyclicLines' | 'sineLine' | 'innerFork' | 'splitChannel' | 'timeArcs' | 'eraser' | null;
+
+const ERASER_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%232dd4bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 20H8.5L3 14.5a2 2 0 0 1 0-3l9-9 7 7-7 7'/></svg>") 3 19, auto`;
 
 // Multi-point pattern & Elliott tools: shared config (point count, node labels, connector lines, fill triangles)
 const MULTIPOINT_TOOLS: Record<string, { n: number; labels: string[]; connectors: [number, number][]; fillTris: [number, number, number][] }> = {
@@ -1269,6 +1271,16 @@ const ChartDrawingOverlayComponent = ({
   };
 
   // Unified pointer down handler for both mouse and touch
+  // Eraser tool: when active, clicking a drawing deletes it instead of selecting.
+  const selectOrErase = (id: string, pos: { x: number; y: number }) => {
+    if (activeTool === 'eraser') {
+      onDrawingsChange(drawings.filter((d) => d.id !== id));
+      onSelectDrawing?.(null);
+      return;
+    }
+    onSelectDrawing?.(id, pos);
+  };
+
   const handlePointerDown = (x: number, y: number, clientX: number, clientY: number) => {
     if (!containerRef.current) return false;
 
@@ -1339,7 +1351,7 @@ const ChartDrawingOverlayComponent = ({
               const firstPointPixel = chartToPixel(drawing.points[0]);
               startDragging(drawing.id);
               setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-              onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
               return true;
             }
           }
@@ -1542,7 +1554,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1574,7 +1586,7 @@ const ChartDrawingOverlayComponent = ({
             startDragging(drawing.id);
             setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
             // Select this drawing and show toolbar at click position
-            onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+            selectOrErase(drawing.id, { x: clientX, y: clientY });
             return true;
           }
         }
@@ -1595,7 +1607,7 @@ const ChartDrawingOverlayComponent = ({
               const firstPointPixel = chartToPixel(drawing.points[0]);
               startDragging(drawing.id);
               setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-              onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
               return true;
             }
           }
@@ -1614,7 +1626,7 @@ const ChartDrawingOverlayComponent = ({
               const firstPointPixel = chartToPixel(drawing.points[0]);
               startDragging(drawing.id);
               setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-              onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
               return true;
             }
           }
@@ -1631,7 +1643,7 @@ const ChartDrawingOverlayComponent = ({
             const firstPointPixel = chartToPixel(drawing.points[0]);
             startDragging(drawing.id);
             setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-            onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+            selectOrErase(drawing.id, { x: clientX, y: clientY });
             return true;
           }
         }
@@ -1645,7 +1657,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1658,7 +1670,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1676,7 +1688,7 @@ const ChartDrawingOverlayComponent = ({
               const firstPointPixel = chartToPixel(drawing.points[0]);
               startDragging(drawing.id);
               setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-              onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
               return true;
             }
           }
@@ -1692,7 +1704,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1705,7 +1717,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1734,7 +1746,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1752,7 +1764,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1777,7 +1789,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1804,7 +1816,7 @@ const ChartDrawingOverlayComponent = ({
             const fp = chartToPixel(drawing.points[0]);
             startDragging(drawing.id);
             setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-            onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+            selectOrErase(drawing.id, { x: clientX, y: clientY });
             return true;
           }
         }
@@ -1830,7 +1842,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1853,7 +1865,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1877,7 +1889,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1905,7 +1917,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
         // Also check if near either line edge
@@ -1919,7 +1931,7 @@ const ChartDrawingOverlayComponent = ({
               const firstPointPixel = chartToPixel(drawing.points[0]);
               startDragging(drawing.id);
               setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-              onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
               return true;
             }
           }
@@ -1942,7 +1954,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1957,7 +1969,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -1981,7 +1993,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2004,7 +2016,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2025,7 +2037,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2044,7 +2056,7 @@ const ChartDrawingOverlayComponent = ({
           const fp = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2064,7 +2076,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2081,7 +2093,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2097,7 +2109,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2113,7 +2125,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2127,7 +2139,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2142,7 +2154,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2155,7 +2167,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -2218,7 +2230,7 @@ const ChartDrawingOverlayComponent = ({
           const firstPointPixel = chartToPixel(drawing.points[0]);
           startDragging(drawing.id);
           setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-          onSelectDrawing?.(drawing.id, { x: clientX, y: clientY });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
           return true;
         }
       }
@@ -6104,7 +6116,7 @@ const ChartDrawingOverlayComponent = ({
                 const y = e.clientY - rect.top;
                 startDragging(drawing.id);
                 setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
-                onSelectDrawing?.(drawing.id, { x: e.clientX, y: e.clientY });
+                selectOrErase(drawing.id, { x: e.clientX, y: e.clientY });
               }
             }}
             style={{ cursor: 'move', pointerEvents: 'stroke' }}
@@ -7176,6 +7188,7 @@ const ChartDrawingOverlayComponent = ({
         }
       }}
       style={{
+        cursor: activeTool === 'eraser' ? ERASER_CURSOR : undefined,
         pointerEvents: (needsPointerEvents && !onlyForDeselect) ? 'all' : 'none',
         touchAction: blockTouchActions ? 'none' : 'auto',
         WebkitUserSelect: 'none',
