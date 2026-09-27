@@ -35,15 +35,19 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
   - Live preview of the effect.
 - Mockup approved (pending any tweaks). Approach A+B.
 
-## Item 4 — Multi-chart first-load shows OLD mode + blank panels  🔧 QUEUED / BLOCKED
+## Item 4 — Multi-chart first-load shows OLD mode + blank panels  ✅ FIX SHIPPED (77d00aa)
 - User: "whenever i first load the multi chart it just doesnt show the change of
   pairs functions it instead shows our old mode of setting the multi window."
-- Two parts: (a) first load shows old preset selector instead of new per-panel
-  pair+timeframe pickers (init/timing bug); (b) some panels render BLANK
-  (fetch throttle, no loading state).
-- Plan: fix mount so per-panel pickers show immediately; stagger fetches +
-  retry/backoff + real loading state.
-- BLOCKED: need the user's FIRST-LOAD screenshot of the "old mode".
+- ROOT CAUSE (found in code, no screenshot): the shell's read-only pane badges
+  (app.js paneBadgesUpdate) were anchored at each pane's TOP-left, sitting on
+  top of the new per-pane header's pair picker → first load showed "SYM · TF"
+  instead of the change-of-pair control. (The old LSEChartPanes system is dead
+  code, never invoked — ruled out.)
+- FIX: (a) moved pane badges to the pane's BOTTOM-left so the interactive header
+  is never covered; (b) blank panels now show an explicit Loading/No-data state,
+  with staggered fetches + exponential-backoff retry.
+- OPEN VERIFICATION: confirm on Render with live data (sandbox has no feed, so
+  panes read "No data" here by design).
 
 ## Item 5 — Move timeframe rail to the RIGHT-hand side  🔧 QUEUED / BLOCKED
 - User: "fix this timeframe shift it to the right hand side."
@@ -65,7 +69,7 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
   - Right inspector: Preset dropdown, live preview (updates as you edit),
     grouped INPUTS / STYLE / FILL / VISIBILITY / ALERTS, Remove/Reset/Apply row.
 
-## Item 8 — Advanced on-chart indicator HUD/legend  🔧 QUEUED (big) — NEXT
+## Item 8 — Advanced on-chart indicator HUD/legend  ✅ SHIPPED (Part A 1dc50c3, Part B 974819d)
 - User: replace the plain on-chart readout (SMA/EMA/OHLC text at top) with
   something unique, more advanced, professional; must let you EDIT / HIDE /
   DELETE each indicator right there.
@@ -82,5 +86,6 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
 ---
 
 ## Build order (agreed)
-2 ✅ → 1 ✅ → **8 (next)** → 7 → 3.  Slot 5/6 and 4 in as soon as the user
-answers the (a)/(b) choice and sends the first-load screenshot.
+2 ✅ → 1 ✅ → 8 ✅ → 4 ✅ → **7 (next)** → 3.
+Item 5 still BLOCKED: user must pick (a) horizontal rail at the right end of the
+top toolbar, or (b) vertical rail on the chart's right edge. Item 6 pairs with 5.
