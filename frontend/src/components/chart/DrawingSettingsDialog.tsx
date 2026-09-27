@@ -368,7 +368,7 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         topLabels: s.topLabels, bottomLabels: s.bottomLabels, gannAngles: s.gannAngles,
         fibLabelMode: s.fibLabelMode, showMiddleLine: s.showMiddleLine,
         entryLineColor: s.entryLineColor, accountSize: s.accountSize, riskPercent: s.riskPercent, stopLoss: s.stopLoss,
-        showProjection: s.showProjection,
+        showProjection: s.showProjection, feesPercent: s.feesPercent,
       });
     }
     onOpenChange(false);
@@ -608,14 +608,36 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
                     onChange={(e) => { const v = parseFloat(e.target.value); update({ riskPercent: Number.isFinite(v) ? v : undefined }); }}
                     className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
                 </Row>
+                <Row label="Fees % (round-trip)">
+                  <Input type="number" step="0.01" value={drawing.feesPercent ?? ''} placeholder="0.1"
+                    onChange={(e) => { const v = parseFloat(e.target.value); update({ feesPercent: Number.isFinite(v) ? v : undefined }); }}
+                    className="h-7 w-24 bg-black/30 font-mono text-[12px]" />
+                </Row>
                 <Row label="Projection (ATR cone)"><Switch checked={drawing.showProjection !== false} onCheckedChange={(c) => update({ showProjection: c })} /></Row>
-                <div className="mt-2 space-y-1 rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-[11px]">
-                  <div className="flex justify-between"><span className="text-slate-400">Risk / Reward</span><span className="font-mono text-teal-300">{lsRR > 0 ? lsRR.toFixed(2) : '\u2014'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Risk amount</span><span className="font-mono text-slate-200">{lsRiskAmt > 0 ? `$${lsRiskAmt.toFixed(2)}` : '\u2014'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Position size</span><span className="font-mono text-slate-200">{lsSize > 0 ? lsSize.toFixed(2) : '\u2014'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Win prob (est.)</span><span className="font-mono text-teal-300">{lsPTP > 0 ? `${(lsPTP * 100).toFixed(0)}%` : '\u2014'}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Expectancy (est.)</span><span className="font-mono text-slate-200">{lsDenom > 0 ? `${lsExpR >= 0 ? '+' : ''}${lsExpR.toFixed(2)}R` : '\u2014'}</span></div>
-                </div>
+                {(() => {
+                  const feePct = drawing.feesPercent || 0;
+                  const feePerUnit = (lsEntry || 0) * feePct / 100;
+                  const bePrice = (lsEntry || 0) + (type === 'long' ? feePerUnit : -feePerUnit);
+                  const feeCost = lsSize * feePerUnit;               // total round-trip fee ($)
+                  const grossReward = lsSize * lsReward;
+                  const grossRisk = lsSize * lsRiskPerUnit;          // == lsRiskAmt when sized
+                  const netReward = grossReward - feeCost;
+                  const netRisk = grossRisk + feeCost;
+                  const netRR = netRisk > 0 ? netReward / netRisk : 0;
+                  return (
+                    <div className="mt-2 space-y-1 rounded-md border border-white/5 bg-white/[0.03] px-3 py-2 text-[11px]">
+                      <div className="flex justify-between"><span className="text-slate-400">Risk / Reward</span><span className="font-mono text-teal-300">{lsRR > 0 ? lsRR.toFixed(2) : '\u2014'}</span></div>
+                      {feePct > 0 && <div className="flex justify-between"><span className="text-slate-400">Net R/R (fees)</span><span className="font-mono text-teal-300">{netRR > 0 ? netRR.toFixed(2) : '\u2014'}</span></div>}
+                      <div className="flex justify-between"><span className="text-slate-400">Break-even</span><span className="font-mono text-slate-200">{feePct > 0 && lsEntry != null ? bePrice.toFixed(bePrice >= 100 ? 2 : 4) : '\u2014'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Risk amount</span><span className="font-mono text-slate-200">{lsRiskAmt > 0 ? `$${lsRiskAmt.toFixed(2)}` : '\u2014'}</span></div>
+                      {feePct > 0 && <div className="flex justify-between"><span className="text-slate-400">Fees cost</span><span className="font-mono text-slate-200">{feeCost > 0 ? `$${feeCost.toFixed(2)}` : '\u2014'}</span></div>}
+                      <div className="flex justify-between"><span className="text-slate-400">Net reward</span><span className="font-mono text-slate-200">{netReward !== 0 ? `${netReward >= 0 ? '+' : '-'}$${Math.abs(netReward).toFixed(2)}` : '\u2014'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Position size</span><span className="font-mono text-slate-200">{lsSize > 0 ? lsSize.toFixed(2) : '\u2014'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Win prob (est.)</span><span className="font-mono text-teal-300">{lsPTP > 0 ? `${(lsPTP * 100).toFixed(0)}%` : '\u2014'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Expectancy (est.)</span><span className="font-mono text-slate-200">{lsDenom > 0 ? `${lsExpR >= 0 ? '+' : ''}${lsExpR.toFixed(2)}R` : '\u2014'}</span></div>
+                    </div>
+                  );
+                })()}
               </>
             )}
           </ScrollArea>

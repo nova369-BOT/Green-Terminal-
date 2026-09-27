@@ -81,6 +81,7 @@ export type Drawing = {
   entryLineColor?: string; // Long/short position: entry line colour
   accountSize?: number;    // Long/short position sizing: account balance
   riskPercent?: number;    // Long/short position sizing: risk % of account
+  feesPercent?: number;    // Long/short: round-trip fees as % of notional (net P&L / break-even)
   showProjection?: boolean; // Long/short: ATR volatility projection cone
   fibLevels?: number[];
   stopLoss?: ChartPoint;  // Also price/time coordinates
