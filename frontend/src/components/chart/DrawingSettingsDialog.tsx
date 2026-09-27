@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
@@ -109,7 +110,7 @@ const ColorSwatch = ({ value, onChange, opacity, onOpacityChange, showOpacity, t
         style={{ backgroundColor: value }}
       />
     </PopoverTrigger>
-    <PopoverContent className="w-auto p-0 border-0 bg-transparent shadow-xl z-[620]" side="left" align="start">
+    <PopoverContent className="w-auto p-0 border-0 bg-transparent shadow-xl z-[10000]" side="left" align="start">
       <AdvancedColorPicker
         value={value}
         onChange={onChange}
@@ -253,11 +254,11 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
     onOpenChange(false);
   };
 
-  if (!open || !pos) return null;
+  if (!open || !pos || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed z-[600] w-[380px] select-none overflow-hidden rounded-xl border border-teal-400/20 bg-[#0b0f14]/95 text-slate-200 shadow-[0_0_40px_-8px_rgba(45,212,191,0.35)] backdrop-blur-xl"
+      className="fixed z-[9999] w-[380px] select-none overflow-hidden rounded-xl border border-teal-400/20 bg-[#0b0f14]/95 text-slate-200 shadow-[0_0_40px_-8px_rgba(45,212,191,0.35)] backdrop-blur-xl"
       style={{ left: pos.x, top: pos.y }}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
@@ -513,7 +514,8 @@ export const DrawingSettingsDialog = ({ drawing, open, onOpenChange, onUpdateDra
         <Button variant="ghost" size="sm" className="text-[12px] text-slate-400 hover:text-slate-200" onClick={handleCancel}>Cancel</Button>
         <Button size="sm" className="bg-teal-500 text-[12px] font-semibold text-black hover:bg-teal-400" onClick={() => onOpenChange(false)}>Done</Button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
