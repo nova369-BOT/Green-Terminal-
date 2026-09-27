@@ -26,8 +26,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { ChevronDown, MoreVertical, Plus, X } from 'lucide-react';
 import type { ChartType } from '@/components/chart/core/types';
 import {
-  BAR_TYPES,
-  RENDER_STYLES,
+  CHART_TYPES,
   TF_GROUPS,
   BUILTIN_TFS,
   CUSTOM_UNITS,
@@ -43,6 +42,60 @@ import {
 
 const EMERALD = '#0f9d58';
 const GOLD = '#d4af37';
+
+// Minimal, crisp glyphs for the chart-type picker (stroke = currentColor so the
+// active/inactive colour flows from the tile). One per ChartType we expose.
+function ChartTypeGlyph({ type }: { type: ChartType }) {
+  const s = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none' as const,
+    stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const };
+  switch (type) {
+    case 'candlestick':
+    case 'heikinAshi':
+      return (
+        <svg {...s}>
+          <line x1="8" y1="3" x2="8" y2="21" />
+          <rect x="5.5" y="7" width="5" height="9" rx="1" fill="currentColor" stroke="none" />
+          <line x1="16" y1="4" x2="16" y2="20" />
+          <rect x="13.5" y="9" width="5" height="7" rx="1" fill="none" />
+        </svg>
+      );
+    case 'bars':
+      return (
+        <svg {...s}>
+          <line x1="8" y1="4" x2="8" y2="20" />
+          <line x1="4.5" y1="8" x2="8" y2="8" />
+          <line x1="8" y1="15" x2="11.5" y2="15" />
+          <line x1="16" y1="5" x2="16" y2="19" />
+          <line x1="12.5" y1="10" x2="16" y2="10" />
+          <line x1="16" y1="13" x2="19.5" y2="13" />
+        </svg>
+      );
+    case 'line':
+      return (
+        <svg {...s}>
+          <polyline points="3,16 8,10 12,13 16,6 21,9" />
+        </svg>
+      );
+    case 'area':
+      return (
+        <svg {...s}>
+          <polyline points="3,16 8,10 12,13 16,6 21,9" />
+          <path d="M3 16 L8 10 L12 13 L16 6 L21 9 L21 20 L3 20 Z" fill="currentColor" stroke="none" opacity="0.22" />
+        </svg>
+      );
+    case 'renko':
+      return (
+        <svg {...s}>
+          <rect x="4" y="13" width="5" height="5" rx="0.5" fill="currentColor" stroke="none" />
+          <rect x="9.5" y="9" width="5" height="5" rx="0.5" fill="currentColor" stroke="none" />
+          <rect x="15" y="5" width="5" height="5" rx="0.5" fill="none" />
+        </svg>
+      );
+    default:
+      return <svg {...s} />;
+  }
+}
 
 interface Props {
   value: BarSelection;
@@ -166,27 +219,41 @@ export default function TimeframeMegaSelector({ value, onChange, compact, side =
     );
   };
 
-  const typePill = (label: string, chartType: ChartType, primary: boolean) => {
+  const chartTypeTile = (label: string, chartType: ChartType) => {
     const active = value.chartType === chartType;
     return (
       <button
         key={chartType}
         type="button"
         onClick={() => selectType(chartType)}
+        title={label}
         style={{
-          flex: primary ? 1 : '0 0 auto',
-          padding: primary ? '7px 8px' : '5px 10px',
-          fontSize: primary ? 12.5 : 11.5,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 5,
+          padding: '9px 4px 7px',
+          fontSize: 11,
           fontWeight: 600,
-          color: active ? '#fff' : 'var(--dim, #8b8f98)',
-          background: active ? EMERALD : 'transparent',
-          border: primary ? 'none' : '1px solid var(--edge, #2a2e39)',
-          borderRadius: primary ? 0 : 6,
+          lineHeight: 1.1,
+          textAlign: 'center',
+          color: active ? EMERALD : 'var(--dim, #8b8f98)',
+          background: active ? 'rgba(15,157,88,0.12)' : 'transparent',
+          border: `1px solid ${active ? 'rgba(15,157,88,0.55)' : 'var(--edge, #2a2e39)'}`,
+          borderRadius: 8,
           cursor: 'pointer',
-          whiteSpace: 'nowrap',
+          transition: 'background 120ms, border-color 120ms, color 120ms',
+        }}
+        onMouseEnter={(e) => {
+          if (!active) e.currentTarget.style.background = 'var(--hover, rgba(255,255,255,0.06))';
+        }}
+        onMouseLeave={(e) => {
+          if (!active) e.currentTarget.style.background = 'transparent';
         }}
       >
-        {label}
+        <ChartTypeGlyph type={chartType} />
+        <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
       </button>
     );
   };
@@ -234,20 +301,16 @@ export default function TimeframeMegaSelector({ value, onChange, compact, side =
           }}
         >
           <div style={{ overflowY: 'auto', padding: '10px 12px 12px' }}>
-            {/* Bar type — primary segmented toggle */}
+            {/* Chart type — one clean icon grid */}
+            <div style={{ ...groupLabelStyle, marginTop: 0 }}>Chart type</div>
             <div
               style={{
-                display: 'flex',
-                border: `1px solid ${EMERALD}`,
-                borderRadius: 8,
-                overflow: 'hidden',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 6,
               }}
             >
-              {BAR_TYPES.map((b) => typePill(b.label, b.chartType, true))}
-            </div>
-            {/* Secondary render styles */}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              {RENDER_STYLES.map((b) => typePill(b.label, b.chartType, false))}
+              {CHART_TYPES.map((b) => chartTypeTile(b.label, b.chartType))}
             </div>
 
             {/* Timeframe groups */}

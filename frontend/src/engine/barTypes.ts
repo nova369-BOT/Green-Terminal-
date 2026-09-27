@@ -43,6 +43,18 @@ export const RENDER_STYLES: BarType[] = [
   { label: 'OHLC', chartType: 'bars' },
 ];
 
+// Unified chart-type picker (one clean icon grid instead of the old
+// segmented-toggle-plus-outlined-pills split). Order mirrors the pro terminals:
+// the OHLC family first, then the derived styles.
+export const CHART_TYPES: BarType[] = [
+  { label: 'Candles', chartType: 'candlestick' },
+  { label: 'Bars', chartType: 'bars' },
+  { label: 'Line', chartType: 'line' },
+  { label: 'Area', chartType: 'area' },
+  { label: 'Heikin Ashi', chartType: 'heikinAshi' },
+  { label: 'Renko', chartType: 'renko' },
+];
+
 export interface TfGroup {
   label: string;
   tfs: string[];
