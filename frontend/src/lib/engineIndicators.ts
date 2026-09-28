@@ -37,6 +37,12 @@ export interface EngineIndicatorPayload {
         color?: string;
         width?: number;
         visible?: boolean;
+        // Optional band fill (shell's browser FILL section): paint the area
+        // between THIS series and the sibling column named by fillTo.
+        fillTo?: string;
+        fillColor?: string;
+        fillOpacity?: number;  // 0..1
+        fillGradient?: boolean;
       };
     };
   };
@@ -63,6 +69,13 @@ export interface CustomIndicatorEntry {
   // Series from the same engine indicator share a group so they draw in ONE
   // subplot pane (MACD line+signal+hist) instead of one pane per column.
   group?: string;
+  // Band fill request from the shell (FILL section). fillToId is the full
+  // customIndicators id of the sibling series the fill runs to (resolved at
+  // conversion so the renderer never re-parses labels).
+  fillToId?: string;
+  fillColor?: string;
+  fillOpacity?: number;
+  fillGradient?: boolean;
 }
 
 /**
@@ -131,6 +144,16 @@ export function toCustomIndicators(
         // One pane per ENGINE INDICATOR, not per column: MACD's three series
         // must share a pane and a scale or the histogram is meaningless.
         group: label,
+        // Band fill (shell FILL section): only carried when the target column
+        // actually exists in this payload, so a stale override draws nothing.
+        ...(typeof series.fillTo === 'string' && Object.prototype.hasOwnProperty.call(ind.series, series.fillTo)
+          ? {
+            fillToId: `local-${label}-${series.fillTo}`,
+            fillColor: series.fillColor || color,
+            fillOpacity: typeof series.fillOpacity === 'number' ? series.fillOpacity : 0.15,
+            fillGradient: !!series.fillGradient,
+          }
+          : {}),
       });
     }
   }

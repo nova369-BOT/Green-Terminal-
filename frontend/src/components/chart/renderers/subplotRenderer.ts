@@ -21,6 +21,71 @@ export interface VisibleRange {
   endIndex: number;
 }
 
+// ── Band fill between two custom series (engine indicator FILL) ──────────
+// The FROM entry carries fillToId of its sibling; the polygon runs forward
+// along FROM and back along TO, drawn only over spans where BOTH series have
+// a finite value so a warm-up gap never smears across the pane. Gradient
+// fades the fill to transparent across the band's own vertical extent.
+function hexToRgbaStr(hex: string, a: number): string {
+  const h = (hex || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return `rgba(56,189,248,${a})`;
+  return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`;
+}
+function drawBandFill(
+  ctx: CanvasRenderingContext2D,
+  visible: VisibleRange,
+  indexToX: (globalIndex: number, startIndex: number) => number,
+  toY: (v: number) => number,
+  from: number[],
+  to: number[],
+  color: string,
+  opacity: number,
+  gradient: boolean
+): void {
+  const op = Math.max(0.03, Math.min(0.7, opacity));
+  // Gradient bounds: the union of both series' visible y positions.
+  let yTop = Infinity, yBot = -Infinity;
+  for (let i = 0; i < visible.candles.length; i++) {
+    const gi = visible.startIndex + i;
+    const a = from[gi], b = to[gi];
+    if (typeof a === 'number' && isFinite(a)) { const y = toY(a); if (y < yTop) yTop = y; if (y > yBot) yBot = y; }
+    if (typeof b === 'number' && isFinite(b)) { const y = toY(b); if (y < yTop) yTop = y; if (y > yBot) yBot = y; }
+  }
+  if (!(yBot > yTop)) return; // nothing on screen to fill
+  let style: string | CanvasGradient = hexToRgbaStr(color, op);
+  if (gradient) {
+    const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+    g.addColorStop(0, hexToRgbaStr(color, op));
+    g.addColorStop(1, hexToRgbaStr(color, 0));
+    style = g;
+  }
+  ctx.fillStyle = style;
+  let seg: number[] | null = null;
+  const flush = () => {
+    if (seg && seg.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(indexToX(seg[0], visible.startIndex), toY(from[seg[0]]));
+      for (const gi of seg) ctx.lineTo(indexToX(gi, visible.startIndex), toY(from[gi]));
+      for (let k = seg.length - 1; k >= 0; k--) {
+        ctx.lineTo(indexToX(seg[k], visible.startIndex), toY(to[seg[k]]));
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    seg = null;
+  };
+  for (let i = 0; i <= visible.candles.length; i++) {
+    const gi = visible.startIndex + i;
+    const a = i < visible.candles.length ? from[gi] : NaN;
+    const b = i < visible.candles.length ? to[gi] : NaN;
+    if (typeof a === 'number' && isFinite(a) && typeof b === 'number' && isFinite(b)) {
+      if (seg) seg.push(gi); else seg = [gi];
+    } else {
+      flush();
+    }
+  }
+}
+
 // ── Options for the generic single-line subplot helper ──
 export interface SimpleSubplotOpts {
   data: number[];
@@ -217,6 +282,19 @@ function drawGroupedSubplot(
   const rangeMax = dataMax + pad;
   const range = rangeMax - rangeMin || 1;
   const toY = (v: number) => spTop + (1 - (v - rangeMin) / range) * spH;
+
+  // Band fills first (shell FILL section on a pane indicator): under bars,
+  // under lines, between the two members sharing this pane's scale.
+  for (const m of members) {
+    if (!(m as any).fillToId) continue;
+    const to = members.find((q: any) => q.id === (m as any).fillToId && q.data?.length > 0);
+    if (to) {
+      drawBandFill(ctx, visible, indexToX, toY, m.data, to.data,
+        (m as any).fillColor || m.color,
+        typeof (m as any).fillOpacity === 'number' ? (m as any).fillOpacity : 0.15,
+        !!(m as any).fillGradient);
+    }
+  }
 
   // Histograms first so lines draw on top of the bars.
   const ordered = [...members].sort((a, b) =>
@@ -774,6 +852,18 @@ export function renderGenericSubplots(cx: SubplotRenderContext, startY: number):
           zeroLine: ci.zeroLine,
         }, currentSubplotY);
       } else if (ci.display === 'overlay' && ci.data?.length > 0) {
+        // Band fill (shell FILL section) paints under the line itself: the
+        // polygon between this series and its named sibling goes first.
+        if ((ci as any).fillToId) {
+          const to = indicatorData.customIndicators.find(
+            (m: any) => m.id === (ci as any).fillToId && m.data?.length > 0);
+          if (to) {
+            drawBandFill(ctx, visible, indexToX, cx.mainPriceToY, ci.data, to.data,
+              (ci as any).fillColor || ci.color,
+              typeof (ci as any).fillOpacity === 'number' ? (ci as any).fillOpacity : 0.15,
+              !!(ci as any).fillGradient);
+          }
+        }
         // Custom overlay line on the main chart area
         ctx.strokeStyle = ci.color;
         ctx.lineWidth = ci.lineWidth || 2;

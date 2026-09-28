@@ -114,36 +114,67 @@ document.documentElement.setAttribute("data-theme",
      every registered indicator (built-ins + the user's own); click toggles it
      on the chart, the gear on an active row opens its parameters. Positioned
      under its button by app.js. -->
-<!-- Item 7: advanced indicator browser. Three columns — category rail |
-     card catalog | live inspector — a centred modal that replaces the old
-     flat dropdown. The engine wiring is unchanged (the same
-     state.indicatorSpecs / state.activeIndicators drive the chart). -->
-<div id="ind-panel" class="hidden" role="dialog" aria-modal="true" aria-label="Indicators">
+<!-- Item 7: advanced indicator browser, now the Indicator & Strategy Lab.
+     A titlebar carries the lab's three tabs (Indicators · Strategies ·
+     Metrics) and the close button; beneath it the three-column body —
+     category rail | card catalog | live inspector — which each tab fills
+     with its own rail and catalog while sharing the inspector column. The
+     engine wiring is unchanged for indicators (state.indicatorSpecs /
+     state.activeIndicators); strategies read /api/ws-files +
+     /api/backtest/saved, metrics compute live from state.candleData. -->
+<div id="ind-panel" class="hidden" role="dialog" aria-modal="true" aria-label="Indicator &amp; Strategy Lab">
   <div id="indb-backdrop"></div>
   <div id="indb-modal">
-    <aside id="indb-cats" aria-label="Indicator categories"></aside>
-    <section id="indb-catalog">
-      <div id="indb-head">
-        <div class="indb-head-top">
-          <input id="ind-search" placeholder="Search indicators&hellip;" spellcheck="false" autocomplete="off">
-          <!-- Item 7: catalog layout toggle. Cards = the sparkline grid, Columns
-               = a dense multi-column list so far more indicators fit at once.
-               app.js (setupIndicatorPanel) binds these and persists the choice. -->
-          <div id="indb-view" role="group" aria-label="Catalog layout">
-            <button id="indb-view-cards" class="indb-view-btn" title="Card view" aria-label="Card view">
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
-            </button>
-            <button id="indb-view-cols" class="indb-view-btn" title="Column view" aria-label="Column view">
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h5M2 8h5M2 12h5M9 4h5M9 8h5M9 12h5"/></svg>
-            </button>
+    <header id="indb-titlebar">
+      <span id="indb-title">Indicator &amp; Strategy Lab</span>
+      <nav id="indb-tabs" role="tablist" aria-label="Lab sections">
+        <button type="button" data-itab="indicators" class="on" role="tab" aria-selected="true">Indicators</button>
+        <button type="button" data-itab="strategies" role="tab" aria-selected="false">Strategies</button>
+        <button type="button" data-itab="metrics" role="tab" aria-selected="false">Metrics</button>
+      </nav>
+      <button id="indb-close" title="Close (Esc)" aria-label="Close">&times;</button>
+    </header>
+    <div id="indb-cols">
+      <aside id="indb-cats" aria-label="Indicator categories"></aside>
+      <aside id="stratb-cats" class="hidden" aria-label="Strategy groups"></aside>
+      <aside id="metrb-cats" class="hidden" aria-label="Metric groups"></aside>
+      <section id="indb-catalog">
+        <div id="indb-head">
+          <div class="indb-head-top">
+            <input id="ind-search" placeholder="Search indicators&hellip;" spellcheck="false" autocomplete="off">
+            <!-- Item 7: catalog layout toggle. Cards = the sparkline grid, Columns
+                 = a dense multi-column list so far more indicators fit at once.
+                 app.js (setupIndicatorPanel) binds these and persists the choice. -->
+            <div id="indb-view" role="group" aria-label="Catalog layout">
+              <button id="indb-view-cards" class="indb-view-btn" title="Card view" aria-label="Card view">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+              </button>
+              <button id="indb-view-cols" class="indb-view-btn" title="Column view" aria-label="Column view">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h5M2 8h5M2 12h5M9 4h5M9 8h5M9 12h5"/></svg>
+              </button>
+            </div>
           </div>
+          <div id="indb-chips" role="group" aria-label="Filters"></div>
         </div>
-        <div id="indb-chips" role="group" aria-label="Filters"></div>
-      </div>
-      <div id="ind-list"></div>
-      <button id="ind-create">+ Create custom indicator (Python)</button>
-    </section>
-    <aside id="indb-inspector" aria-label="Indicator settings"></aside>
+        <div id="ind-list"></div>
+        <button id="ind-create">+ Create custom indicator (Python)</button>
+      </section>
+      <section id="stratb-catalog" class="hidden">
+        <div class="indb-head-strat">
+          <input id="strat-search" placeholder="Search strategies&hellip;" spellcheck="false" autocomplete="off">
+        </div>
+        <div id="strat-list"></div>
+        <button id="strat-new">+ New strategy (opens the IDE)</button>
+      </section>
+      <section id="metrb-catalog" class="hidden">
+        <div class="indb-head-strat">
+          <input id="metr-search" placeholder="Search metrics&hellip;" spellcheck="false" autocomplete="off">
+        </div>
+        <div id="metr-list"></div>
+        <div id="metr-foot">Metrics compute live over the charted dataset&hellip;</div>
+      </section>
+      <aside id="indb-inspector" aria-label="Settings"></aside>
+    </div>
   </div>
 </div>
 <!-- Legacy per-indicator parameter popup, still opened by the active-indicator
@@ -418,6 +449,11 @@ def my_ind(df, length=20):
     <!-- (Workspace actions now ride the #controls command bar, same ids.) -->
     <div id="ind-active"></div>
     <div id="chart-stage">
+    <!-- Lab Metrics pins: live stat tiles pinned from the Indicator & Strategy
+         Lab (Metrics tab). app.js metricPinsRefresh() owns this zone; values
+         recompute off the same candles the chart shows. Top-right so tiles
+         never cover the time/price scales along the right/bottom edges. -->
+    <div id="metric-pins" class="hidden" aria-label="Pinned metrics"></div>
     <div id="chart-col">
     <div id="chart-wrap">
       <div id="legend"></div>

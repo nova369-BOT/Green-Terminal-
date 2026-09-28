@@ -574,6 +574,9 @@ function setupWsControls() {
       } else if (Array.isArray(shell.activeIndicators)) {
         state.activeIndicators = shell.activeIndicators;
       }
+      // Item 7: the browser's per-indicator overrides/presets/visibility/
+      // alerts restore with the rest of the shell section.
+      indRestoreExtras(shell);
       if (shell.symbol && shell.symbol !== state.symbol) setSymbol(shell.symbol);
       else { pushToChart(); renderActiveIndicators(); }
       if (shell.timeframe && shell.timeframe !== state.timeframe) {
@@ -743,6 +746,16 @@ function saveShellState() {
         favoriteIndicators: state.favoriteIndicators,
         chartType: state.chartType,
         display: state.display,
+        // Item 7: the advanced browser's per-indicator state rides the same
+        // store so style/visibility/fill overrides, named param presets,
+        // timeframe-visibility and alerts survive a restart.
+        indStyle: state.indStyle || {},
+        indPresets: state.indPresets || {},
+        indTfVis: state.indTfVis || {},
+        indAlerts: state.indAlerts || {},
+        // Metric pins/alert arms from the lab's Metrics tab (config only —
+        // values recompute live from the candles after a restart).
+        indMetrics: state.indMetrics || {},
         watchlists: state.watchlists,
         wlSets: state.wlSets,
         // Rail widget stack. Rides the shell section
@@ -766,7 +779,13 @@ function saveShellState() {
    is the master zoom; Density folds an extra compaction factor into that same
    zoom (so Compact/Dense visibly tighten everything) and also nudges row
    paddings. Chromium zoom reflows the layout correctly. Persists in the shell. */
-const DISP_DEFAULTS = { scale: 100, density: "comfortable" };
+const DISP_DEFAULTS = {
+  scale: 100, density: "comfortable",
+  // Watchlist controls (locked design): row font size, row height, and
+  // per-column show/hide. wlFont is the symbol size in px; every other row
+  // font derives from it in CSS. wlRow 0 = auto (density padding decides).
+  wlFont: 13.5, wlRow: 0, wlCols: { logo: true, name: true, ba: true, chg: true },
+};
 const DENSITY_FACTOR = { comfortable: 1, compact: 0.9, dense: 0.82 };
 // Panels the earlier build could hide; we now force them visible so no element
 // stays stuck hidden from a previously-saved state.
@@ -776,6 +795,12 @@ function dispState() {
   if (typeof d.scale !== "number" || !isFinite(d.scale)) d.scale = 100;
   d.scale = Math.max(80, Math.min(120, Math.round(d.scale)));
   if (!["comfortable", "compact", "dense"].includes(d.density)) d.density = "comfortable";
+  if (typeof d.wlFont !== "number" || !isFinite(d.wlFont)) d.wlFont = DISP_DEFAULTS.wlFont;
+  d.wlFont = Math.max(10, Math.min(17, d.wlFont));
+  if (typeof d.wlRow !== "number" || !isFinite(d.wlRow)) d.wlRow = 0;
+  d.wlRow = d.wlRow === 0 ? 0 : Math.max(22, Math.min(46, Math.round(d.wlRow)));
+  if (!d.wlCols || typeof d.wlCols !== "object") d.wlCols = { ...DISP_DEFAULTS.wlCols };
+  for (const k of ["logo", "name", "ba", "chg"]) if (typeof d.wlCols[k] !== "boolean") d.wlCols[k] = true;
   return d;
 }
 function dispApply() {
@@ -788,6 +813,14 @@ function dispApply() {
   document.body.classList.remove("gt-density-compact", "gt-density-dense");
   if (d.density === "compact") document.body.classList.add("gt-density-compact");
   else if (d.density === "dense") document.body.classList.add("gt-density-dense");
+  // Watchlist display prefs: CSS vars size the rows; body classes hide columns.
+  const rs = document.documentElement.style;
+  rs.setProperty("--wl-font", d.wlFont + "px");
+  if (d.wlRow > 0) rs.setProperty("--wl-rowh", d.wlRow + "px");
+  else rs.removeProperty("--wl-rowh");
+  for (const [cls, key] of [["gt-wl-nologo", "logo"], ["gt-wl-noname", "name"], ["gt-wl-noba", "ba"], ["gt-wl-nochg", "chg"]]) {
+    document.body.classList.toggle(cls, !d.wlCols[key]);
+  }
   // Ensure no panel is left hidden by the removed Show-panels feature.
   for (const id of DISP_PANEL_IDS) {
     const el = document.getElementById(id);
@@ -801,6 +834,11 @@ function dispApply() {
 function dispSliderFill(scale) {
   const pct = (scale - 80) / 40 * 100;
   return `linear-gradient(90deg, var(--line-strong) 0 ${pct}%, var(--edge) ${pct}% 100%)`;
+}
+// Percentage-based variant for the watchlist sliders (0–100 fill).
+function dispSliderFillPct(pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  return `linear-gradient(90deg, var(--line-strong) 0 ${p}%, var(--edge) ${p}% 100%)`;
 }
 function dispRender() {
   const body = $("disp-body");
@@ -822,6 +860,25 @@ function dispRender() {
           `<button data-den="${v}" class="${d.density === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("") +
       `</div>` +
     `</div>` +
+    // Watchlist controls (locked design): font + row sliders and per-column
+    // checkboxes, applied LIVE to the sidebar the moment they move.
+    `<div class="disp-sec">` +
+      `<div class="disp-sec-lbl">Watchlist</div>` +
+      `<div class="disp-wl-row">` +
+        `<span>Font</span>` +
+        `<input type="range" id="disp-wl-font" min="10" max="17" step="0.5" value="${d.wlFont}" style="background:${dispSliderFillPct((d.wlFont - 10) / 7 * 100)}">` +
+        `<span class="disp-wl-val" id="disp-wl-font-val">${d.wlFont}px</span>` +
+      `</div>` +
+      `<div class="disp-wl-row">` +
+        `<span>Row height</span>` +
+        `<input type="range" id="disp-wl-row" min="0" max="46" step="2" value="${d.wlRow}" style="background:${dispSliderFillPct(d.wlRow / 46 * 100)}">` +
+        `<span class="disp-wl-val" id="disp-wl-row-val">${d.wlRow > 0 ? d.wlRow + "px" : "auto"}</span>` +
+      `</div>` +
+      `<div class="disp-wl-cols" id="disp-wl-cols">` +
+        [["logo", "Logo"], ["name", "Name"], ["ba", "Bid/Ask"], ["chg", "Change"]].map(([k, lbl]) =>
+          `<label class="disp-wl-col"><input type="checkbox" data-col="${k}" ${d.wlCols[k] ? "checked" : ""}><span>${lbl}</span></label>`).join("") +
+      `</div>` +
+    `</div>` +
     `<div class="disp-foot">` +
       `<button class="disp-reset" id="disp-reset">Reset</button>` +
       `<button class="disp-done" id="disp-done">Done</button>` +
@@ -840,6 +897,26 @@ function dispRender() {
       body.querySelectorAll("#disp-density button").forEach((x) => x.classList.toggle("on", x === b));
       dispApply(); saveShellState();
     };
+  });
+  // Watchlist sliders + column checkboxes: every change applies live to the
+  // sidebar (the panel is an overlay; the preview IS the real watchlist).
+  const wlFont = $("disp-wl-font");
+  if (wlFont) wlFont.oninput = () => {
+    d.wlFont = Math.max(10, Math.min(17, parseFloat(wlFont.value) || 13.5));
+    $("disp-wl-font-val").textContent = d.wlFont + "px";
+    wlFont.style.background = dispSliderFillPct((d.wlFont - 10) / 7 * 100);
+    dispApply(); saveShellState();
+  };
+  const wlRow = $("disp-wl-row");
+  if (wlRow) wlRow.oninput = () => {
+    const v = parseInt(wlRow.value, 10) || 0;
+    d.wlRow = v < 22 ? 0 : v;                    // below the floor = auto
+    $("disp-wl-row-val").textContent = d.wlRow > 0 ? d.wlRow + "px" : "auto";
+    wlRow.style.background = dispSliderFillPct(d.wlRow / 46 * 100);
+    dispApply(); saveShellState();
+  };
+  body.querySelectorAll("#disp-wl-cols input[data-col]").forEach((cb) => {
+    cb.onchange = () => { d.wlCols[cb.dataset.col] = cb.checked; dispApply(); saveShellState(); };
   });
   $("disp-reset").onclick = () => {
     state.display = JSON.parse(JSON.stringify(DISP_DEFAULTS));
@@ -987,8 +1064,16 @@ async function loadChart() {
   state.serverIndicators = data.indicators || {};
   state.engineIndicators = indMergedPayload();
   pushToChart();
+  // Fresh indicator payload: evaluate any armed alerts (Item 7).
+  indAlertsCheck();
   state.lastBar = state.candleData[state.candleData.length - 1] || null;
   updateInstrumentBar();
+  // New bars: metric pins recompute off the same series the chart just got,
+  // and the metrics tab repaints when open (its compute cache keys on rows).
+  metricPinsRefresh();
+  if ($("ind-panel") && !$("ind-panel").classList.contains("hidden") && state.indTab === "metrics") {
+    renderMetrAll();
+  }
   // Topline status still carries transient loading / error messages only.
   status("");
 }
@@ -1318,6 +1403,933 @@ function indSpark(spec) {
     `stroke-linejoin="round" stroke-linecap="round" points="${pts.join(" ")}"/></svg>`;
 }
 
+/* ==== Indicator & Strategy Lab: tab bar ==================================
+   The modal hosts three tabs over the shared three-column shell. Indicators
+   is the Item 7 browser untouched; Strategies lists the workspace's real .py
+   files + saved backtests; Metrics computes honest live stats over the
+   charted candles. state.indTab decides which rail + catalog show. */
+state.indTab = state.indTab || "indicators";
+
+const IND_TABS = ["indicators", "strategies", "metrics"];
+
+function setIndTab(tab) {
+  state.indTab = IND_TABS.includes(tab) ? tab : "indicators";
+  for (const t of IND_TABS) {
+    const b = document.querySelector(`#indb-tabs [data-itab="${t}"]`);
+    if (b) {
+      b.classList.toggle("on", t === state.indTab);
+      b.setAttribute("aria-selected", t === state.indTab ? "true" : "false");
+    }
+  }
+  const on = (id) => state.indTab === id;
+  for (const [el, forTab] of [["indb-cats", "indicators"], ["indb-catalog", "indicators"],
+      ["stratb-cats", "strategies"], ["stratb-catalog", "strategies"],
+      ["metrb-cats", "metrics"], ["metrb-catalog", "metrics"]]) {
+    const node = $(el);
+    if (node) node.classList.toggle("hidden", !on(forTab));
+  }
+  if (on("indicators")) {
+    renderIndCats(); renderIndChips(); renderIndicatorList(); renderIndInspector();
+  } else if (on("strategies")) {
+    stratRefresh(false);
+  } else {
+    renderMetrAll();
+  }
+}
+
+/* ---- strategies tab ------------------------------------------------------
+   Cards come from /api/ws-files (real workspace .py strategies, including
+   the seeded quant starters) and /api/backtest/saved (real saved runs). A
+   file card's equity sparkline is the curve of its NEWEST saved run that
+   names the file (saved report context.strategy carries the path); with no
+   run the card says "not backtested yet" — never a fabricated curve. */
+
+const STRAT_STARTER_STEMS = new Set([
+  "atr_normalized_phase_momentum", "curve_regime_overlay", "ensemble_kill_switch",
+  "kalman_slope_trend", "ou_half_life_reversion", "tsmom_multi_horizon",
+  "variance_ratio_gated_trend", "vol_targeted_trend",
+]);
+
+const STRAT_GROUPS = [
+  { id: "all", label: "All strategies" },
+  { id: "backtested", label: "Backtested" },
+  { id: "starter", label: "Starters" },
+  { id: "mine", label: "My strategies" },
+  { id: "runs", label: "Saved runs" },
+];
+
+const stratLab = {
+  files: null,   // [{path,size,mtime,source?}] — strategies/*.py from /api/ws-files
+  runs: null,    // saved-run summaries from /api/backtest/saved
+  spark: {},     // run id → [[ts,equity],...] downsampled (fetched on demand)
+  sel: null,     // "file:<path>" | "run:<id>"
+  err: null,
+};
+state.stratCat = state.stratCat || "all";
+
+function stratStem(f) { return (f.path || f).split("/").pop().replace(/\.py$/i, ""); }
+
+function stratHead(src) {
+  // The starter house style is "# Title" then "#"-prefixed paragraphs.
+  // Returns {title, doc}; both may be "" for a file without a comment header.
+  const head = [];
+  for (const ln of (src || "").split("\n")) {
+    if (/^\s*#/.test(ln)) head.push(ln.replace(/^\s*#\s?/, ""));
+    else if (ln.trim() === "") { if (head.length) break; } else break;
+  }
+  const title = (head[0] || "").trim();
+  const doc = head.slice(1).filter((l) => l.trim()).join(" ").trim();
+  return { title, doc };
+}
+
+function stratPretty(f) {
+  const cached = f._pretty;
+  if (cached) return cached;
+  const stemTitle = stratStem(f).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  f._pretty = (f.source ? stratHead(f.source).title : "") || stemTitle;
+  return f._pretty;
+}
+
+function stratIsStarter(f) { return STRAT_STARTER_STEMS.has(stratStem(f)); }
+
+// A run "belongs" to a file when the saved report's strategy label contains
+// the file stem — runBacktest saves reports under "strategies/<leaf>.py" (or
+// the bare stem). Post-run saves therefore link automatically.
+function stratRunsOf(f) {
+  const stem = stratStem(f).toLowerCase();
+  return (stratLab.runs || [])
+    .filter((r) => String(r.strategy || "").toLowerCase().includes(stem))
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+}
+
+function stratRefresh(force) {
+  renderStratCats(); renderStratList(); renderStratInspector();
+  const needFiles = force || stratLab.files == null;
+  const needRuns = force || stratLab.runs == null;
+  if (needFiles) {
+    stratLab.files = null;
+    fetch("/api/ws-files")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d) => {
+        stratLab.err = null;
+        stratLab.files = (d.files || [])
+          .filter((f) => /^strategies\//.test(f.path) && /\.py$/i.test(f.path))
+          .sort((a, b) => {
+            const sa = stratIsStarter(a) ? 0 : 1, sb = stratIsStarter(b) ? 0 : 1;
+            return sa - sb || stratStem(a).localeCompare(stratStem(b));
+          });
+      })
+      .catch((e) => { stratLab.files = []; stratLab.err = e && e.message; })
+      .then(() => { renderStratCats(); renderStratList(); renderStratInspector(); });
+  }
+  if (needRuns) {
+    stratLab.runs = null;
+    fetch("/api/backtest/saved")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => { stratLab.runs = Array.isArray(list) ? list : []; })
+      .catch(() => { stratLab.runs = []; })
+      .then(() => {
+        renderStratCats(); renderStratList(); renderStratInspector();
+        // Cards show the newest run's equity curve: warm those sparklines.
+        for (const f of (stratLab.files || [])) {
+          const runs = stratRunsOf(f);
+          if (runs.length) stratEnsureSpark(runs[0].id);
+        }
+      });
+  }
+}
+
+function stratEnsureSpark(runId) {
+  if (!runId || stratLab.spark[runId]) return;
+  stratLab.spark[runId] = null; // in flight: don't re-request per re-render
+  fetch(`/api/backtest/saved/${encodeURIComponent(runId)}/sparkline?points=64`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      stratLab.spark[runId] = (d && d.curve) || [];
+      if ($("ind-panel") && !$("ind-panel").classList.contains("hidden") && state.indTab === "strategies") {
+        renderStratList(); renderStratInspector();
+      }
+    })
+    .catch(() => { stratLab.spark[runId] = []; });
+}
+
+function stratSparkSvg(curve, w, h) {
+  const vals = (curve || []).map((p) => Number(p[1])).filter((v) => isFinite(v));
+  if (vals.length < 2) return "";
+  w = w || 200; h = h || 46;
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = (hi - lo) || 1;
+  const pad = 2;
+  const step = (w - pad * 2) / (vals.length - 1);
+  const pts = vals.map((v, i) =>
+    `${(pad + i * step).toFixed(1)},${(pad + (1 - (v - lo) / span) * (h - pad * 2)).toFixed(1)}`);
+  const up = vals[vals.length - 1] >= vals[0];
+  const col = up ? "var(--up)" : "var(--down)";
+  return `<svg class="strat-spark-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<polygon fill="${col}" opacity="0.12" points="${pad},${h - pad} ${pts.join(" ")} ${(w - pad).toFixed(1)},${h - pad}"/>` +
+    `<polyline fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" points="${pts.join(" ")}"/></svg>`;
+}
+
+function stratReportStatLine(run) {
+  const win = run.win_rate != null ? `${run.win_rate.toFixed(0)}% win` : null;
+  const ret = (run.initial_capital && run.final_equity != null)
+    ? ((run.final_equity / run.initial_capital - 1) * 100) : null;
+  const retTxt = ret != null
+    ? `<span class="${ret >= 0 ? "pos" : "neg"}">${ret >= 0 ? "+" : ""}${ret.toFixed(1)}%</span>` : null;
+  const trades = run.total_trades != null ? `${run.total_trades} trades` : null;
+  const where = [run.symbol, run.timeframe].filter(Boolean).join(" · ");
+  return [win, retTxt, trades, where].filter(Boolean).map((s) => `<span>${s}</span>`).join("");
+}
+
+function stratCardsHtml(files) {
+  return files.map((f) => {
+    const runs = stratRunsOf(f);
+    const last = runs[0] || null;
+    const spark = last ? stratLab.spark[last.id] : null;
+    const sparkHtml = last
+      ? (spark ? stratSparkSvg(spark, 200, 44) : `<div class="strat-spark-load">…</div>`)
+      : `<div class="strat-spark-empty">Not backtested yet — run it to see the equity curve.</div>`;
+    const stats = last
+      ? `<div class="strat-stats">${stratReportStatLine(last)}</div>`
+      : "";
+    const tags =
+      (last ? `<span class="strat-tag back">backtested</span>` : "") +
+      (stratIsStarter(f) ? `<span class="strat-tag starter">starter</span>` : "");
+    return `<div class="strat-card" data-strat="${indEsc(f.path)}" role="button" tabindex="0">` +
+      `<div class="strat-card-head"><span class="strat-name">${indEsc(stratPretty(f))}</span>` +
+      `<span class="strat-fmt">PY</span></div>` +
+      `<div class="strat-spark">${sparkHtml}</div>` + stats +
+      `<div class="strat-tags">${tags}</div></div>`;
+  }).join("");
+}
+
+function stratRunCardsHtml(runs) {
+  return runs.map((r) => {
+    const spark = stratLab.spark[r.id];
+    const date = r.created_at ? new Date(r.created_at * 1000).toLocaleString() : "";
+    return `<div class="strat-card run" data-run="${indEsc(r.id)}" role="button" tabindex="0">` +
+      `<div class="strat-card-head"><span class="strat-name">${indEsc(r.name || r.id)}</span>` +
+      `<span class="strat-date">${indEsc(date)}</span></div>` +
+      `<div class="strat-spark">${spark ? stratSparkSvg(spark, 200, 44) : `<div class="strat-spark-load">…</div>`}</div>` +
+      `<div class="strat-stats">${stratReportStatLine(r)}</div>` +
+      `<div class="strat-tags"><span class="strat-tag engine">${indEsc(String(r.engine || "python").toUpperCase())}</span></div></div>`;
+  }).join("");
+}
+
+function renderStratCats() {
+  const rail = $("stratb-cats");
+  if (!rail) return;
+  const files = stratLab.files || [], runs = stratLab.runs || [];
+  const count = (id) => {
+    if (id === "all") return files.length;
+    if (id === "backtested") return files.filter((f) => stratRunsOf(f).length).length;
+    if (id === "starter") return files.filter(stratIsStarter).length;
+    if (id === "mine") return files.filter((f) => !stratIsStarter(f)).length;
+    return runs.length;
+  };
+  rail.innerHTML = "";
+  for (const g of STRAT_GROUPS) {
+    if (g.id === "starter") {
+      const sep = document.createElement("div");
+      sep.className = "indb-cat-sep";
+      rail.appendChild(sep);
+    }
+    const el = document.createElement("div");
+    el.className = "indb-cat" + (state.stratCat === g.id ? " active" : "");
+    el.innerHTML = `<span>${g.label}</span><span class="indb-cat-n">${count(g.id)}</span>`;
+    el.onclick = () => { state.stratCat = g.id; renderStratCats(); renderStratList(); };
+    rail.appendChild(el);
+  }
+}
+
+function renderStratList() {
+  const list = $("strat-list");
+  if (!list) return;
+  if (stratLab.files == null || stratLab.runs == null) {
+    list.innerHTML = `<div class="strat-empty">Loading the strategy library…</div>`;
+    return;
+  }
+  if (stratLab.err) {
+    list.innerHTML = `<div class="strat-empty">Workspace unreachable (${indEsc(stratLab.err)}).</div>`;
+    return;
+  }
+  const q = ($("strat-search") ? $("strat-search").value : "").trim().toLowerCase();
+  let files = stratLab.files;
+  if (state.stratCat === "backtested") files = files.filter((f) => stratRunsOf(f).length);
+  else if (state.stratCat === "starter") files = files.filter(stratIsStarter);
+  else if (state.stratCat === "mine") files = files.filter((f) => !stratIsStarter(f));
+  if (q) files = files.filter((f) =>
+    stratPretty(f).toLowerCase().includes(q) || stratStem(f).toLowerCase().includes(q));
+  let runs = stratLab.runs;
+  if (q) runs = runs.filter((r) =>
+    String(r.name || "").toLowerCase().includes(q) || String(r.strategy || "").toLowerCase().includes(q));
+  let html = "";
+  if (state.stratCat !== "runs") {
+    html += files.length ? stratCardsHtml(files)
+      : `<div class="strat-empty">No strategies match. New ones appear here the moment they are saved into the workspace.</div>`;
+  }
+  if (state.stratCat === "all" || state.stratCat === "runs" || state.stratCat === "backtested") {
+    const runSet = state.stratCat === "backtested" ? runs : runs;
+    if (state.stratCat === "runs" || runSet.length) {
+      html += `<div class="strat-list-sect">SAVED RUNS</div>`;
+      for (const r of runSet) stratEnsureSpark(r.id);
+      html += runSet.length ? stratRunCardsHtml(runSet) : "";
+    }
+  }
+  if (!html) {
+    html = `<div class="strat-empty">No saved backtests yet. Run a strategy and save the report — it lands here with its equity curve.</div>`;
+  }
+  list.innerHTML = html;
+  list.querySelectorAll("[data-strat]").forEach((card) => {
+    const path = card.dataset.strat;
+    card.classList.toggle("selected", stratLab.sel === "file:" + path);
+    const pick = () => { stratLab.sel = "file:" + path; renderStratList(); renderStratInspector(); };
+    card.onclick = pick;
+    card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+  });
+  list.querySelectorAll("[data-run]").forEach((card) => {
+    const id = card.dataset.run;
+    card.classList.toggle("selected", stratLab.sel === "run:" + id);
+    const pick = () => { stratLab.sel = "run:" + id; renderStratList(); renderStratInspector(); };
+    card.onclick = pick;
+    card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+  });
+}
+
+function stratSelectedFile() {
+  if (!stratLab.sel || !stratLab.sel.startsWith("file:")) return null;
+  const path = stratLab.sel.slice(5);
+  return (stratLab.files || []).find((f) => f.path === path) || null;
+}
+
+function stratSelectedRun() {
+  if (!stratLab.sel || !stratLab.sel.startsWith("run:")) return null;
+  const id = stratLab.sel.slice(4);
+  return (stratLab.runs || []).find((r) => r.id === id) || null;
+}
+
+function renderStratInspector() {
+  const insp = $("indb-inspector");
+  if (!insp) return;
+  const f = stratSelectedFile();
+  const r = f ? null : stratSelectedRun();
+  if (!f && !r) {
+    insp.innerHTML = `<div class="indb-insp-empty">Pick a strategy to read what it does, see its last run, or backtest it on the charted symbol.</div>`;
+    return;
+  }
+  const head = (title, sub) =>
+    `<div class="indb-insp-head"><span class="indb-insp-title">${indEsc(title)}</span>` +
+    `<button class="indb-insp-close" title="Close details">&times;</button></div>` +
+    (sub ? `<div class="strat-insp-sub">${indEsc(sub)}</div>` : "");
+  if (r) {
+    const spark = stratLab.spark[r.id];
+    if (spark == null) stratEnsureSpark(r.id);
+    const stats =
+      statTile("Win rate", r.win_rate != null ? r.win_rate.toFixed(1) + "%" : "–") +
+      statTile("Net P&L", r.net_profit != null ? fmtMoney(r.net_profit) : "–",
+        r.net_profit > 0 ? "pos" : r.net_profit < 0 ? "neg" : "") +
+      statTile("Trades", r.total_trades != null ? r.total_trades : "–") +
+      statTile("Final equity", r.final_equity != null ? fmtMoney(r.final_equity) : "–");
+    insp.innerHTML = head(r.name || r.id, r.strategy || "") +
+      `<div class="indb-insp-body strat-insp">` +
+      `<div class="strat-spark big">${spark ? stratSparkSvg(spark, 260, 64) : `<div class="strat-spark-load">…</div>`}</div>` +
+      `<div class="indb-stats">${stats}</div>` +
+      `<div class="strat-note">${[r.symbol, r.timeframe, r.created_at ? new Date(r.created_at * 1000).toLocaleString() : ""].filter(Boolean).join(" · ")}</div>` +
+      `</div><div class="indb-insp-foot">` +
+      `<button class="indb-add" data-sact="report">Open full report</button>` +
+      `<button class="indb-add remove" data-sact="del">Delete run</button></div>`;
+  } else {
+    const runs = stratRunsOf(f);
+    const last = runs[0] || null;
+    const spark = last ? stratLab.spark[last.id] : null;
+    if (f.source == null) {
+      insp.innerHTML = head(stratPretty(f), f.path) +
+        `<div class="indb-insp-empty">Loading the file…</div>`;
+      fetch(`/api/ws-files/read?path=${encodeURIComponent(f.path)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((d) => {
+          f.source = d ? (d.content || "") : "";
+          if (stratSelectedFile() === f) renderStratInspector();
+          renderStratList(); // the card title upgrades to the file's header comment
+        })
+        .catch(() => { f.source = ""; });
+      return;
+    }
+    const doc = stratHead(f.source).doc;
+    const lastStats = last
+      ? `<div class="indb-sect"><div class="indb-sect-head">LAST RUN</div>` +
+        `<div class="strat-spark big">${spark ? stratSparkSvg(spark, 260, 64) : `<div class="strat-spark-load">…</div>`}</div>` +
+        `<div class="indb-stats">` +
+        statTile("Win rate", last.win_rate != null ? last.win_rate.toFixed(1) + "%" : "–") +
+        statTile("Net P&L", last.net_profit != null ? fmtMoney(last.net_profit) : "–",
+          last.net_profit > 0 ? "pos" : last.net_profit < 0 ? "neg" : "") +
+        statTile("Trades", last.total_trades != null ? last.total_trades : "–") +
+        `</div><div class="strat-note">${[last.symbol, last.timeframe].filter(Boolean).join(" · ")}</div></div>`
+      : `<div class="strat-note">Never backtested on this machine. The equity curve appears here after the first saved run.</div>`;
+    insp.innerHTML = head(stratPretty(f), f.path) +
+      `<div class="indb-insp-body strat-insp">` +
+      (doc ? `<div class="strat-desc">${indEsc(doc)}</div>` : "") +
+      lastStats + `</div>` +
+      `<div class="indb-insp-foot strat-foot">` +
+      `<button class="indb-add" data-sact="run">&#9654; Run backtest on ${indEsc(state.symbol || "")}${state.timeframe ? " · " + indEsc(state.timeframe) : ""}</button>` +
+      `<button class="indb-reset" data-sact="ide">Open in IDE</button>` +
+      (last ? `<button class="indb-reset" data-sact="report">Open last report</button>` : "") +
+      `</div>`;
+  }
+  const close = insp.querySelector(".indb-insp-close");
+  if (close) close.onclick = () => { stratLab.sel = null; renderStratList(); renderStratInspector(); };
+  for (const btn of insp.querySelectorAll("[data-sact]")) {
+    btn.onclick = () => stratAction(btn.dataset.sact, f, r);
+  }
+}
+
+async function stratAction(actId, f, r) {
+  if (actId === "run" && f) {
+    await stratRunNow(f);
+  } else if (actId === "ide" && f) {
+    closeIndPanels();
+    await openScriptInIDE(f.path);
+  } else if (actId === "report" && (r || f)) {
+    const target = r || stratRunsOf(f)[0];
+    if (!target) return;
+    // The full report modal re-renders from the saved payload.
+    try {
+      const res = await fetch(`/api/backtest/saved/${encodeURIComponent(target.id)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const doc = await res.json();
+      closeIndPanels();
+      openBacktestReport(doc.result, { ...(doc.context || {}), savedName: doc.name, savedId: doc.id });
+      setTimeout(() => {
+        const b = document.querySelector("#btr-modal .btr-btn");
+        if (b) b.focus();
+      }, 80);
+    } catch (e) { status("report unavailable"); }
+  } else if (actId === "del" && r) {
+    try {
+      const res = await fetch(`/api/backtest/saved/${encodeURIComponent(r.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (stratLab.runs) stratLab.runs = stratLab.runs.filter((x) => x.id !== r.id);
+      delete stratLab.spark[r.id];
+      if (stratLab.sel === "run:" + r.id) stratLab.sel = null;
+      renderStratCats(); renderStratList(); renderStratInspector();
+      status("saved backtest deleted");
+    } catch (e) { status("could not delete"); }
+  }
+}
+
+/* Quick-test a strategy file on the charted symbol/timeframe with zero costs
+   (costs and date windows live in the backtest panel; this button is the
+   honest "what does it do right now" answer). Reuses renderBacktest, so the
+   trades overlay the chart and the full report opens — identical to a run
+   from the IDE. The saved report inherits the file path as its strategy
+   label, which is what links it back to this card. */
+async function stratRunNow(f) {
+  if (!f || f.source == null) return;
+  status(`backtest · ${stratStem(f)} on ${state.symbol} ${state.timeframe}…`);
+  const body = {
+    engine: backtest.engine, provider: dataProvider(),
+    symbol: state.symbol, timeframe: state.timeframe,
+    script: f.source, limit: 0,
+    options: { commission_pct: 0, commission_per_unit: 0 },
+    datasets: [],
+  };
+  let res, data;
+  try {
+    res = await fetch("/api/backtest", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    data = await res.json();
+  } catch (e) { res = null; data = null; }
+  if (!res || !res.ok || !data) {
+    const detail = data && data.detail ? data.detail : (res ? `HTTP ${res.status}` : "engine unavailable");
+    status(`backtest failed · ${detail}`);
+    return;
+  }
+  if (data.error) { status(`backtest failed · ${data.error}`); return; }
+  closeIndPanels();
+  renderBacktest(data, { request: body, strategy: f.path });
+}
+
+/* ---- metrics tab ----------------------------------------------------------
+   Honest, live, chart-local statistics over state.candleData (plus the live
+   quote for spread). Every card recomputes from the same bars the chart
+   shows; pins become floating tiles on the chart; armed thresholds fire a
+   one-shot alert on a bar-close crossing. Nothing is persisted except the
+   pin/arm CONFIG (indMetrics rides the shell store like indStyle). */
+
+state.indMetrics = state.indMetrics || { pins: {}, arms: {} };
+
+const METR_GROUPS = [
+  { id: "all", label: "All metrics" },
+  { id: "pinned", label: "Pinned" },
+  { id: "volatility", label: "Volatility" },
+  { id: "range", label: "Range" },
+  { id: "performance", label: "Performance" },
+  { id: "cost", label: "Cost" },
+];
+
+function metrBarsPerYear(rows) {
+  // Median spacing of the last 200 bars → a naive secular year. Intraday
+  // annualisation is scale arithmetic, not a trading-calendar claim — the
+  // inspector says this next to the value.
+  const dts = [];
+  for (let i = Math.max(1, rows.length - 200); i < rows.length; i++) {
+    const dt = rows[i].time - rows[i - 1].time;
+    if (dt > 0) dts.push(dt);
+  }
+  if (!dts.length) return 252;
+  dts.sort((a, b) => a - b);
+  const med = dts[Math.floor(dts.length / 2)];
+  return Math.min(525600, Math.max(1, 31557600 / med));
+}
+
+function metrTR(rows) {
+  const out = new Array(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const c = rows[i];
+    if (!i) { out[i] = c.high - c.low; continue; }
+    const pc = rows[i - 1].close;
+    out[i] = Math.max(c.high - c.low, Math.abs(c.high - pc), Math.abs(c.low - pc));
+  }
+  return out;
+}
+
+function metrWilder(vals, n) {
+  const out = new Array(vals.length).fill(null);
+  if (vals.length < n) return out;
+  let acc = 0;
+  for (let i = 0; i < n; i++) acc += vals[i];
+  out[n - 1] = acc / n;
+  for (let i = n; i < vals.length; i++) out[i] = (out[i - 1] * (n - 1) + vals[i]) / n;
+  return out;
+}
+
+function metrLogRet(rows) {
+  const r = new Array(rows.length).fill(null);
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1].close, b = rows[i].close;
+    if (a > 0 && b > 0) r[i] = Math.log(b / a);
+  }
+  return r;
+}
+
+function metrRollingSd(rets, lb) {
+  // Unbiased sample sd of non-null returns in each trailing window.
+  const out = new Array(rets.length).fill(null);
+  const vals = [];
+  for (let i = 0; i < rets.length; i++) {
+    vals.push(rets[i]);
+    if (vals.length > lb) vals.shift();
+    if (i < lb - 1) continue;
+    const w = vals.filter((v) => v != null);
+    if (w.length < 2) continue;
+    const m = w.reduce((s, v) => s + v, 0) / w.length;
+    const v = w.reduce((s, x) => s + (x - m) * (x - m), 0) / (w.length - 1);
+    out[i] = { sd: Math.sqrt(v), mean: m };
+  }
+  return out;
+}
+
+function metrDays(rows) {
+  // UTC-day buckets [{hi, lo, close}] for session-range stats.
+  const days = [];
+  let cur = null, key = null;
+  for (const c of rows) {
+    const d = new Date(c.time * 1000);
+    const k = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+    if (k !== key) { cur = { hi: c.high, lo: c.low, close: c.close }; days.push(cur); key = k; }
+    else { cur.hi = Math.max(cur.hi, c.high); cur.lo = Math.min(cur.lo, c.low); cur.close = c.close; }
+  }
+  return days;
+}
+
+const METRIC_DEFS = [
+  { id: "atr", title: "ATR", group: "volatility", unit: "price", lb: 14,
+    desc: "Wilder-smoothed average true range over the lookback. The chart's price unit is the metric's unit (pennies for LSE stocks, index points for indices).",
+    series(rows, lb) {
+      const atr = metrWilder(metrTR(rows), lb);
+      return atr.map((v, i) => (v == null ? null : { t: rows[i].time, v }));
+    } },
+  { id: "atrp", title: "ATR %", group: "volatility", unit: "%", lb: 14,
+    desc: "ATR as a percentage of the close — the same volatility read you can compare across instruments.",
+    series(rows, lb) {
+      const atr = metrWilder(metrTR(rows), lb);
+      return atr.map((v, i) => (v == null || !rows[i].close ? null : { t: rows[i].time, v: (v / rows[i].close) * 100 }));
+    } },
+  { id: "rvol", title: "Realized vol", group: "volatility", unit: "%", lb: 60,
+    desc: "Sample stdev of log returns over the lookback, annualised from the bars' own median spacing.",
+    series(rows, lb) {
+      const bpy = metrBarsPerYear(rows);
+      return metrRollingSd(metrLogRet(rows), lb).map((s, i) =>
+        (s ? { t: rows[i].time, v: s.sd * Math.sqrt(bpy) * 100 } : null));
+    } },
+  { id: "adr", title: "Avg daily range %", group: "range", unit: "%", lb: 20,
+    desc: "Mean of (high − low) / close over the lookback bars. On intraday charts this is per-BAR range; on daily charts it is the classic ADR%.",
+    series(rows, lb) {
+      const out = new Array(rows.length).fill(null);
+      const w = [];
+      for (let i = 0; i < rows.length; i++) {
+        const c = rows[i];
+        w.push(c.close ? (c.high - c.low) / c.close : 0);
+        if (w.length > lb) w.shift();
+        if (i >= lb - 1) out[i] = { t: c.time, v: (w.reduce((s, v) => s + v, 0) / w.length) * 100 };
+      }
+      return out;
+    } },
+  { id: "srange", title: "Session range %", group: "range", unit: "%", lb: null,
+    desc: "This UTC session's (high − low) / close. The sparkline walks back one session per point.",
+    series(rows) {
+      return metrDays(rows).map((d) =>
+        (d.close ? { t: 0, v: ((d.hi - d.lo) / d.close) * 100 } : null));
+    } },
+  { id: "sharpe", title: "Sharpe (rf 0)", group: "performance", unit: "", lb: 60,
+    desc: "Mean over stdev of log returns in the lookback, annualised, risk-free zero. A quick regime read, not an investable claim.",
+    series(rows, lb) {
+      const bpy = metrBarsPerYear(rows);
+      return metrRollingSd(metrLogRet(rows), lb).map((s, i) =>
+        (s && s.sd > 0 ? { t: rows[i].time, v: (s.mean / s.sd) * Math.sqrt(bpy) } : null));
+    } },
+  { id: "maxdd", title: "Max drawdown", group: "performance", unit: "%", lb: 120,
+    desc: "Worst peak-to-trough close decline inside the trailing lookback window. The sparkline is the trailing-window drawdown, always ≤ 0.",
+    series(rows, lb) {
+      const out = new Array(rows.length).fill(null);
+      for (let i = lb; i < rows.length; i++) {
+        let peak = -Infinity, worst = 0;
+        for (let j = i - lb; j <= i; j++) {
+          const c = rows[j].close;
+          if (c > peak) peak = c;
+          if (peak > 0) worst = Math.min(worst, c / peak - 1);
+        }
+        out[i] = { t: rows[i].time, v: worst * 100 };
+      }
+      return out;
+    } },
+  { id: "mom", title: "Return (20 bars)", group: "performance", unit: "%", lb: 20,
+    desc: "Close-to-close return over the lookback bars.",
+    series(rows, lb) {
+      const out = new Array(rows.length).fill(null);
+      for (let i = lb; i < rows.length; i++) {
+        const a = rows[i - lb].close, b = rows[i].close;
+        if (a > 0) out[i] = { t: rows[i].time, v: (b / a - 1) * 100 };
+      }
+      return out;
+    } },
+  { id: "spread", title: "Live spread", group: "cost", unit: "bp", lb: null,
+    desc: "Live (ask − bid) / mid in basis points from the quote stream. No history — the platform serves the current quote only.",
+    series() { return []; },
+    quote: true },
+];
+const METRIC_MAP = Object.fromEntries(METRIC_DEFS.map((m) => [m.id, m]));
+
+const metrLab = { sel: null, cache: {}, lastKey: "" };
+state.metrCat = state.metrCat || "all";
+
+function metrPins() { state.indMetrics.pins = state.indMetrics.pins || {}; return state.indMetrics.pins; }
+function metrArms() { state.indMetrics.arms = state.indMetrics.arms || {}; return state.indMetrics.arms; }
+
+function metrLb(id) {
+  const def = METRIC_MAP[id];
+  if (!def || def.lb == null) return null;
+  const ov = metrPins()[id] && metrPins()[id].lb;
+  return Number(ov) > 0 ? Number(ov) : def.lb;
+}
+
+function metrCompute(id) {
+  const def = METRIC_MAP[id];
+  const rows = state.candleData || [];
+  if (!def) return null;
+  if (def.quote) {
+    const q = state.quotes[state.symbol];
+    if (!q || !(q.ask > q.bid)) return { def, value: null, delta: null, spark: [] };
+    const mid = (q.ask + q.bid) / 2;
+    return { def, value: mid > 0 ? ((q.ask - q.bid) / mid) * 10000 : null, delta: null, spark: [] };
+  }
+  if (!rows.length) return { def, value: null, delta: null, spark: [] };
+  const lb = metrLb(id);
+  const key = `${id}:${lb}:${rows.length}:${rows[rows.length - 1].time}`;
+  if (metrLab.cache[id] && metrLab.cache[id].key === key) return metrLab.cache[id].out;
+  const series = def.series(rows, lb || 0).filter(Boolean);
+  const last = series[series.length - 1], prev = series[series.length - 2];
+  // 60 points is plenty for a 150px card sparkline and bounds the DOM cost.
+  const stride = Math.max(1, Math.ceil(series.length / 60));
+  const spark = [];
+  for (let i = 0; i < series.length; i += stride) spark.push(series[i].v);
+  if (series.length && spark[spark.length - 1] !== series[series.length - 1].v) {
+    spark.push(series[series.length - 1].v);
+  }
+  const out = { def, value: last ? last.v : null, delta: (last && prev) ? last.v - prev.v : null, spark, series };
+  metrLab.cache[id] = { key, out };
+  return out;
+}
+
+function metrFmt(def, v) {
+  if (v == null || !isFinite(v)) return "—";
+  if (def.unit === "%") return `${v.toFixed(2)}%`;
+  if (def.unit === "bp") return `${v.toFixed(1)} bp`;
+  if (def.unit === "price") return fmt(v);
+  return v.toFixed(2);
+}
+
+function metrDeltaFmt(def, dv) {
+  if (dv == null || !isFinite(dv)) return "";
+  const sign = dv > 0 ? "+" : "";
+  const txt = def.unit === "%" ? `${sign}${dv.toFixed(2)} pp`
+    : def.unit === "bp" ? `${sign}${dv.toFixed(1)} bp`
+    : def.unit === "price" ? `${sign}${fmt(dv)}` : `${sign}${dv.toFixed(2)}`;
+  return `<span class="metr-delta ${dv > 0 ? "pos" : dv < 0 ? "neg" : ""}">${txt} vs prev bar</span>`;
+}
+
+function metrSparkSvg(vals, w, h) {
+  const v = (vals || []).filter((x) => isFinite(x));
+  if (v.length < 2) return `<div class="strat-spark-empty">No history for this metric.</div>`;
+  w = w || 200; h = h || 44;
+  const lo = Math.min(...v), hi = Math.max(...v), span = (hi - lo) || 1;
+  const pad = 2;
+  const step = (w - pad * 2) / (v.length - 1);
+  const pts = v.map((x, i) =>
+    `${(pad + i * step).toFixed(1)},${(pad + (1 - (x - lo) / span) * (h - pad * 2)).toFixed(1)}`);
+  return `<svg class="strat-spark-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<polygon fill="var(--accent-bar)" opacity="0.14" points="${pad},${h - pad} ${pts.join(" ")} ${(w - pad).toFixed(1)},${h - pad}"/>` +
+    `<polyline fill="none" stroke="var(--accent-bar)" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" points="${pts.join(" ")}"/></svg>`;
+}
+
+function renderMetrAll() {
+  renderMetrCats(); renderMetrList(); renderMetrInspector();
+  const foot = $("metr-foot");
+  if (foot) {
+    const n = (state.candleData || []).length;
+    foot.textContent = n
+      ? `Computing over ${n.toLocaleString()} bars · ${state.symbol || ""} ${state.timeframe || ""} — the same bars the chart shows.`
+      : "No candles on the chart yet — metrics appear once a symbol loads.";
+  }
+}
+
+function renderMetrCats() {
+  const rail = $("metrb-cats");
+  if (!rail) return;
+  const count = (id) => {
+    if (id === "all") return METRIC_DEFS.length;
+    if (id === "pinned") return Object.keys(metrPins()).filter((k) => metrPins()[k].pinned).length;
+    return METRIC_DEFS.filter((m) => m.group === id).length;
+  };
+  rail.innerHTML = "";
+  for (const g of METR_GROUPS) {
+    if (g.id === "volatility") {
+      const sep = document.createElement("div");
+      sep.className = "indb-cat-sep";
+      rail.appendChild(sep);
+    }
+    const el = document.createElement("div");
+    el.className = "indb-cat" + (state.metrCat === g.id ? " active" : "");
+    el.innerHTML = `<span>${g.label}</span><span class="indb-cat-n">${count(g.id)}</span>`;
+    el.onclick = () => { state.metrCat = g.id; renderMetrCats(); renderMetrList(); };
+    rail.appendChild(el);
+  }
+}
+
+function renderMetrList() {
+  const list = $("metr-list");
+  if (!list) return;
+  const q = ($("metr-search") ? $("metr-search").value : "").trim().toLowerCase();
+  const pins = metrPins(), arms = metrArms();
+  let defs = METRIC_DEFS;
+  if (state.metrCat === "pinned") defs = defs.filter((d) => pins[d.id] && pins[d.id].pinned);
+  else if (state.metrCat !== "all") defs = defs.filter((d) => d.group === state.metrCat);
+  if (q) defs = defs.filter((d) => d.title.toLowerCase().includes(q));
+  list.innerHTML = defs.length ? defs.map((d) => {
+    const m = metrCompute(d.id);
+    const pinned = !!(pins[d.id] && pins[d.id].pinned), armed = !!arms[d.id];
+    return `<div class="strat-card metr-card${pinned ? " pinned" : ""}${metrLab.sel === d.id ? " selected" : ""}" data-metr="${d.id}" role="button" tabindex="0">` +
+      `<div class="strat-card-head"><span class="strat-name">${d.title}</span>` +
+      (d.lb != null ? `<span class="metr-lb">lb ${metrLb(d.id)}</span>` : "") + `</div>` +
+      `<div class="metr-value${m.value == null ? " na" : ""}">${metrFmt(d, m.value)}</div>` +
+      metrDeltaFmt(d, m.delta) +
+      `<div class="strat-spark">${metrSparkSvg(m.spark)}</div>` +
+      `<div class="strat-tags">` +
+      (pinned ? `<span class="strat-tag starter">pinned</span>` : "") +
+      (armed ? `<span class="strat-tag back">alert ${arms[d.id].mode} ${arms[d.id].threshold}</span>` : "") +
+      (pinned ? `<button type="button" class="metr-unpin" data-unpin="${d.id}" title="Remove from chart">Remove</button>` : "") +
+      `</div></div>`;
+  }).join("") : `<div class="strat-empty">No metrics match.</div>`;
+  list.querySelectorAll("[data-metr]").forEach((card) => {
+    const id = card.dataset.metr;
+    const pick = (e) => {
+      if (e && e.target && e.target.closest(".metr-unpin")) return;
+      metrLab.sel = id; renderMetrList(); renderMetrInspector();
+    };
+    card.onclick = pick;
+    card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(e); } };
+  });
+  list.querySelectorAll("[data-unpin]").forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); metrUnpin(b.dataset.unpin); };
+  });
+}
+
+function renderMetrInspector() {
+  const insp = $("indb-inspector");
+  if (!insp) return;
+  const id = metrLab.sel;
+  const def = id ? METRIC_MAP[id] : null;
+  if (!def) {
+    insp.innerHTML = `<div class="indb-insp-empty">Pick a metric to tune its lookback, arm an alert, or pin it onto the chart.</div>`;
+    return;
+  }
+  const m = metrCompute(id);
+  const pins = metrPins(), arms = metrArms();
+  const pinned = !!(pins[id] && pins[id].pinned), arm = arms[id];
+  const lbRow = def.lb != null
+    ? `<div class="mi-row"><span>Lookback</span>` +
+      `<input type="number" id="mi-lb" min="2" max="5000" step="1" value="${metrLb(id)}"></div>` : "";
+  const alertSect =
+    `<div class="indb-sect"><div class="indb-sect-head">ALERT</div>` +
+    `<div class="mi-row"><span>Crossing</span>` +
+    `<span class="mi-seg" role="group" aria-label="Direction">` +
+    `<button type="button" id="mi-above" class="${(!arm || arm.mode === "above") ? "on" : ""}">above</button>` +
+    `<button type="button" id="mi-below" class="${arm && arm.mode === "below" ? "on" : ""}">below</button></span></div>` +
+    `<div class="mi-row"><span>Threshold</span><input type="number" id="mi-th" step="any" value="${arm ? arm.threshold : (m.value != null ? m.value.toFixed(2) : "")}"></div>` +
+    `<div class="mi-hint">One arm = one alert. It fires on the first bar-close crossing, then disarms, so a volatile stretch cannot spam you.</div>` +
+    `<button class="indb-add" data-mact="arm">${arm ? "Re-arm alert" : "Arm alert"}</button>` +
+    (arm ? `<button class="indb-reset" data-mact="disarm">Disarm</button>` : "") +
+    `</div>`;
+  insp.innerHTML =
+    `<div class="indb-insp-head"><span class="indb-insp-title">${def.title}</span>` +
+    `<button class="indb-insp-close" title="Close details">&times;</button></div>` +
+    `<div class="indb-insp-body strat-insp">` +
+    `<div class="metr-value big${m.value == null ? " na" : ""}">${metrFmt(def, m.value)}</div>` +
+    metrDeltaFmt(def, m.delta) +
+    `<div class="strat-desc">${indEsc(def.desc)}</div>` +
+    `<div class="strat-note">On ${indEsc(state.symbol || "—")} · ${indEsc(state.timeframe || "—")} · live with the chart</div>` +
+    `<div class="indb-sect"><div class="indb-sect-head">SETTINGS</div>${lbRow}</div>` +
+    alertSect +
+    `</div>` +
+    `<div class="indb-insp-foot">` +
+    (pinned
+      ? `<button class="indb-add remove" data-mact="unpin">Remove from chart</button>`
+      : `<button class="indb-add" data-mact="pin">Pin to chart</button>`) +
+    `</div>`;
+  const close = insp.querySelector(".indb-insp-close");
+  if (close) close.onclick = () => { metrLab.sel = null; renderMetrList(); renderMetrInspector(); };
+  const lb = insp.querySelector("#mi-lb");
+  if (lb) lb.onchange = () => {
+    const v = parseInt(lb.value, 10);
+    // The lookback travels with the metric (card, pin and arm all share it);
+    // it does not imply a pin by itself.
+    pins[id] = pins[id] || {};
+    if (v > 0) pins[id].lb = v; else delete pins[id].lb;
+    if (!pins[id].pinned && !pins[id].lb) delete pins[id];
+    delete metrLab.cache[id];
+    saveShellState(); renderMetrList(); renderMetrInspector(); metricPinsRefresh();
+  };
+  let mode = arm ? arm.mode : "above";
+  const above = insp.querySelector("#mi-above"), below = insp.querySelector("#mi-below");
+  if (above) above.onclick = () => { mode = "above"; above.classList.add("on"); below.classList.remove("on"); };
+  if (below) below.onclick = () => { mode = "below"; below.classList.add("on"); above.classList.remove("on"); };
+  for (const b of insp.querySelectorAll("[data-mact]")) {
+    b.onclick = () => {
+      const a = b.dataset.mact;
+      if (a === "pin") metrPin(id);
+      else if (a === "unpin") metrUnpin(id);
+      else if (a === "arm") {
+        const th = parseFloat((insp.querySelector("#mi-th") || {}).value);
+        if (!isFinite(th)) { status("alert needs a numeric threshold"); return; }
+        arms[id] = { mode, threshold: th };
+        saveShellState(); metrEnsureTicker(); renderMetrCats(); renderMetrList(); renderMetrInspector();
+        status(`${def.title} alert armed ${mode} ${th}`);
+      } else if (a === "disarm") {
+        delete arms[id];
+        saveShellState(); metrEnsureTicker(); renderMetrCats(); renderMetrList(); renderMetrInspector();
+        status(`${def.title} alert disarmed`);
+      }
+    };
+  }
+}
+
+function metrPin(id) {
+  const def = METRIC_MAP[id];
+  if (!def) return;
+  const m = metrCompute(id);
+  if (m.value == null) { status("nothing to pin yet — no bars"); return; }
+  const pins = metrPins();
+  pins[id] = pins[id] || {};
+  pins[id].pinned = true;
+  saveShellState();
+  metrEnsureTicker();
+  renderMetrCats(); renderMetrList(); renderMetrInspector(); metricPinsRefresh();
+  status(`${def.title} pinned to the chart`);
+}
+
+function metrUnpin(id) {
+  const pins = metrPins(), def = METRIC_MAP[id];
+  if (pins[id]) delete pins[id].pinned;
+  if (pins[id] && !pins[id].lb) delete pins[id];
+  saveShellState();
+  metrEnsureTicker();
+  renderMetrCats(); renderMetrList();
+  if (metrLab.sel === id) renderMetrInspector();
+  metricPinsRefresh();
+  if (def) status(`${def.title} unpinned`);
+}
+
+/* Floating live tiles on the chart. Positioned over the stage's top-right
+   (the date/price scale edge is bottom-right, so tiles never sit on it). */
+function metricPinsRefresh() {
+  const zone = $("metric-pins");
+  if (!zone) return;
+  const pins = metrPins();
+  const ids = Object.keys(pins).filter((id) => pins[id].pinned && METRIC_MAP[id]);
+  zone.classList.toggle("hidden", !ids.length);
+  zone.innerHTML = ids.map((id) => {
+    const def = METRIC_MAP[id];
+    const m = metrCompute(id);
+    return `<div class="metric-tile" data-mtile="${id}">` +
+      `<span class="mt-name">${def.title}${def.lb != null ? " " + metrLb(id) : ""}</span>` +
+      `<span class="mt-val${m.value == null ? " na" : ""}">${metrFmt(def, m.value)}</span>` +
+      `<button class="mt-x" data-mtx="${id}" title="Remove">&times;</button></div>`;
+  }).join("");
+  zone.querySelectorAll("[data-mtx]").forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); metrUnpin(b.dataset.mtx); };
+  });
+}
+
+// 5s supervisor: pins recompute from the live candles; armed thresholds check
+// for a bar-close crossing and fire ONE alert, then disarm.
+const metrTick = { h: null };
+
+function metrEnsureTicker() {
+  const needs = Object.keys(metrPins()).some((id) => metrPins()[id].pinned) ||
+    Object.keys(metrArms()).length > 0;
+  if (needs && !metrTick.h) metrTick.h = setInterval(metrSupervise, 5000);
+  if (!needs && metrTick.h) { clearInterval(metrTick.h); metrTick.h = null; }
+}
+
+function metrSupervise() {
+  if (state.indTab === "metrics" && $("ind-panel") && !$("ind-panel").classList.contains("hidden")) {
+    renderMetrList();
+    if (metrLab.sel) renderMetrInspector();
+  }
+  metricPinsRefresh();
+  const arms = metrArms();
+  for (const id of Object.keys(arms)) {
+    const def = METRIC_MAP[id];
+    if (!def) { delete arms[id]; continue; }
+    const m = metrCompute(id);
+    if (!m.series || m.series.length < 2) continue;
+    const cur = m.series[m.series.length - 1].v, prev = m.series[m.series.length - 2].v;
+    const t = arms[id].threshold;
+    const crossed = arms[id].mode === "above" ? (prev <= t && cur > t) : (prev >= t && cur < t);
+    if (crossed) {
+      status(`ALERT · ${def.title} crossed ${arms[id].mode} ${t} — now ${metrFmt(def, cur)}`);
+      delete arms[id];
+      saveShellState();
+      metrEnsureTicker();
+      if ($("ind-panel") && !$("ind-panel").classList.contains("hidden") && state.indTab === "metrics") {
+        renderMetrCats(); renderMetrList();
+        if (metrLab.sel === id) renderMetrInspector();
+      }
+    }
+  }
+}
+
 function renderIndCats() {
   const rail = $("indb-cats");
   if (!rail) return;
@@ -1385,8 +2397,11 @@ function renderIndicatorList() {
       row.innerHTML =
         `<span class="indb-crow-dot" title="${added ? "On chart" : (s.overlay ? "Overlay" : "Pane")}"></span>` +
         `<span class="indb-crow-title">${s.title}</span>` +
+        (added ? `<button class="indb-crow-rm" title="Remove from chart">&times;</button>` : "") +
         `<button class="indb-card-star${isFav ? " fav" : ""}" title="${isFav ? "Unfavourite" : "Favourite"}">${isFav ? "&#9733;" : "&#9734;"}</button>`;
       row.onclick = () => indSelect(s.name);
+      const rowRm = row.querySelector(".indb-crow-rm");
+      if (rowRm) rowRm.onclick = (e) => { e.stopPropagation(); indRemoveFromChart(s.name); };
       row.querySelector(".indb-card-star").onclick = (e) => {
         e.stopPropagation();
         const at = state.favoriteIndicators.indexOf(s.name);
@@ -1416,9 +2431,12 @@ function renderIndicatorList() {
       indSpark(s) +
       `<div class="indb-card-foot">` +
         `<span class="indb-card-tag">${s.overlay ? "overlay" : "pane"}</span>` +
-        `<span class="indb-card-added">&#10003; added</span>` +
+        `<span class="indb-card-added">&#10003; on chart</span>` +
+        (added ? `<button class="indb-card-rm" title="Remove from chart">Remove</button>` : "") +
       `</div>`;
     card.onclick = () => indSelect(s.name);
+    const cardRm = card.querySelector(".indb-card-rm");
+    if (cardRm) cardRm.onclick = (e) => { e.stopPropagation(); indRemoveFromChart(s.name); };
     card.querySelector(".indb-card-star").onclick = (e) => {
       e.stopPropagation();
       const at = state.favoriteIndicators.indexOf(s.name);
@@ -1449,6 +2467,16 @@ function indSeedDraft(spec) {
       ? active.params[k] : p.default;
   }
   state.indDraft = { name: spec.name, params };
+}
+// One removal path for the card hover button, the column row × and the
+// inspector footer: drop it from the chart, refresh every view of the fact.
+function indRemoveFromChart(name) {
+  state.activeIndicators = state.activeIndicators.filter((i) => i.name !== name);
+  renderActiveIndicators();
+  loadChart();
+  saveShellState();
+  renderIndicatorList();
+  renderIndInspector();
 }
 function indSeedDefaults(spec) {
   const params = {};
@@ -1485,6 +2513,9 @@ function indSelect(name) {
   state.indSelected = name;
   state.indPvZoom = 1;          // fresh indicator opens fit-to-width
   state.indPvCache = null;
+  // Fresh selection starts from the mockup's accordion: INPUTS open, the
+  // rest collapsed so the preview keeps the most space.
+  state.indInspSects = { inputs: true, style: false, fill: false, visibility: false, alerts: false };
   const spec = (state.indicatorSpecs || []).find((s) => s.name === name);
   if (spec) indSeedDraft(spec);
   renderIndicatorList();
@@ -1536,10 +2567,265 @@ function indVisHtml(spec) {
       `<input type="checkbox" data-vis="${c.id}" ${cur.visible ? "checked" : ""}></label>`;
   }).join("");
 }
-function indPaneHtml(spec, tab) {
-  return tab === "inputs" ? indInputsHtml(spec) : tab === "style" ? indStyleHtml(spec) : indVisHtml(spec);
+/* ── Item 7 extras: restore, presets, fill, timeframe-visibility, alerts ── */
+
+// Boot + workspace-Load restore: everything Item 7 saves under the shell
+// section. Light shape checks only — anything absent keeps the live default.
+function indRestoreExtras(shell) {
+  const grab = (key) => (shell && shell[key] && typeof shell[key] === "object" && !Array.isArray(shell[key])) ? shell[key] : null;
+  const st = grab("indStyle");   if (st) state.indStyle = st;
+  const pr = grab("indPresets"); if (pr) state.indPresets = pr;
+  const tv = grab("indTfVis");   if (tv) state.indTfVis = tv;
+  const al = grab("indAlerts");  if (al) state.indAlerts = al;
+  const mx = grab("indMetrics"); if (mx) {
+    state.indMetrics = mx;
+    state.indMetrics.pins = state.indMetrics.pins || {};
+    state.indMetrics.arms = state.indMetrics.arms || {};
+    // Restored arms/pins need their supervisor running and tiles painted
+    // (the first loadChart repaints; the ticker starts here).
+    metrEnsureTicker();
+  }
 }
-// Bind the live handlers for whichever inputs are present in the tab pane.
+
+/* ---- presets ---- */
+// Preset names are free user text that lands in the DOM.
+function indEsc(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function indPresetsFor(name) {
+  state.indPresets = state.indPresets || {};
+  return state.indPresets[name] || (state.indPresets[name] = []);
+}
+// Which preset the CURRENT draft matches (exact param equality), so the
+// dropdown can show "Custom…" the moment the user edits away from a preset.
+function indPresetMatch(name) {
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === name);
+  if (!spec || !state.indDraft || state.indDraft.name !== name) return "default";
+  const entries = Object.entries(spec.params || {});
+  const eq = (params) => entries.every(([k, p]) => {
+    const a = state.indDraft.params[k] === undefined ? String(p.default) : String(state.indDraft.params[k]);
+    const b = params && params[k] !== undefined ? String(params[k]) : String(p.default);
+    return a === b;
+  });
+  if (eq(null)) return "default";
+  for (const pr of indPresetsFor(name)) if (eq(pr.params)) return pr.id;
+  return "custom";
+}
+function indPresetHtml(spec) {
+  const entries = Object.entries(spec.params || {});
+  if (!entries.length) return "";
+  const list = indPresetsFor(spec.name);
+  const cur = indPresetMatch(spec.name);
+  const opts = [`<option value="default">Default</option>`]
+    .concat(list.map((p) => `<option value="${p.id}">${indEsc(p.name)}</option>`));
+  if (cur === "custom") opts.push(`<option value="custom">Custom</option>`);
+  return `<div class="indb-field indb-preset-row"><span>Preset</span>` +
+    `<span class="indb-preset-ctl">` +
+    `<select data-preset="1">${opts.join("")}</select>` +
+    `<button class="indb-mini" data-preset-save title="Save the current inputs as a preset">&#65291;</button>` +
+    (list.length && cur !== "default" && cur !== "custom"
+      ? `<button class="indb-mini danger" data-preset-del title="Delete this preset">&times;</button>` : "") +
+    `</span></div>` +
+    `<div class="indb-preset-form hidden">` +
+    `<input type="text" maxlength="40" placeholder="Preset name" data-preset-name>` +
+    `<button class="indb-mini ok" data-preset-ok title="Save preset">&#10003;</button>` +
+    `<button class="indb-mini" data-preset-cancel title="Cancel">&times;</button></div>`;
+}
+function indPresetApply(spec, id) {
+  if (id === "default") indSeedDefaults(spec);
+  else if (id !== "custom") {
+    const p = indPresetsFor(spec.name).find((x) => x.id === id);
+    if (!p) return;
+    const params = {};
+    for (const [k, pd] of Object.entries(spec.params || {})) {
+      params[k] = (p.params && p.params[k] !== undefined) ? p.params[k] : pd.default;
+    }
+    state.indDraft = { name: spec.name, params };
+  }
+  renderIndInspector({ refetch: false });
+  indPreviewSchedule();
+  if (indActiveItem(spec.name)) indApplyDraft(spec.name);
+}
+
+/* ---- fill between two plots ----
+   A fill rides the FROM column's style override (state.indStyle[name][from]
+   .fill = { to, color, opacity, gradient }) so it flows through the exact
+   merge path style/visibility already use, into BOTH the preview canvas and
+   the chart payload (series carry fillTo/fillColor/... to the chart bundle). */
+function indFillGet(name) {
+  const store = (state.indStyle || {})[name] || {};
+  for (const [from, o] of Object.entries(store)) {
+    if (o && typeof o === "object" && o.fill && typeof o.fill === "object" && o.fill.to) {
+      return {
+        from, to: o.fill.to,
+        color: o.fill.color || IND_PALETTE[0],
+        opacity: (typeof o.fill.opacity === "number") ? o.fill.opacity : 0.15,
+        gradient: !!o.fill.gradient,
+      };
+    }
+  }
+  return null;
+}
+function indFillSet(spec, fill) {
+  const store = indStyleFor(spec);
+  for (const [, o] of Object.entries(store)) if (o && typeof o === "object") delete o.fill;
+  if (fill) {
+    const o = store[fill.from] || (store[fill.from] = {});
+    o.fill = { to: fill.to, color: fill.color, opacity: fill.opacity, gradient: !!fill.gradient };
+  }
+}
+function indFillHtml(spec) {
+  const cols = (state.indPvCols || {})[spec.name];
+  if (!cols || cols.length < 2) {
+    return `<div class="indb-insp-empty" style="padding:8px">Fill appears once this indicator&rsquo;s plots are on screen (it needs two or more).</div>`;
+  }
+  const cur = indFillGet(spec.name);
+  const enabled = !!cur;
+  const from = enabled ? cur.from : cols[0].id;
+  const to = enabled ? cur.to : cols[Math.min(2, cols.length - 1)].id;
+  const optFor = (sel) => cols.map((c) => `<option value="${c.id}"${c.id === sel ? " selected" : ""}>${c.label}</option>`).join("");
+  return `<div class="indb-field"><span>Band fill</span>` +
+    `<input type="checkbox" data-fill="on" ${enabled ? "checked" : ""}></div>` +
+    `<div class="indb-fill-body${enabled ? "" : " off"}">` +
+    `<div class="indb-field"><span>From</span><select data-fill="from">${optFor(from)}</select></div>` +
+    `<div class="indb-field"><span>To</span><select data-fill="to">${optFor(to)}</select></div>` +
+    `<div class="indb-field"><span>Colour</span><span class="indb-fill-ctl">` +
+    `<input type="color" data-fill="color" value="${enabled ? cur.color : IND_PALETTE[0]}" title="Fill colour">` +
+    `<input type="range" data-fill="opacity" min="5" max="60" step="5" value="${Math.round((enabled ? cur.opacity : 0.15) * 100)}" title="Fill opacity">` +
+    `<span class="indb-fill-pct">${Math.round((enabled ? cur.opacity : 0.15) * 100)}%</span></span></div>` +
+    `<div class="indb-field"><span>Gradient fade</span><input type="checkbox" data-fill="gradient" ${enabled && cur.gradient ? "checked" : ""}></div>` +
+    `</div>`;
+}
+function indReadFillForm(insp, spec) {
+  const on = insp.querySelector('input[data-fill="on"]');
+  if (!on || !on.checked) return null;
+  const from = (insp.querySelector('select[data-fill="from"]') || {}).value;
+  const to = (insp.querySelector('select[data-fill="to"]') || {}).value;
+  if (!from || !to || from === to) return null;
+  return {
+    from, to,
+    color: (insp.querySelector('input[data-fill="color"]') || {}).value || IND_PALETTE[0],
+    opacity: Math.max(0.05, Math.min(0.6, (parseInt((insp.querySelector('input[data-fill="opacity"]') || { value: 15 }).value, 10) || 15) / 100)),
+    gradient: !!(insp.querySelector('input[data-fill="gradient"]') || {}).checked,
+  };
+}
+
+/* ---- timeframe visibility ----
+   state.indTfVis[name] = ["1m","5m",…] — the ONLY timeframes the indicator
+   draws on. Absent/empty = visible everywhere. Enforcement happens when the
+   chart payload is built (indMergedPayload), so switching timeframe applies
+   instantly and switching back restores the indicator untouched. */
+function indTfVisGet(name) {
+  const v = (state.indTfVis || {})[name];
+  return Array.isArray(v) ? v : [];
+}
+function indTfAllowed(name) {
+  const v = indTfVisGet(name);
+  return !v.length || v.includes(state.timeframe);
+}
+function indTfVisHtml(spec) {
+  const prov = (state.providers || []).find((p) => p.name === state.provider);
+  const tfs = ((prov && prov.timeframes) || []).filter((t) => t !== "tick");
+  if (!tfs.length) return "";
+  const cur = indTfVisGet(spec.name);
+  const chips = tfs.map((t) =>
+    `<button type="button" class="indb-tfchip${cur.includes(t) ? " on" : ""}" data-tf="${t}">${t}</button>`).join("");
+  return `<div class="indb-tf-row"><span class="indb-tf-lbl">Timeframes</span>` +
+    `<span class="indb-tf-chips">${chips}</span>` +
+    `<button type="button" class="indb-tf-all${cur.length ? "" : " on"}" data-tf-all>All</button></div>`;
+}
+
+/* ---- alerts ----
+   state.indAlerts[name] = { enabled, plot, cond, value, lastTs }.
+   Evaluated whenever a fresh indicator payload lands with the chart
+   (loadChart / live-bar reload), never on the inspector's own preview, and
+   only for indicators that are actually ON the chart at an allowed
+   timeframe. A fire lands in the topline status AND as a desktop
+   notification (permission asked once, when the first alert is armed). */
+const IND_ALERT_CONDS = [
+  { id: "crossAbove", label: "Crosses above" },
+  { id: "crossBelow", label: "Crosses below" },
+  { id: "above", label: "Is above" },
+  { id: "below", label: "Is below" },
+];
+function indAlertFor(name) {
+  const a = ((state.indAlerts || {})[name]);
+  return (a && typeof a === "object") ? a : null;
+}
+function indAlertsHtml(spec) {
+  const a = indAlertFor(spec.name) || {};
+  const added = !!indActiveItem(spec.name);
+  const cols = (state.indPvCols || {})[spec.name] || [];
+  const plot = a.plot || (cols[0] ? cols[0].id : "value");
+  const cond = a.cond || "crossAbove";
+  const plotOpts = cols.length
+    ? cols.map((c) => `<option value="${c.id}"${c.id === plot ? " selected" : ""}>${c.label}</option>`).join("")
+    : `<option value="value">value</option>`;
+  return (added ? "" : `<div class="indb-alert-note">Add this indicator to the chart to arm alerts.</div>`) +
+    `<div class="indb-field"><span>Alert</span><input type="checkbox" data-alert="on" ${a.enabled ? "checked" : ""}${added ? "" : " disabled"}></div>` +
+    `<div class="indb-alert-body${a.enabled ? "" : " off"}">` +
+    `<div class="indb-field"><span>Plot</span><select data-alert="plot">${plotOpts}</select></div>` +
+    `<div class="indb-field"><span>Condition</span><select data-alert="cond">` +
+    IND_ALERT_CONDS.map((c) => `<option value="${c.id}"${c.id === cond ? " selected" : ""}>${c.label}</option>`).join("") +
+    `</select></div>` +
+    `<div class="indb-field"><span>Value</span><input type="number" step="any" data-alert="value" value="${a.value !== undefined ? a.value : ""}" placeholder="e.g. 70"></div>` +
+    (a.lastTs ? `<div class="indb-alert-note">Last fired ${new Date(a.lastFiredAt || Date.now()).toLocaleTimeString()}.</div>` : "") +
+    `</div>`;
+}
+// The merged latest two closed points of one plot, aligned for crossing tests.
+function indAlertSeries(payload, label, plotId) {
+  const ind = payload[label];
+  if (!ind || !ind.series) return null;
+  const cols = Object.keys(ind.series);
+  const col = cols.includes(plotId) ? plotId : cols[0];
+  const pts = (ind.series[col] || {}).points || [];
+  const vals = [];
+  for (let i = pts.length - 1; i >= 0 && vals.length < 2; i--) {
+    const v = pts[i][1];
+    if (typeof v === "number" && isFinite(v)) vals.push({ ts: pts[i][0], v });
+  }
+  return vals.length === 2 ? { prev: vals[1], last: vals[0] } : null;
+}
+function indAlertsCheck() {
+  const all = state.indAlerts || {};
+  const names = Object.keys(all);
+  if (!names.length) return;
+  const payload = state.engineIndicators || {};
+  let dirty = false;
+  for (const item of state.activeIndicators || []) {
+    const a = indAlertFor(item.name);
+    if (!a || !a.enabled) continue;
+    if (!indTfAllowed(item.name)) continue;
+    const ref = parseFloat(a.value);
+    if (!isFinite(ref)) continue;
+    const s = indAlertSeries(payload, engineLabel(item), a.plot || "value");
+    if (!s) continue;
+    const cond = a.cond || "crossAbove";
+    const fired =
+      (cond === "crossAbove" && s.prev.v <= ref && s.last.v > ref) ||
+      (cond === "crossBelow" && s.prev.v >= ref && s.last.v < ref) ||
+      (cond === "above" && s.last.v > ref && a.lastTs !== s.last.ts) ||
+      (cond === "below" && s.last.v < ref && a.lastTs !== s.last.ts);
+    if (!fired || a.lastTs === s.last.ts) continue;
+    a.lastTs = s.last.ts;
+    a.lastFiredAt = Date.now();
+    dirty = true;
+    const spec = (state.indicatorSpecs || []).find((x) => x.name === item.name);
+    const what = IND_ALERT_CONDS.find((c) => c.id === cond);
+    const msg = `alert: ${(spec && spec.title) || item.name} ${what ? what.label.toLowerCase() : cond} ${ref}`;
+    status(msg);
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("Green Terminal", { body: msg });
+      }
+    } catch (e) { /* notifications unsupported: the status line already has it */ }
+  }
+  if (dirty) saveShellState();
+}
+
+// Bind the live handlers for whichever inputs are present in the open
+// inspector sections (inputs / style / fill / tf-visibility / alerts).
 function indBindTabPane(insp, spec) {
   const name = spec.name;
   insp.querySelectorAll("input[data-param]").forEach((inp) => {
@@ -1568,32 +2854,145 @@ function indBindTabPane(insp, spec) {
       if (indActiveItem(name)) indRefreshChart();
     };
   });
+  // Preset row: dropdown applies, ＋ opens the inline save form, × deletes.
+  const presetSel = insp.querySelector("select[data-preset]");
+  if (presetSel) presetSel.onchange = () => indPresetApply(spec, presetSel.value);
+  const presetForm = insp.querySelector(".indb-preset-form");
+  const presetSaveBtn = insp.querySelector("[data-preset-save]");
+  if (presetSaveBtn && presetForm) presetSaveBtn.onclick = () => {
+    presetForm.classList.toggle("hidden");
+    const inp = presetForm.querySelector("[data-preset-name]");
+    if (inp && !presetForm.classList.contains("hidden")) inp.focus();
+  };
+  const presetCancel = insp.querySelector("[data-preset-cancel]");
+  if (presetCancel && presetForm) presetCancel.onclick = () => presetForm.classList.add("hidden");
+  const presetOk = insp.querySelector("[data-preset-ok]");
+  if (presetOk && presetForm) presetOk.onclick = () => {
+    const inp = presetForm.querySelector("[data-preset-name]");
+    const nm = ((inp && inp.value) || "").trim().slice(0, 40);
+    if (!nm) { if (inp) inp.focus(); return; }
+    const list = indPresetsFor(name);
+    const old = list.find((p) => p.name.toLowerCase() === nm.toLowerCase());
+    if (old) old.params = { ...state.indDraft.params };
+    else list.push({ id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: nm, params: { ...state.indDraft.params } });
+    saveShellState();
+    renderIndInspector({ refetch: false });
+    status(`preset "${nm}" saved`);
+    setTimeout(() => status(""), 1500);
+  };
+  const presetDel = insp.querySelector("[data-preset-del]");
+  if (presetDel && presetSel) presetDel.onclick = () => {
+    const list = indPresetsFor(name);
+    const at = list.findIndex((p) => p.id === presetSel.value);
+    if (at >= 0) list.splice(at, 1);
+    saveShellState();
+    indPresetApply(spec, "default");
+  };
+  // Fill group: every control writes one override object, then repaints the
+  // preview and pushes the chart restyle through the same payload path.
+  insp.querySelectorAll("[data-fill]").forEach((ctl) => {
+    const apply = () => {
+      indFillSet(spec, indReadFillForm(insp, spec));
+      saveShellState();
+      renderIndInspector({ refetch: false });
+      indPreviewSchedule();
+      if (indActiveItem(name)) indRefreshChart();
+    };
+    if (ctl.type === "range" || ctl.type === "color") ctl.oninput = apply;
+    else ctl.onchange = apply;
+  });
+  // Timeframe-visibility chips.
+  insp.querySelectorAll(".indb-tfchip").forEach((b) => {
+    b.onclick = () => {
+      state.indTfVis = state.indTfVis || {};
+      const cur = indTfVisGet(name).slice();
+      const t = b.dataset.tf;
+      const at = cur.indexOf(t);
+      if (at >= 0) cur.splice(at, 1); else cur.push(t);
+      if (cur.length) state.indTfVis[name] = cur; else delete state.indTfVis[name];
+      saveShellState();
+      renderIndInspector({ refetch: false });
+      if (indActiveItem(name)) indRefreshChart();
+    };
+  });
+  const tfAll = insp.querySelector("[data-tf-all]");
+  if (tfAll) tfAll.onclick = () => {
+    state.indTfVis = state.indTfVis || {};
+    delete state.indTfVis[name];
+    saveShellState();
+    renderIndInspector({ refetch: false });
+    if (indActiveItem(name)) indRefreshChart();
+  };
+  // Alert group.
+  insp.querySelectorAll("[data-alert]").forEach((ctl) => {
+    const apply = () => {
+      state.indAlerts = state.indAlerts || {};
+      const a = state.indAlerts[name] || (state.indAlerts[name] = {});
+      a.enabled = !!(insp.querySelector('input[data-alert="on"]') || {}).checked;
+      a.plot = (insp.querySelector('select[data-alert="plot"]') || {}).value || "value";
+      a.cond = (insp.querySelector('select[data-alert="cond"]') || {}).value || "crossAbove";
+      a.value = (insp.querySelector('input[data-alert="value"]') || {}).value;
+      if (a.enabled) {
+        try {
+          if ("Notification" in window && Notification.permission === "default") {
+            Notification.requestPermission().catch(() => {});
+          }
+        } catch (e) { /* unsupported */ }
+      }
+      if (!a.enabled && !a.value) delete state.indAlerts[name];
+      saveShellState();
+      const body = insp.querySelector(".indb-alert-body");
+      if (body) body.classList.toggle("off", !a.enabled);
+    };
+    ctl.onchange = apply;
+  });
 }
-// After a preview fetch discovers the real plot columns, refresh JUST the tab
-// pane (never the whole inspector — that would recreate the canvas and loop).
-// Skips the rebuild when the pane is already in sync so it never interrupts a
-// colour drag or checkbox toggle.
+// After a preview fetch discovers the real plot columns, refresh ONLY the
+// column-driven sections (style / fill / visibility / alerts), never the
+// whole inspector — that would recreate the canvas and loop. Skips the
+// rebuild when a section is already in sync so it never interrupts a colour
+// drag or a checkbox toggle.
 function indUpdateTabPane() {
   const insp = $("indb-inspector");
   if (!insp) return;
   const spec = (state.indicatorSpecs || []).find((s) => s.name === state.indSelected);
   if (!spec) return;
-  const tab = state.indInspTab || "inputs";
-  if (tab === "inputs") return; // inputs don't depend on discovered columns
-  const pane = insp.querySelector(".indb-insp-tabpane");
-  if (!pane) return;
+  const sects = state.indInspSects || {};
   const cols = (state.indPvCols || {})[spec.name] || null;
-  const sel = tab === "style" ? "input[data-style]" : "input[data-vis]";
-  const have = pane.querySelectorAll(sel).length;
-  const want = cols ? cols.length : 0;
-  if (want > 0 && have === want) return; // already showing these columns
-  pane.innerHTML = indPaneHtml(spec, tab);
-  indBindTabPane(insp, spec);
+  const swap = (id, html) => {
+    const body = insp.querySelector(`.indb-insp-sect[data-sect="${id}"] .indb-sect-body`);
+    if (!body) return false;
+    const want = cols ? cols.length : 0;
+    if (want === 0) return false;                    // still unknown: keep placeholder
+    if (body.dataset.synced === String(want)) return false; // already in sync
+    body.innerHTML = html;
+    body.dataset.synced = String(want);
+    return true;
+  };
+  let changed = sects.style ? swap("style", indStyleHtml(spec)) : false;
+  if (sects.fill) changed = swap("fill", indFillHtml(spec)) || changed;
+  if (sects.visibility) changed = swap("visibility", indVisHtml(spec) + indTfVisHtml(spec)) || changed;
+  if (sects.alerts) changed = swap("alerts", indAlertsHtml(spec)) || changed;
+  if (changed) indBindTabPane(insp, spec);
 }
 
-function renderIndInspector() {
+// Which inspector sections are open. INPUTS leads (the mockup's order);
+// STYLE/FILL/VISIBILITY/ALERTS stay collapsed until asked for.
+function indSects() {
+  state.indInspSects = state.indInspSects ||
+    { inputs: true, style: false, fill: false, visibility: false, alerts: false };
+  return state.indInspSects;
+}
+function indSectHtml(id, label, open, inner, extraClass) {
+  return `<div class="indb-insp-sect${open ? " open" : ""}${extraClass ? " " + extraClass : ""}" data-sect="${id}">` +
+    `<button type="button" class="indb-sect-head" data-sect-head="${id}">` +
+    `<span class="indb-sect-chev">&#9656;</span><span>${label}</span></button>` +
+    `<div class="indb-sect-body">${inner}</div></div>`;
+}
+function renderIndInspector(opts) {
   const insp = $("indb-inspector");
   if (!insp) return;
+  const refetch = !opts || opts.refetch !== false;
   const name = state.indSelected;
   const spec = name ? (state.indicatorSpecs || []).find((s) => s.name === name) : null;
   if (!spec) {
@@ -1602,7 +3001,16 @@ function renderIndInspector() {
   }
   if (!state.indDraft || state.indDraft.name !== name) indSeedDraft(spec);
   const added = !!indActiveItem(name);
-  const tab = state.indInspTab || "inputs";
+  const sects = indSects();
+  const cols = (state.indPvCols || {})[name] || null;
+  const synced = String(cols ? cols.length : 0);
+
+  // Column-driven section BODIES carry data-synced so the post-fetch refresh
+  // can tell "placeholder showing" from "these exact columns already painted".
+  const sect = (id, label, inner) => indSectHtml(id, label, !!sects[id], inner)
+    .replace(`class="indb-sect-body"`, `class="indb-sect-body" data-synced="0"`);
+  const sectSynced = (id, label, inner) => indSectHtml(id, label, !!sects[id], inner)
+    .replace(`class="indb-sect-body"`, `class="indb-sect-body" data-synced="${synced}"`);
 
   insp.innerHTML =
     `<div class="indb-insp-head">` +
@@ -1610,6 +3018,7 @@ function renderIndInspector() {
       `<button class="indb-insp-close" title="Close settings">&times;</button>` +
     `</div>` +
     `<div class="indb-insp-body">` +
+      indPresetHtml(spec) +
       `<div class="indb-preview-wrap">` +
         `<canvas class="indb-preview-canvas" id="indb-preview"></canvas>` +
         `<div class="indb-pv-zoom" role="group" aria-label="Preview zoom">` +
@@ -1622,11 +3031,11 @@ function renderIndInspector() {
         `</div>` +
       `</div>` +
       `<div class="indb-preview-lbl">Live preview</div>` +
-      `<div class="indb-insp-tabs">` +
-        ["inputs", "style", "visibility"].map((t) =>
-          `<button class="indb-insp-tab${tab === t ? " on" : ""}" data-tab="${t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("") +
-      `</div>` +
-      `<div class="indb-insp-tabpane">` + indPaneHtml(spec, tab) + `</div>` +
+      sect("inputs", "Inputs", indInputsHtml(spec)) +
+      sectSynced("style", "Style", indStyleHtml(spec)) +
+      sectSynced("fill", "Fill", indFillHtml(spec)) +
+      sectSynced("visibility", "Visibility", indVisHtml(spec) + indTfVisHtml(spec)) +
+      sectSynced("alerts", "Alerts", indAlertsHtml(spec)) +
     `</div>` +
     `<div class="indb-insp-foot">` +
       (added
@@ -1634,8 +3043,12 @@ function renderIndInspector() {
         : `<button class="indb-reset" data-act="reset">Reset</button><button class="indb-add" data-act="add">Add to chart</button>`) +
     `</div>`;
 
-  insp.querySelectorAll(".indb-insp-tab").forEach((b) => {
-    b.onclick = () => { state.indInspTab = b.dataset.tab; renderIndInspector(); };
+  insp.querySelectorAll("[data-sect-head]").forEach((b) => {
+    b.onclick = () => {
+      const s = indSects();
+      s[b.dataset.sectHead] = !s[b.dataset.sectHead];
+      renderIndInspector({ refetch: false });
+    };
   });
   insp.querySelector(".indb-insp-close").onclick = () => {
     state.indSelected = null;
@@ -1670,18 +3083,14 @@ function renderIndInspector() {
       const a = b.dataset.act;
       if (a === "reset") { indSeedDefaults(spec); renderIndInspector(); }
       else if (a === "add") { indApplyDraft(name, true); renderIndicatorList(); renderIndInspector(); }
-      else if (a === "remove") {
-        state.activeIndicators = state.activeIndicators.filter((i) => i.name !== name);
-        renderActiveIndicators();
-        loadChart();
-        saveShellState();
-        renderIndicatorList();
-        renderIndInspector();
-      }
+      else if (a === "remove") indRemoveFromChart(name);
     };
   });
 
-  indPreviewRender();
+  // Section toggles / preset swaps repaint from the cached series (instant,
+  // no round-trip); real selections and param edits fetch fresh values.
+  if (refetch) indPreviewRender();
+  else indPreviewRedraw();
 }
 
 /* ---- live preview canvas ----
@@ -1825,7 +3234,16 @@ function indApplyStyle(spec, plots) {
   const st = indStyleFor(spec);
   return plots.map((p) => {
     const o = st[p.id] || {};
-    return { ...p, color: o.color || p.color, width: o.width || p.width, visible: o.visible !== false };
+    const out = { ...p, color: o.color || p.color, width: o.width || p.width, visible: o.visible !== false };
+    if (o.fill && typeof o.fill === "object" && o.fill.to) {
+      out.fill = {
+        to: o.fill.to,
+        color: o.fill.color || out.color,
+        opacity: (typeof o.fill.opacity === "number") ? o.fill.opacity : 0.15,
+        gradient: !!o.fill.gradient,
+      };
+    }
+    return out;
   });
 }
 // The label the SERVER would give this indicator (name, or name(k=v;...)), so
@@ -1870,7 +3288,9 @@ function indClientPayload() {
 }
 // Overlay the panel's Style/Visibility overrides onto an engineIndicators-shaped
 // payload, keyed by the SERVER's column names. Series objects are copied before
-// mutation so the cached server payload is never altered.
+// mutation so the cached server payload is never altered. A fill override rides
+// along on the FROM series as fillTo/fillColor/fillOpacity/fillGradient, which
+// the chart bundle resolves into a band fill between the two plots.
 function indApplyOverridesToPayload(payload) {
   const all = state.indStyle || {};
   for (const [label, ind] of Object.entries(payload)) {
@@ -1884,6 +3304,12 @@ function indApplyOverridesToPayload(payload) {
       if (o.color) next.color = o.color;
       if (o.width) next.width = o.width;
       if (o.visible !== undefined) next.visible = o.visible;
+      if (o.fill && typeof o.fill === "object" && o.fill.to && ind.series[o.fill.to]) {
+        next.fillTo = o.fill.to;
+        next.fillColor = o.fill.color || next.color;
+        next.fillOpacity = (typeof o.fill.opacity === "number") ? o.fill.opacity : 0.15;
+        next.fillGradient = !!o.fill.gradient;
+      }
       ind.series[col] = next;
     }
   }
@@ -1895,9 +3321,20 @@ function indApplyOverridesToPayload(payload) {
 // only fills labels the server did not return. Style/Visibility overrides are
 // then applied uniformly on top.
 function indMergedPayload() {
+  // Timeframe-visibility (Item 7): indicators whose VISIBILITY section limits
+  // them to other timeframes are dropped from the payload entirely — they
+  // stay in state.activeIndicators (params, styles, alerts untouched) and
+  // return the moment the chart is back on an allowed timeframe.
+  const denied = new Set();
+  for (const item of state.activeIndicators || []) {
+    if (!indTfAllowed(item.name)) denied.add(engineLabel(item));
+  }
   const merged = {};
-  for (const [k, v] of Object.entries(indClientPayload())) merged[k] = v;
+  for (const [k, v] of Object.entries(indClientPayload())) {
+    if (!denied.has(k)) merged[k] = v;
+  }
   for (const [k, v] of Object.entries(state.serverIndicators || {})) {
+    if (denied.has(k)) continue;
     merged[k] = { overlay: v.overlay, series: { ...(v.series || {}) } }; // copy so overrides don't touch the cache
   }
   return indApplyOverridesToPayload(merged);
@@ -1909,6 +3346,56 @@ function indRefreshChart() {
   if (!state.candleData || !state.candleData.length) return;
   state.engineIndicators = indMergedPayload();
   pushToChart();
+}
+// Band fill between two plots of one indicator (Item 7 FILL). The FROM plot
+// carries fill = { to, color, opacity, gradient }; the polygon runs forward
+// along FROM's series and back along TO's, only over spans where BOTH have a
+// value, so a warm-up gap never smears across the pane. Gradient fades the
+// fill to transparent across the band's own vertical extent.
+function _hexRgba(hex, a) {
+  const h = String(hex || "").replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return `rgba(91,155,213,${a})`;
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function _drawFill(ctx, x, w, n, from, to, yOf) {
+  const f = from.fill;
+  if (!f) return;
+  const op = Math.max(0.03, Math.min(0.7, f.opacity));
+  // Gradient bounds: the union of both series' visible y positions.
+  let yTop = Infinity, yBot = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const a = from.values[i], b = to.values[i];
+    if (a != null && isFinite(a)) { const y = yOf(a); if (y < yTop) yTop = y; if (y > yBot) yBot = y; }
+    if (b != null && isFinite(b)) { const y = yOf(b); if (y < yTop) yTop = y; if (y > yBot) yBot = y; }
+  }
+  if (!(yBot > yTop)) { yTop = 0; yBot = 1; }
+  let style = _hexRgba(f.color, op);
+  if (f.gradient) {
+    const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+    g.addColorStop(0, _hexRgba(f.color, op));
+    g.addColorStop(1, _hexRgba(f.color, 0));
+    style = g;
+  }
+  ctx.fillStyle = style;
+  const step = w / n;
+  let seg = null; // collect [i] runs where both series have a value
+  const flush = () => {
+    if (!seg || seg.length < 2) { seg = null; return; }
+    ctx.beginPath();
+    const first = seg[0], last = seg[seg.length - 1];
+    ctx.moveTo(x + first * step + step / 2, yOf(from.values[first]));
+    for (const i of seg) ctx.lineTo(x + i * step + step / 2, yOf(from.values[i]));
+    for (let k = seg.length - 1; k >= 0; k--) ctx.lineTo(x + seg[k] * step + step / 2, yOf(to.values[seg[k]]));
+    ctx.closePath();
+    ctx.fill();
+    seg = null;
+  };
+  for (let i = 0; i <= n; i++) {
+    const a = i < n ? from.values[i] : null, b = i < n ? to.values[i] : null;
+    if (a != null && isFinite(a) && b != null && isFinite(b)) seg ? seg.push(i) : (seg = [i]);
+    else flush();
+  }
 }
 function _drawLine(ctx, x, w, n, p, yOf) {
   ctx.strokeStyle = p.color; ctx.lineWidth = Math.max(1.8, p.width || 2);
@@ -1930,8 +3417,13 @@ function _drawPricePane(ctx, x, y, w, h, candles, plots) {
   const n = candles.length, cw = w / n;
   const yOf = (v) => y + padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
   const up = indCssCol("--up", "#63b26a"), down = indCssCol("--down", "#d16d6d");
-  // Candles are compressed tight and drawn dimmer than the indicator lines, so
-  // the indicator/script reads clearly on top instead of fighting the bodies.
+  // Fills sit between the candles and the band lines so the fill tints the
+  // gap without ever covering a wick or the plots themselves.
+  for (const p of plots) {
+    if (!p.fill) continue;
+    const to = plots.find((q) => q.id === p.fill.to && q.visible !== false);
+    if (to) _drawFill(ctx, x, w, n, p, to, yOf);
+  }
   ctx.save();
   ctx.globalAlpha = 0.6;
   for (let i = 0; i < n; i++) {
@@ -1955,6 +3447,11 @@ function _drawSubPane(ctx, x, y, w, h, plots) {
   const yOf = (v) => y + padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
   if (lo < 0 && hi > 0) { ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, yOf(0)); ctx.lineTo(x + w, yOf(0)); ctx.stroke(); }
   const down = indCssCol("--down", "#d16d6d");
+  for (const p of plots) {
+    if (!p.fill) continue;
+    const to = plots.find((q) => q.id === p.fill.to && q.visible !== false);
+    if (to) _drawFill(ctx, x, w, n, p, to, yOf);
+  }
   for (const p of plots) {
     if (p.type === "hist") {
       const bw = Math.max(1, cw * 0.6);
@@ -1981,7 +3478,7 @@ function indPayloadPlots(ind, candles, name) {
       if (i !== undefined) { values[i] = v; anyHit = true; }
     }
     const o = ov[col] || {};
-    return {
+    const plot = {
       id: col, label: col, pane: ind.overlay ? "price" : "sub",
       type: s.kind === "histogram" ? "hist" : "line",
       values,
@@ -1989,6 +3486,17 @@ function indPayloadPlots(ind, candles, name) {
       width: o.width || 2,
       visible: o.visible !== false,
     };
+    // A fill override on this column paints the band between THIS plot and
+    // the named sibling in the preview, mirroring the chart payload.
+    if (o.fill && typeof o.fill === "object" && o.fill.to) {
+      plot.fill = {
+        to: o.fill.to,
+        color: o.fill.color || plot.color,
+        opacity: (typeof o.fill.opacity === "number") ? o.fill.opacity : 0.15,
+        gradient: !!o.fill.gradient,
+      };
+    }
+    return plot;
   });
   return anyHit ? plots : null;
 }
@@ -2174,10 +3682,13 @@ function openIndicatorBrowser() {
     const spec = state.indicatorSpecs.find((s) => s.name === state.indSelected);
     if (spec) indSeedDraft(spec);
   }
-  renderIndicatorList();
-  renderIndInspector();
+  setIndTab(state.indTab);   // reopens on the tab the session last used
   panel.classList.remove("hidden");
-  setTimeout(() => { const s = $("ind-search"); if (s) s.focus(); }, 0);
+  setTimeout(() => {
+    const s = state.indTab === "strategies" ? $("strat-search")
+      : state.indTab === "metrics" ? $("metr-search") : $("ind-search");
+    if (s) s.focus();
+  }, 0);
 }
 
 function indFetchUserNames() {
@@ -2218,7 +3729,15 @@ function setupIndicatorPanel() {
   };
   if ($("indb-view-cards")) $("indb-view-cards").onclick = () => setView("cards");
   if ($("indb-view-cols")) $("indb-view-cols").onclick = () => setView("columns");
+  if ($("indb-close")) $("indb-close").onclick = () => closeIndPanels();
   syncViewBtns();
+  // Lab tabs: the modal titlebar switches Indicators / Strategies / Metrics.
+  document.querySelectorAll("#indb-tabs [data-itab]").forEach((b) => {
+    b.onclick = () => setIndTab(b.dataset.itab);
+  });
+  if ($("strat-search")) $("strat-search").oninput = renderStratList;
+  if ($("metr-search")) $("metr-search").oninput = renderMetrList;
+  if ($("strat-new")) $("strat-new").onclick = () => { closeIndPanels(); openBacktest("py"); };
   $("ind-create").onclick = () => { closeIndPanels(); openEditor(); };
   $("indb-backdrop").onclick = () => closeIndPanels();
   // Esc closes the modal.
@@ -4565,14 +6084,15 @@ function setupLayouts() {
     editIndicator: (label) => {
       const idx = state.activeIndicators.findIndex((i) => engineLabel(i) === label);
       if (idx < 0) return false;
-      // Deferred one tick. The caller is the chart's own right-click menu, so
-      // the click that got us here is still propagating and will reach
-      // setupIndicatorPanel's click-away listener, whose target is neither
-      // panel nor #ind-open: it would close ind-cfg the instant we opened it.
-      // Anchor on that indicator's OWN chip so the editor lands where a chip
-      // click would have put it.
+      // Deferred one tick (the originating click is still propagating), then
+      // edit in the advanced browser's inspector — the same surface the
+      // Indicators button opens — rather than the legacy chip popup.
+      const item = state.activeIndicators[idx];
       setTimeout(() => {
-        openIndicatorConfig(state.activeIndicators[idx], $("ind-active").children[idx] || $("ind-open"));
+        if (typeof openIndicatorBrowser === "function" && $("ind-panel").classList.contains("hidden")) {
+          openIndicatorBrowser();
+        }
+        if (typeof indSelect === "function") indSelect(item.name);
       }, 0);
       return true;
     },
@@ -18067,6 +19587,7 @@ async function boot() {
   // file): keep the raw list, the renderer just won't show that row.
   state.favoriteIndicators = (shell && Array.isArray(shell.favoriteIndicators)
     ? shell.favoriteIndicators : []).filter((n) => typeof n === "string");
+  indRestoreExtras(shell);
   if (shell && shell.chartType) {
     state.chartType = shell.chartType;
     $("chart-type").value = shell.chartType;

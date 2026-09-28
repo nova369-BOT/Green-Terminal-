@@ -25,7 +25,7 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
   never when merely close/near it.
 - Built: trigger only on direct #dock-handle hover; stays open inside pill/focus.
 
-## Item 3 — Advanced Settings tab: column/text shrinker  🔧 QUEUED
+## Item 3 — Advanced Settings tab: column/text shrinker  🔨 BUILD LANDED, needs on-app check
 - User: "make an advanced setting tab ... shrink the columns, text, etc to make
   sure everything is visible."
 - Locked design: dedicated ⚙ Settings panel (mockup advanced-settings-display.png):
@@ -33,7 +33,16 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
   - Density presets: Comfortable / Compact / Ultra-compact (data tables).
   - Watchlist controls: row height, font size, per-column show/hide checkboxes.
   - Live preview of the effect.
-- Mockup approved (pending any tweaks). Approach A+B.
+- BUILT (DISPLAY panel, #display-panel): interface scale (80–120%) × density
+  presets (comfortable/compact/dense) were already in; ADDED the Watchlist
+  section — font-size slider (10–17px), row-height slider (auto/22–46px), and
+  per-column checkboxes (Logo / Name / Bid/Ask / Change) — all applied live to
+  the sidebar (the panel overlays it, so the preview IS the real watchlist) and
+  persisted with the rest of state.display in the workspace shell section
+  (Reset covers the new fields too). CSS vars --wl-font/--wl-rowh + gt-wl-no*
+  body classes; density/scale path untouched.
+- OPEN VERIFICATION: open ⚙ DISPLAY on the deploy, drag each slider and flip
+  each checkbox — the sidebar should respond instantly and survive a restart.
 
 ## Item 4 — Multi-chart first-load shows OLD mode + blank panels  ✅ FIX SHIPPED (77d00aa)
 - User: "whenever i first load the multi chart it just doesnt show the change of
@@ -58,7 +67,7 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
 - User: "move that search and watchlist upward this should be done professionally."
 - Pairs with Item 5 (freeing the top-left).
 
-## Item 7 — Advanced indicator browser (beat TradingView)  🔧 QUEUED (big)
+## Item 7 — Advanced indicator browser (beat TradingView)  🔨 BUILD LANDED, needs on-app check
 - User: "more advanced indicator tab ... shouldnt look like TradingView ...
   more advanced than it." Editing a setting (length/stddev/source/etc.) must
   update the live candlestick preview; must scale to indicators with MANY
@@ -68,6 +77,81 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
   - Cards with mini live preview; "On chart" badge + hover Remove.
   - Right inspector: Preset dropdown, live preview (updates as you edit),
     grouped INPUTS / STYLE / FILL / VISIBILITY / ALERTS, Remove/Reset/Apply row.
+- LANDED in the shell (#ind-panel, app.js Item-7 block): category rail +
+  counts, search, filter chips, favourites, cards+columns views (persisted),
+  "On chart" badge with hover-Remove on cards AND column rows, live preview
+  (engine-computed for all 103 specs, client fallback in embed, zoom + wheel),
+  and the inspector as the mockup's stacked sections:
+  - PRESET row: Default + saved named sets per indicator (inline save form,
+    delete), "Custom" shown the moment you edit away; applies to draft AND a
+    live chart. Persisted (indPresets).
+  - INPUTS: typed/bounded per spec, edits live-update preview AND chart.
+  - STYLE: per-plot colour/width from the plots the engine actually returns
+    (scales to indicators with many plots).
+  - FILL: band fill between any two plots — toggle, From/To, colour, opacity
+    (5–60%), gradient fade. Drawn in the preview AND on the real chart
+    (series carry fillTo/fillColor/... through engineIndicators →
+    toCustomIndicators → subplotRenderer band-fill pass, overlay + grouped
+    subplot panes).
+  - VISIBILITY: per-plot show/hide + timeframe chips — an indicator hidden on
+    the current TF drops out of the chart payload but keeps everything
+    (params/styles/alerts) and returns when the TF is back (indTfVis).
+  - ALERTS: enable, plot, condition (crosses above/below · is above/below),
+    value. Evaluated whenever a fresh indicator payload lands (bar refresh),
+    once per bar; fires to the topline status + desktop notification
+    (permission asked on first arm). Armed only when the indicator is on the
+    chart; the row says so when it isn't. Persisted (indAlerts).
+  - Footer matches mockup: Reset + Add to chart / Remove from chart.
+- Persistence gap CLOSED: indStyle (was session-only!), indPresets, indTfVis,
+  indAlerts now ride /api/workspace/shell both ways (boot + Save/Load buttons).
+- HUD edit bridge upgraded: the on-chart HUD pencil for an engine indicator
+  opens THIS browser at that indicator instead of the legacy chip popup.
+- Verified: app.js syntax; 11 logic checks (presets/fill/tf-vis/alerts/payload
+  merge non-mutation); 11 renderer checks for the new drawBandFill polygon
+  (NaN-gap segmentation, gradient bounds) via esbuild; tsc clean; vite bundle
+  rebuilt; repo suites chart_engine + tf_aggregate + indicators pass.
+- OPEN VERIFICATION: drive it on the deploy — add Bollinger, set a fill, arm
+  an alert, hide a band on 1m only, save+reload the workspace.
+- Strategies + Metrics header tabs: 🔨 BUILD LANDED (this commit), needs on-app
+  check. User: "no this has all been implemented already except Strategies tab
+  … and Metrics tab … THE METRIC AND STRATEGY LAB". The modal is now the
+  Indicator & Strategy Lab with a titlebar (tabs Indicators · Strategies ·
+  Metrics + ×) over the shared 3-column body, matching
+  mockups item7-tab-strategies.png / item7-tab-metrics.png.
+  - Strategies tab: cards from the real workspace (`/api/ws-files`
+    strategies/*.py incl. the 8 quant starters; rail All/Backtested/Starters/
+    My strategies/Saved runs). A card's equity sparkline + win/net/trades line
+    come from the NEWEST saved run whose report strategy label names the file
+    (new `/api/backtest/saved/{id}/sparkline` endpoint returns an evenly
+    thinned curve, first/last kept) — with no run the card honestly says
+    "Not backtested yet" (no fabricated equity). Inspector = the file's own
+    `#`-header description + last-run stat tiles + gold ▶ Run backtest (on the
+    charted symbol/timeframe, zero costs — reuses runBacktest's contract so
+    trades overlay the chart + full report opens; the saved report inherits
+    the file path, which links the run back to the card) + Open in IDE
+    (openScriptInIDE) + Open last report (openBacktestReport from the saved
+    payload). Run cards: Open full report + Delete (DELETE route).
+  - Metrics tab: 9 live metrics computed client-side over state.candleData
+    (ATR, ATR%, Realized vol annualised from median bar spacing, Avg range %,
+    Session range % (UTC day buckets), Sharpe, Trailing-window Max DD,
+    20-bar return, Live spread bp from the quote stream — no spread history,
+    honestly labelled). Gold-value cards with area sparklines + pinned/armed
+    badges; inspector = lookback (defaults per metric), above/below + threshold
+    → one-shot bar-close-crossing alert that disarms after firing, Pin to
+    chart → floating live tiles top-right of #chart-stage (5s supervisor
+    recomputes off the live candles). indMetrics (pins+arms+lookbacks) rides
+    /api/workspace/shell next to indStyle/indAlerts.
+  - Verified: server e2e (8 files listed; 7/8 starters backtest OK on
+    DEMO:GOLD 1h — atr_normalized_phase_momentum's param guard surfaces its
+    own honest 400; save→listing→sparkline (48pts/6000, endpoints+monotonic)
+    →full-doc→delete round-trip); node harness driving the REAL extracted
+    metr*/stratHead/stratSparkSvg functions on synthetic bars with analytic
+    expectations (atr 10.000, rvol 187% ann on ±2% bars, maxdd -10.00%→0 as
+    the drop rolls out of the window, sharpe sign, UTC day buckets);
+    win_rate scale fixed (already a percent); node --check; tsc clean; vite
+    rebuilt; pytest 23 pass (test_pack_size needed brue-language in the venv).
+  - OPEN VERIFICATION: on the deploy — open all three tabs, run a starter from
+    the card, pin ATR + arm a crossing alert, watch a tile live.
 
 ## Item 8 — Advanced on-chart indicator HUD/legend  ✅ SHIPPED (Part A 1dc50c3, Part B 974819d)
 - User: replace the plain on-chart readout (SMA/EMA/OHLC text at top) with
@@ -86,6 +170,7 @@ Rules: PLAN → show mockup → get approval → code. Never claim done when not
 ---
 
 ## Build order (agreed)
-2 ✅ → 1 ✅ → 8 ✅ → 4 ✅ → **7 (next)** → 3.
-Item 5 still BLOCKED: user must pick (a) horizontal rail at the right end of the
-top toolbar, or (b) vertical rail on the chart's right edge. Item 6 pairs with 5.
+2 ✅ → 1 ✅ → 8 ✅ → 4 ✅ → **7 🔨 landed (on-app check next)** → 3 🔨 landed
+(on-app check next). Item 5 still BLOCKED: user must pick (a) horizontal rail
+at the right end of the top toolbar, or (b) vertical rail on the chart's right
+edge. Item 6 pairs with 5.

@@ -1306,6 +1306,30 @@ def create_app() -> FastAPI:
         except (OSError, sqlite3.Error, ValueError, EOFError) as e:
             raise HTTPException(500, f"saved backtest is unreadable: {e}")
 
+    @app.get("/api/backtest/saved/{report_id}/sparkline")
+    def saved_backtests_sparkline(report_id: str, points: int = 48):
+        """Downsampled equity curve for the Indicator & Strategy Lab cards.
+
+        The listing endpoint deliberately skips payloads, so a card grid would
+        otherwise need one full-report decode per visible card. This decodes ONE
+        report and returns an evenly thinned [ts, equity] curve (first and last
+        points always kept), capped low enough for a 150px sparkline.
+        """
+        deny_hosted()
+        try:
+            doc = saved_backtests.read(report_id)
+        except KeyError:
+            raise HTTPException(404, "saved backtest not found")
+        except (OSError, sqlite3.Error, ValueError, EOFError) as e:
+            raise HTTPException(500, f"saved backtest is unreadable: {e}")
+        curve = doc.get("result", {}).get("equity_curve") or []
+        points = max(8, min(240, int(points or 48)))
+        if len(curve) > points:
+            step = (len(curve) - 1) / (points - 1)
+            idx = sorted({int(round(i * step)) for i in range(points)})
+            curve = [curve[i] for i in idx]
+        return {"id": report_id, "curve": curve}
+
     @app.delete("/api/backtest/saved/{report_id}")
     def saved_backtests_delete(report_id: str):
         deny_hosted()
