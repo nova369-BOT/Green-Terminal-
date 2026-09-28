@@ -25,10 +25,19 @@ export interface Candle {
 export type ChartType =
   | 'candlestick'  // filled bodies
   | 'bars'         // OHLC bars (open-left, close-right ticks)
+  | 'hollowCandle' // hollow if close>open; colour vs previous close
+  | 'volumeCandle' // candle body width scaled by volume
   | 'line'
+  | 'lineMarkers'  // line with a dot at every close
+  | 'stepLine'     // staircase of closes (horizontal then vertical)
   | 'area'
+  | 'hlcArea'      // filled high-low band + close line
+  | 'baseline'     // close line, green above / red below a reference level
   | 'heikinAshi'   // transformed OHLC (engine/transforms)
-  | 'renko';
+  | 'renko'        // price bricks (time-independent)
+  | 'lineBreak'    // three-line-break bricks (time-independent)
+  | 'kagi'         // yin/yang reversal line (time-independent)
+  | 'pointFigure'; // X/O columns (time-independent)
 
 // Ratio of gap between candles relative to candle width.
 // A value of 0.2 means the gap is 20% of the candle body width, so total
@@ -111,6 +120,18 @@ export interface ProChartProps {
    * asked the engine for them. Omit and the menu shows no Settings entry.
    */
   onEditEngineIndicator?: (label: string) => void;
+  /**
+   * Toggle the visibility of a single engine-computed indicator (by its label).
+   * Same ownership reason as remove/edit: customIndicators is rebuilt from the
+   * engine payload each render, so the owning side keeps the hidden set and
+   * flips enabled on rebuild. Used by the on-chart HUD's per-row hide.
+   */
+  onToggleEngineHidden?: (label: string) => void;
+  /**
+   * Hide or show ALL engine-computed indicators at once (the HUD's hide-all).
+   * true = hide every engine indicator, false = show them all.
+   */
+  onSetAllEngineHidden?: (hidden: boolean) => void;
   onConverterReady?: (converter: {
     timeToX: (time: number) => number | null;
     xToTime: (x: number) => number | null;
@@ -123,6 +144,19 @@ export interface ProChartProps {
   syncedViewportTime?: number | null; // Synced time to scroll to
   disableAutoFollow?: boolean;
   scrollToIndex?: number; // When set, scroll so this index is visible (near right edge)
+  // Bumped every time a "Go to date" fires so the SAME index re-triggers the
+  // scroll (value-equality alone would swallow a repeat jump / a Latest->date->
+  // same-date sequence). When present the scroll effect keys off this, not the
+  // index value.
+  scrollNonce?: number;
+  // When its nonce changes, frame candles [startIndex..endIndex] to fill the
+  // viewport (History Navigator quick-ranges / "Go to range"). Additive: unset
+  // leaves scroll/zoom under the user's control.
+  fitRange?: { startIndex: number; endIndex: number; nonce: number } | null;
+  // When its nonce changes, re-enable live auto-follow and snap to the newest
+  // bars (History Navigator "Latest"). Without it, once a jump clears the
+  // auto-follow flag the chart never resumes following live bars.
+  followLatest?: { nonce: number } | null;
   chartType?: ChartType;
   onScrollingChange?: (isScrolling: boolean) => void; // Notify parent when scroll state changes
   onScrollSync?: () => void; // Called on each scroll frame for drawing sync (ref-based, no state updates)

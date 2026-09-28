@@ -35,6 +35,10 @@ import { ChartSettingsProvider, useChartSettings, useHasSavedAppearance } from '
 import { AppearancePanel, ChartSettingsPanel } from '@/components/chart/InlineChartSettings';
 import MultiTimeframeLayoutSelector from '@/components/chart/MultiTimeframeLayoutSelector';
 import TerminalMultiGrid from '@/components/chart/TerminalMultiGrid';
+import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
+import ChartTypeMenu from '@/components/chart/ChartTypeMenu';
+import GoToNavigator from '@/components/chart/GoToNavigator';
+import { type BarSelection } from '@/engine/barTypes';
 import { layoutStore, useLayoutState } from '@/lib/layoutStore';
 import { setEngineContext } from '@/lib/localEngine';
 import { isMarketOpenForPair } from '@/lib/marketHours';
@@ -91,6 +95,12 @@ export interface ChartProps {
   onPositionModify?: (id: string, sl?: number, tp?: number) => void;
   onPositionClose?: (id: string) => void;
   autoSelectPositionId?: string | null;
+  // History Navigator viewport commands (LSEChart.goToIndex / fitIndexRange /
+  // goToLatest).
+  scrollToIndex?: number;
+  scrollNonce?: number;
+  fitRange?: { startIndex: number; endIndex: number; nonce: number } | null;
+  followLatest?: { nonce: number } | null;
 }
 
 interface TerminalChartProps extends ChartProps {
@@ -118,7 +128,7 @@ const ctxRow: React.CSSProperties = {
 const onCtxRowIn = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'var(--hover)'; };
 const onCtxRowOut = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'transparent'; };
 
-function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null }: TerminalChartProps) {
+function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null, scrollToIndex, scrollNonce, fitRange = null, followLatest = null }: TerminalChartProps) {
   const [converter, setConverter] = useState<Converter | null>(null);
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
@@ -427,14 +437,27 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     handleDrawingsChange([d, ...drawings.filter((x) => x.id !== id)]);
   }, [drawings, handleDrawingsChange]);
 
+  // On-chart HUD hide state for engine indicators. customIndicators is rebuilt
+  // from the engine payload every render, so a hidden engine indicator can't
+  // just be filtered inside ProChart — the owning side (here) must remember the
+  // hidden labels and re-apply enabled:false on each rebuild. The HUD's per-row
+  // eye and its hide-all button drive this set through the callbacks below.
+  const [hiddenEngineLabels, setHiddenEngineLabels] = useState<Set<string>>(new Set());
+
   // Python indicators from the engine ride in as precomputed customIndicators,
   // so they draw alongside the chart's own registry rather than in a separate
-  // widget. Recomputed only when the candles or the payload change.
+  // widget. Recomputed only when the candles or the payload change. Any label
+  // in hiddenEngineLabels is forced enabled:false so it neither draws nor
+  // reads as visible in the HUD (the HUD still lists it, dimmed, to bring back).
   const withEngineIndicators = useMemo(() => {
-    const custom = toCustomIndicators(engineIndicators, candles);
+    let custom = toCustomIndicators(engineIndicators, candles);
     if (!custom.length) return indicators;
+    if (hiddenEngineLabels.size) {
+      custom = custom.map((ci) =>
+        hiddenEngineLabels.has(ci.group || '') ? { ...ci, enabled: false } : ci);
+    }
     return { ...indicators, customIndicators: custom } as IndicatorConfig;
-  }, [indicators, engineIndicators, candles]);
+  }, [indicators, engineIndicators, candles, hiddenEngineLabels]);
 
   // Candle/background/grid colours come from the user's saved chart settings
   // (the Appearance panel edits them); without this the colors prop is static
@@ -780,6 +803,17 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           onEditEngineIndicator={(label) => {
             if (!(window as any).__lseShell?.editIndicator?.(label)) openIndicatorBrowser();
           }}
+          // HUD per-row eye for an engine indicator: flip its label in/out of
+          // the local hidden set (withEngineIndicators re-applies enabled).
+          onToggleEngineHidden={(label) => setHiddenEngineLabels((s) => {
+            const n = new Set(s);
+            if (n.has(label)) n.delete(label); else n.add(label);
+            return n;
+          })}
+          // HUD hide-all: the engine payload is keyed by label, so hiding every
+          // engine indicator is just "every payload key"; showing all clears it.
+          onSetAllEngineHidden={(hidden) => setHiddenEngineLabels(
+            hidden ? new Set(Object.keys(engineIndicators || {})) : new Set())}
           drawings={drawings}
           selectedDrawingId={selectedDrawingId}
           drawingCursorRef={drawingCursorRef}
@@ -802,6 +836,10 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           onLoadMore={loadMoreHistory}
           isLoadingMore={isLoadingMore}
           prependShift={prependShift}
+          scrollToIndex={scrollToIndex}
+          scrollNonce={scrollNonce}
+          fitRange={fitRange}
+          followLatest={followLatest}
         />
         <ChartDrawingOverlay
           activeTool={activeTool}
@@ -1326,6 +1364,16 @@ const CHART_TYPE_ALIASES: Record<string, ChartType> = {
   heikin: 'heikinAshi',
   ha: 'heikinAshi',
   renko: 'renko',
+  // Advanced bar-style menu (feature 2): each new engine type is its own key.
+  hollowCandle: 'hollowCandle',
+  volumeCandle: 'volumeCandle',
+  lineMarkers: 'lineMarkers',
+  stepLine: 'stepLine',
+  hlcArea: 'hlcArea',
+  baseline: 'baseline',
+  lineBreak: 'lineBreak',
+  kagi: 'kagi',
+  pointFigure: 'pointFigure',
 };
 
 // Any timestamp below this is far too small to be milliseconds (it would be
@@ -1654,6 +1702,132 @@ declare global {
 // this; run it before committing any bundle.
 (LSEChart as any).mountLayoutButton = (el: HTMLElement) => {
   createRoot(el).render(<LayoutButton />);
+};
+
+// Reverse of CHART_TYPE_ALIASES: engine ChartType → the shell <select> value,
+// so the mega-selector's onChange reports back in the vocabulary that app.js's
+// state.chartType speaks ('candles', not 'candlestick').
+const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
+  candlestick: 'candles',
+  bars: 'bars',
+  line: 'line',
+  area: 'area',
+  heikinAshi: 'heikinAshi',
+  renko: 'renko',
+  hollowCandle: 'hollowCandle',
+  volumeCandle: 'volumeCandle',
+  lineMarkers: 'lineMarkers',
+  stepLine: 'stepLine',
+  hlcArea: 'hlcArea',
+  baseline: 'baseline',
+  lineBreak: 'lineBreak',
+  kagi: 'kagi',
+  pointFigure: 'pointFigure',
+};
+
+// The main-chart timeframe / bar-type mega-selector (cTrader-style, the same
+// control the multi-grid panels use). The shell mounts it beside its timeframe
+// rail and drives state.timeframe / state.chartType from the onChange. Returns
+// an updater the shell calls to keep the button label in step when the rail,
+// the chart-type <select>, or a workspace load change things elsewhere.
+(LSEChart as any).mountTimeframeSelector = (
+  el: HTMLElement,
+  initial: { timeframe: string; chartType: string },
+  onChange: (sel: { timeframe: string; chartType: string }) => void,
+): ((next: { timeframe?: string; chartType?: string }) => void) => {
+  const r = createRoot(el);
+  let cur: BarSelection = {
+    timeframe: initial.timeframe || '1h',
+    chartType: CHART_TYPE_ALIASES[initial.chartType] ?? 'candlestick',
+  };
+  const draw = () => {
+    r.render(
+      <TimeframeMegaSelector
+        value={cur}
+        showChartType={false}
+        onChange={(sel) => {
+          cur = sel;
+          draw();
+          onChange({
+            timeframe: sel.timeframe,
+            chartType: CHART_TYPE_TO_SHELL[sel.chartType] ?? 'candles',
+          });
+        }}
+      />,
+    );
+  };
+  draw();
+  return (next) => {
+    if (next.timeframe) cur = { ...cur, timeframe: next.timeframe };
+    if (next.chartType) cur = { ...cur, chartType: CHART_TYPE_ALIASES[next.chartType] ?? cur.chartType };
+    draw();
+  };
+};
+// The main chart's dedicated advanced Bar-style menu (feature 2). It lives in
+// its own toolbar slot (#chart-type-slot) and drives only state.chartType — the
+// timeframe stays with the ⋮ mega-selector. Returns an updater the shell calls
+// to keep the trigger label in step when the type changes elsewhere (workspace
+// load, hidden <select>, syncBarTypeSelector).
+(LSEChart as any).mountChartTypeMenu = (
+  el: HTMLElement,
+  initial: string,
+  onChange: (chartType: string) => void,
+): ((next: string) => void) => {
+  const r = createRoot(el);
+  let cur: ChartType = CHART_TYPE_ALIASES[initial] ?? 'candlestick';
+  const draw = () => {
+    r.render(
+      <ChartTypeMenu
+        value={cur}
+        onChange={(ct) => {
+          cur = ct;
+          draw();
+          onChange(CHART_TYPE_TO_SHELL[ct] ?? 'candles');
+        }}
+      />,
+    );
+  };
+  draw();
+  return (next) => {
+    const mapped = CHART_TYPE_ALIASES[next];
+    if (mapped) {
+      cur = mapped;
+      draw();
+    }
+  };
+};
+
+// ── History Navigator (Phase 2: Go to date / range + quick ranges) ──────────
+// The bottom navigator reads the loaded candles for its overview sparkline and
+// index maths, and drives the chart viewport imperatively (no data round-trip
+// for in-range jumps). Times in props.candles are ms (see normalise()).
+(LSEChart as any).getLoadedCandles = () => props.candles || [];
+(LSEChart as any).currentSeries = () => ({
+  provider: props.provider, symbol: props.symbol, timeframe: props.timeframe,
+});
+// Position a single candle near the right edge ("Go to date"). The nonce makes
+// a repeat jump to the same index (or Latest -> date -> same date) fire again.
+(LSEChart as any).goToIndex = (index: number) => {
+  LSEChart.update({ scrollToIndex: Math.max(0, Math.floor(index)), scrollNonce: Date.now() });
+};
+// Return to the live tail and resume auto-follow (History Navigator "Latest").
+(LSEChart as any).goToLatest = () => {
+  LSEChart.update({ followLatest: { nonce: Date.now() } });
+};
+// Frame an index range to fill the viewport ("Go to range" + quick ranges).
+(LSEChart as any).fitIndexRange = (startIndex: number, endIndex: number) => {
+  LSEChart.update({
+    fitRange: {
+      startIndex: Math.max(0, Math.floor(startIndex)),
+      endIndex: Math.max(0, Math.floor(endIndex)),
+      nonce: Date.now(),
+    },
+  });
+};
+(LSEChart as any).mountGoToNavigator = (el: HTMLElement): (() => void) => {
+  const r = createRoot(el);
+  r.render(<GoToNavigator />);
+  return () => r.unmount();
 };
 (LSEChart as any).layoutStore = layoutStore;
 

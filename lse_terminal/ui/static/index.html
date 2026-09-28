@@ -73,6 +73,8 @@ document.documentElement.setAttribute("data-theme",
         <button id="rail-profile" class="rail-btn" title="My profile and API connections"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="9" cy="6" r="3.2"/><path d="M3 16c.6-3.2 3-5 6-5s5.4 1.8 6 5"/></svg><span>PROFILE</span></button>
         <button id="rail-data" class="rail-btn" title="My data"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><ellipse cx="9" cy="4.5" rx="6" ry="2.5"/><path d="M3 4.5v9c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-9"/><path d="M3 9c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5"/></svg><span>MY DATA</span></button>
         <button id="rail-guide" class="rail-btn" title="Terminal walkthrough"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="9" cy="9" r="6.5"/><path d="M9 8.2v3.3M9 5.6v.3"/></svg><span>GUIDE</span></button>
+        <button id="rail-display" class="rail-btn" title="Display: interface scale, density, panels"><svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="13" height="9" rx="1"/><path d="M6.5 15.5h5M9 12.5v3"/></svg><span>DISPLAY</span></button>
+
       </div>
     </nav>
     <div id="status"></div>
@@ -107,80 +109,59 @@ document.documentElement.setAttribute("data-theme",
   <div id="lasso-card" class="hidden" role="status" aria-label="Zone dossier"></div>
   <!-- Focus mode: double-click a grid pane to edit it solo; this is the way back. -->
   <button id="focus-back" class="hidden" type="button" title="Back to the chart grid">‹ Grid</button>
-  <div id="controls">
-  <!-- No data-source dropdown: the active rail tab decides the source.
-       MARKETS is live LSE data (API key), BACKTEST / MY DATA are the
-       user's own imported files. -->
-  <!-- Symbol search now lives once, in the sidebar (#wl-filter). The old
-       toolbar search box was removed so there is only one search. -->
-  <nav id="timeframes"></nav>
-  <select id="chart-type" title="Chart type">
-    <option value="candles">Candles</option>
-    <option value="bars">OHLC</option>
-    <option value="line">Line</option>
-    <option value="area">Area</option>
-    <option value="heikinAshi">Heikin Ashi</option>
-    <option value="renko">Renko</option>
-  </select>
-  <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
-  <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for
-       an instant dossier of the real candles inside. Same ids the boot path
-       binds; the layer + card live at body level below. -->
-  <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
-  <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
-       prefixes read as decoration, not chrome.
-       The &#402; on Indicators stays: it is the recognised
-       function-glyph convention on charting toolbars. -->
-  <!-- No My Data button here: the MY DATA rail tab above is the single door to
-       imports; a second toolbar copy of the same tab was
-       duplicate chrome. -->
-  <!-- No Assistant / AI header buttons: the AI lives in the permanent right
-       rail, a fixture like the left sidebar, so it
-       needs no toggle in the toolbar. -->
-  <button id="bt-open" title="Backtest a strategy" class="hidden">&#9654;</button>
-  <!-- Chart layout sits last and is pushed flush right by CSS (margin-left:auto):
-       it configures the chart's appearance rather than selecting what is drawn,
-       so it is separated from the symbol/timeframe/indicator group on the left. -->
-  <!-- Screen layout: the site's Layout picker (grid presets + sync toggles),
-       mounted here by the chart bundle (LSEChart.mountLayoutButton). -->
-  <!-- Level 3 data: shown only when the configured key's plan carries MBO
-       access AND the charted instrument maps to a recorded futures contract
-       (/api/mbo/status). For everyone else the button never exists, so the
-       toolbar advertises nothing the plan cannot serve. -->
-  <button id="l3-open" class="hidden" title="Order-by-order flow for this instrument">Level 3 data</button>
-  <!-- Right group order: layout grid, then Templates,
-       then Chart layout. Templates is the toolbar door to the same store as
-       the chart's right-click "Chart template" submenu (the menu stays
-       AND gets a visible button). No separate Appearance
-       button: colours live inside the Chart layout panel (a short-lived
-       split into its own button was reverted). -->
-  <span id="sl-slot"></span>
-  <button id="tpl-open" title="Save this chart setup, or apply a saved one">Templates</button>
-  <button id="cs-open" title="Colours, candles, background, axis">Chart layout</button>
-  <!-- Workspace actions ride the command bar's right group (same ids the
-       boot path binds; the old #ws-controls strip is gone). -->
-  <span class="ws-sep" aria-hidden="true"></span>
-  <button id="ws-full" class="ws-btn" title="Maximise the chart workspace">Fullscreen</button>
-  <button id="ws-save" class="ws-btn" title="Save instrument, timeframe, chart type, indicators">Save</button>
-  <button id="ws-load" class="ws-btn" title="Reload the last saved workspace">Load</button>
-  <button id="ws-reset" class="ws-btn" title="Reset workspace to defaults">Reset</button>
-  <button id="cam-shot" class="ws-btn" type="button" title="Screenshot chart"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><circle cx="8" cy="9" r="2.6"/><path d="M5.5 4.5 6.2 3h3.6l.7 1.5"/></svg></button>
-  <!-- Fullscreen exit pill: hidden unless ws-fullscreen (CSS). Replaces the
-       text Fullscreen button up here, so the way out is one brass pill. -->
-  <button id="ws-exit" class="ws-btn" type="button" title="Exit fullscreen (Esc)" aria-label="Exit fullscreen"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M14 10v4h-4M2 10v4h4"/></svg></button>
-  </div>
 </header>
 <!-- Indicator browser: replaces the old add-dropdown. A searchable list of
      every registered indicator (built-ins + the user's own); click toggles it
      on the chart, the gear on an active row opens its parameters. Positioned
      under its button by app.js. -->
-<div id="ind-panel" class="hidden">
-  <input id="ind-search" placeholder="Search indicators&hellip;" spellcheck="false" autocomplete="off">
-  <div id="ind-list"></div>
-  <button id="ind-create">+ Create custom indicator (Python)</button>
+<!-- Item 7: advanced indicator browser. Three columns — category rail |
+     card catalog | live inspector — a centred modal that replaces the old
+     flat dropdown. The engine wiring is unchanged (the same
+     state.indicatorSpecs / state.activeIndicators drive the chart). -->
+<div id="ind-panel" class="hidden" role="dialog" aria-modal="true" aria-label="Indicators">
+  <div id="indb-backdrop"></div>
+  <div id="indb-modal">
+    <aside id="indb-cats" aria-label="Indicator categories"></aside>
+    <section id="indb-catalog">
+      <div id="indb-head">
+        <div class="indb-head-top">
+          <input id="ind-search" placeholder="Search indicators&hellip;" spellcheck="false" autocomplete="off">
+          <!-- Item 7: catalog layout toggle. Cards = the sparkline grid, Columns
+               = a dense multi-column list so far more indicators fit at once.
+               app.js (setupIndicatorPanel) binds these and persists the choice. -->
+          <div id="indb-view" role="group" aria-label="Catalog layout">
+            <button id="indb-view-cards" class="indb-view-btn" title="Card view" aria-label="Card view">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+            </button>
+            <button id="indb-view-cols" class="indb-view-btn" title="Column view" aria-label="Column view">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h5M2 8h5M2 12h5M9 4h5M9 8h5M9 12h5"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="indb-chips" role="group" aria-label="Filters"></div>
+      </div>
+      <div id="ind-list"></div>
+      <button id="ind-create">+ Create custom indicator (Python)</button>
+    </section>
+    <aside id="indb-inspector" aria-label="Indicator settings"></aside>
+  </div>
 </div>
-<!-- Per-indicator parameter editor, opened from a chip or an active row. -->
+<!-- Legacy per-indicator parameter popup, still opened by the active-indicator
+     chip strip beneath the toolbar. -->
 <div id="ind-cfg" class="hidden"></div>
+<!-- Item 3: DISPLAY settings. Interface-scale slider (the "shrinker"),
+     density presets and per-panel visibility. app.js fills #disp-body and
+     applies the choices live; they persist in the workspace shell. -->
+<div id="display-panel" class="hidden" role="dialog" aria-modal="true" aria-label="Display settings">
+  <div id="disp-backdrop"></div>
+  <div id="disp-modal">
+    <div id="disp-head">
+      <span id="disp-title">DISPLAY</span>
+      <button id="disp-close" title="Close">&times;</button>
+    </div>
+    <div id="disp-body"></div>
+  </div>
+</div>
 <!-- Chart templates dropdown (toolbar Templates button): rows apply, x
      deletes (two-click), the bottom row saves the current setup under a
      name. Same workspace store as the right-click menu. -->
@@ -327,6 +308,94 @@ def my_ind(df, length=20):
     <div id="watchlist"></div>
   </aside>
   <section id="charts">
+    <!-- Command bar: lives at the TOP of #charts (moved out of <header>) so
+         it sits above the chart only and the watchlist column can start at
+         the top, level with the toolbar. ids/handlers unchanged. -->
+  <div id="controls">
+  <!-- No data-source dropdown: the active rail tab decides the source.
+       MARKETS is live LSE data (API key), BACKTEST / MY DATA are the
+       user's own imported files. -->
+  <!-- Symbol search now lives once, in the sidebar (#wl-filter). The old
+       toolbar search box was removed so there is only one search. -->
+  <!-- Toolbar order (user layout): the timeframe rail LEADS at the far left,
+       then its cTrader-style "⋮ more" menu (#bar-type-slot), then the Candles
+       bar-style picker and the Indicators button. The "⋮ more" menu
+       (LSEChart.mountTimeframeSelector) owns bar type AND timeframe, including
+       custom / monthly resolutions. -->
+  <nav id="timeframes"></nav>
+  <span id="bar-type-slot" title="Timeframe & bar type"></span>
+  <!-- Dedicated advanced Bar-style menu (feature 2): 15 chart types across 4
+       groups, with search + live descriptions. Mounted by the chart bundle
+       (LSEChart.mountChartTypeMenu); drives state.chartType only. -->
+  <span id="chart-type-slot" title="Chart / bar style"></span>
+  <!-- Hidden <select> kept in the DOM as the workspace load/save source of
+       truth for the chart type. The Bar-style menu writes its .value and fires
+       change; the shell reads it on save/restore. -->
+  <select id="chart-type" title="Chart type" style="display:none">
+    <option value="candles">Candles</option>
+    <option value="bars">OHLC</option>
+    <option value="line">Line</option>
+    <option value="area">Area</option>
+    <option value="heikinAshi">Heikin Ashi</option>
+    <option value="renko">Renko</option>
+    <!-- Advanced Bar-style types (values match engine ChartType keys). -->
+    <option value="hollowCandle">Hollow candles</option>
+    <option value="volumeCandle">Volume candles</option>
+    <option value="lineMarkers">Line with markers</option>
+    <option value="stepLine">Step line</option>
+    <option value="hlcArea">HLC area</option>
+    <option value="baseline">Baseline</option>
+    <option value="lineBreak">Line break</option>
+    <option value="kagi">Kagi</option>
+    <option value="pointFigure">Point &amp; Figure</option>
+  </select>
+  <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
+  <!-- GT Lasso: hold L (or arm one shot here) and circle any chart zone for
+       an instant dossier of the real candles inside. Same ids the boot path
+       binds; the layer + card live at body level below. -->
+  <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
+  <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
+       prefixes read as decoration, not chrome.
+       The &#402; on Indicators stays: it is the recognised
+       function-glyph convention on charting toolbars. -->
+  <!-- No My Data button here: the MY DATA rail tab above is the single door to
+       imports; a second toolbar copy of the same tab was
+       duplicate chrome. -->
+  <!-- No Assistant / AI header buttons: the AI lives in the permanent right
+       rail, a fixture like the left sidebar, so it
+       needs no toggle in the toolbar. -->
+  <button id="bt-open" title="Backtest a strategy" class="hidden">&#9654;</button>
+  <!-- Chart layout sits last and is pushed flush right by CSS (margin-left:auto):
+       it configures the chart's appearance rather than selecting what is drawn,
+       so it is separated from the symbol/timeframe/indicator group on the left. -->
+  <!-- Screen layout: the site's Layout picker (grid presets + sync toggles),
+       mounted here by the chart bundle (LSEChart.mountLayoutButton). -->
+  <!-- Level 3 data: shown only when the configured key's plan carries MBO
+       access AND the charted instrument maps to a recorded futures contract
+       (/api/mbo/status). For everyone else the button never exists, so the
+       toolbar advertises nothing the plan cannot serve. -->
+  <button id="l3-open" class="hidden" title="Order-by-order flow for this instrument">Level 3 data</button>
+  <!-- Right group order: layout grid, then Templates,
+       then Chart layout. Templates is the toolbar door to the same store as
+       the chart's right-click "Chart template" submenu (the menu stays
+       AND gets a visible button). No separate Appearance
+       button: colours live inside the Chart layout panel (a short-lived
+       split into its own button was reverted). -->
+  <span id="sl-slot"></span>
+  <button id="tpl-open" title="Save this chart setup, or apply a saved one">Templates</button>
+  <button id="cs-open" title="Colours, candles, background, axis">Chart layout</button>
+  <!-- Workspace actions ride the command bar's right group (same ids the
+       boot path binds; the old #ws-controls strip is gone). -->
+  <span class="ws-sep" aria-hidden="true"></span>
+  <button id="ws-full" class="ws-btn" title="Maximise the chart workspace">Fullscreen</button>
+  <button id="ws-save" class="ws-btn" title="Save instrument, timeframe, chart type, indicators">Save</button>
+  <button id="ws-load" class="ws-btn" title="Reload the last saved workspace">Load</button>
+  <button id="ws-reset" class="ws-btn" title="Reset workspace to defaults">Reset</button>
+  <button id="cam-shot" class="ws-btn" type="button" title="Screenshot chart"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><circle cx="8" cy="9" r="2.6"/><path d="M5.5 4.5 6.2 3h3.6l.7 1.5"/></svg></button>
+  <!-- Fullscreen exit pill: hidden unless ws-fullscreen (CSS). Replaces the
+       text Fullscreen button up here, so the way out is one brass pill. -->
+  <button id="ws-exit" class="ws-btn" type="button" title="Exit fullscreen (Esc)" aria-label="Exit fullscreen"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M14 10v4h-4M2 10v4h4"/></svg></button>
+  </div>
     <!-- Phase 2 instrument header: real values from the data layer only
          (quotes, candles, provider status). No hardcoded prices. -->
     <div id="instrument-bar" class="hidden" aria-label="Instrument summary">
@@ -356,6 +425,10 @@ def my_ind(df, length=20):
            host for the lightweight-charts instance that backs the backtest
            equity curve; it draws no price data. -->
       <div id="chart-pro"></div>
+      <!-- Phase 2: History Navigator (quick ranges + Go to date/range). Mounted
+           by the chart bundle (LSEChart.mountGoToNavigator). pointer-events:none
+           keeps the chart underneath interactive; the strip re-enables its own. -->
+      <div id="goto-nav-slot" style="position:absolute; right:14px; bottom:12px; z-index:30; pointer-events:none;"></div>
       <div id="chart" class="hidden"></div>
       <!-- Phase-3 correction: honest empty state — NO demo BTC/GOLD fallback.
            Shown when no live source is connected (LSE key required). -->
@@ -364,6 +437,20 @@ def my_ind(df, length=20):
         <div id="dw-title" class="dw-title">WAITING FOR MARKET DATA</div>
         <div id="dw-detail" class="dw-detail">No live data source connected.</div>
         <div class="dw-hint">Add your free LSE API key · EdgeDepth gateway is a separate optional feed</div>
+      </div>
+      <!-- Seconds tape (1s–45s): candle history is minute-grained, so a seconds
+           chart opens EMPTY and builds forward from the live trade stream. This
+           non-destructive notice (keeps the instrument + header intact) tells
+           the trader honestly why the panel is blank: market closed, waiting on
+           the first trade, or no live feed. Hidden the instant a bar prints. -->
+      <div id="seconds-notice" class="hidden" role="status" aria-live="polite">
+        <div class="sn-card">
+          <span class="sn-dot" aria-hidden="true"></span>
+          <div class="sn-text">
+            <div id="sn-title" class="sn-title">BUILDING LIVE BARS</div>
+            <div id="sn-detail" class="sn-detail">Waiting for the first live trade to print.</div>
+          </div>
+        </div>
       </div>
     </div>
     <div id="panes"></div>
@@ -1396,7 +1483,7 @@ def my_ind(df, length=20):
   <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
   <!-- BUILD stamp: bump the number on every UI push so a stale
        build/cache is visible at a glance in the status strip. -->
-  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">70-raildrag</span></span>
+  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">71-merge</span></span>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
 <script src="./app.js"></script>

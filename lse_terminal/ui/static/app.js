@@ -4,9 +4,35 @@
 
 // Full Phase-2 ladder (seconds). Providers only offer labels they can serve;
 // this map is the merge/bucket authority for live ticks on any advertised TF.
-const TF_SECONDS = { "1s": 1, "5s": 5, "15s": 15, "30s": 30,
+const TF_SECONDS = { "1s": 1, "5s": 5, "10s": 10, "15s": 15, "30s": 30, "45s": 45,
                      "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
                      "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800 };
+
+// Bucket-start (epoch seconds) for a tick at `ts` on timeframe `tf`. Handles
+// the native fixed ladder AND the ⋮-menu's custom / calendar resolutions
+// (45m, 2h, 8h, 1M, 3M, 6M, 1Y), mirroring engine/tf_aggregate.py so a live
+// tick forms exactly the bar the history endpoint served — no spurious 1h bar
+// grafted onto a monthly series.
+function tfBucketStart(ts, tf) {
+  const s = String(tf || "").trim();
+  let m = /^(\d+)\s*([smhdw])$/.exec(s);            // lower-case units: sub-monthly
+  if (m) {
+    const step = Number(m[1]) * ({ s: 1, m: 60, h: 3600, d: 86400, w: 604800 })[m[2]];
+    return step > 0 ? Math.floor(ts / step) * step : ts;
+  }
+  m = /^(\d+)\s*M$/.exec(s);                        // capital M: calendar months
+  let months = m ? Number(m[1]) : null;
+  const y = /^(\d+)\s*[yY]$/.exec(s);              // years -> months
+  if (y) months = Number(y[1]) * 12;
+  if (months && months > 0) {
+    const d = new Date(ts * 1000);
+    const period = d.getUTCFullYear() * 12 + d.getUTCMonth();
+    const base = Math.floor(period / months) * months;
+    return Math.floor(Date.UTC(Math.floor(base / 12), base % 12, 1, 0, 0, 0) / 1000);
+  }
+  const step = TF_SECONDS[s] || 3600;
+  return Math.floor(ts / step) * step;
+}
 // A tick chart appends one bar per trade; big liquid pairs print ~24/s, so
 // without a cap a day-open session would grow the array into millions of
 // bars and the canvas repaint would die long before the memory did.
@@ -27,6 +53,7 @@ const state = {
   symbol: null, timeframe: "1h", chartType: "candles", wlFilter: "",
   wlSets: {}, wlView: "list", wlShowChange: true, wlExpanded: {}, wlTab: "watchlist",
   activeIndicators: [],            // [{name}] params use registry defaults
+  serverIndicators: {},            // last /api/candles indicator payload (empty in hosted mode)
   favoriteIndicators: [],          // registry names starred in the picker; float to the top
   instruments: [], ws: null, lastBar: null, prices: {}, quotes: {}, candleData: [],
   logos: {},                       // symbol -> {light, dark} watchlist logo URLs
@@ -382,6 +409,8 @@ function enterDataWaiting(title, detail) {
     if (t) t.textContent = title || "WAITING FOR MARKET DATA";
     if (d) d.textContent = detail || "";
   }
+  // The full-cover waiting overlay supersedes the seconds tape notice.
+  hideSecondsNotice();
   // Clear any prior instrument so the header cannot show a stale symbol.
   state.symbol = null;
   state.candleData = [];
@@ -395,6 +424,49 @@ function exitDataWaiting() {
   state.dataWaiting = false;
   const ov = $("data-waiting");
   if (ov) ov.classList.add("hidden");
+}
+
+/* Seconds tape (1s–45s) opens EMPTY — its bars build forward from live trades,
+   not from history. This non-destructive on-chart notice explains an empty
+   seconds panel honestly (market closed / waiting on first trade / no feed)
+   without clearing the instrument. Hidden the instant a bar prints. */
+function showSecondsNotice() {
+  const ov = $("seconds-notice");
+  if (!ov) return;
+  const tf = String(state.timeframe || "").toUpperCase();
+  // Session state for the charted symbol when the chart bundle exposes it.
+  let open;
+  try {
+    if (window.LSEChart && typeof window.LSEChart.sessionOpen === "function") {
+      open = window.LSEChart.sessionOpen(state.symbol);
+    }
+  } catch (e) { /* unknown session → treat as waiting */ }
+  ov.classList.remove("sn-live", "sn-closed", "sn-nofeed");
+  let cls, title, detail;
+  if (open === false) {
+    cls = "sn-closed";
+    title = "MARKET CLOSED";
+    detail = `Seconds bars build from live trades. Nothing will print on ${tf} `
+      + `until ${state.symbol || "this market"} trades again.`;
+  } else if (state.ws) {
+    cls = "sn-live";
+    title = `BUILDING LIVE ${tf} BARS`;
+    detail = "Waiting for the first live trade to print. Bars form here as trades arrive.";
+  } else {
+    cls = "sn-nofeed";
+    title = "NO LIVE TRADE FEED";
+    detail = "Connect a live data source to build seconds bars from the trade stream.";
+  }
+  ov.classList.add(cls);
+  const t = $("sn-title");
+  const d = $("sn-detail");
+  if (t) t.textContent = title;
+  if (d) d.textContent = detail;
+  ov.classList.remove("hidden");
+}
+function hideSecondsNotice() {
+  const ov = $("seconds-notice");
+  if (ov && !ov.classList.contains("hidden")) ov.classList.add("hidden");
 }
 // Probe EdgeDepth gateway reachability (server-side TCP/HTTP check).
 // Never invents data — only reports whether the optional L2 feed is up.
@@ -509,6 +581,7 @@ function setupWsControls() {
         renderTimeframes();
         loadChart();
       }
+      syncBarTypeSelector();
       status("workspace loaded");
       setTimeout(() => status(""), 1500);
     } catch (e) { status("load failed"); }
@@ -522,6 +595,7 @@ function setupWsControls() {
     if (full) { full.classList.remove("active"); full.textContent = "Fullscreen"; }
     renderActiveIndicators();
     pushToChart();
+    syncBarTypeSelector();
     if (typeof saveShellState === "function") saveShellState();
     status("workspace reset");
     setTimeout(() => status(""), 1500);
@@ -668,6 +742,7 @@ function saveShellState() {
         activeIndicators: state.activeIndicators,
         favoriteIndicators: state.favoriteIndicators,
         chartType: state.chartType,
+        display: state.display,
         watchlists: state.watchlists,
         wlSets: state.wlSets,
         // Rail widget stack. Rides the shell section
@@ -685,6 +760,95 @@ function saveShellState() {
 // crosshair and indicator registry as the live charts. The lightweight-charts
 // objects above still back the backtest equity curve; they no longer draw the
 // price chart.
+
+/* ---------- Item 3: DISPLAY settings (interface scale + density) ----
+   A centered modal that shrinks or enlarges the whole terminal. Interface scale
+   is the master zoom; Density folds an extra compaction factor into that same
+   zoom (so Compact/Dense visibly tighten everything) and also nudges row
+   paddings. Chromium zoom reflows the layout correctly. Persists in the shell. */
+const DISP_DEFAULTS = { scale: 100, density: "comfortable" };
+const DENSITY_FACTOR = { comfortable: 1, compact: 0.9, dense: 0.82 };
+// Panels the earlier build could hide; we now force them visible so no element
+// stays stuck hidden from a previously-saved state.
+const DISP_PANEL_IDS = ["side", "controls", "status", "dockzone"];
+function dispState() {
+  const d = state.display && typeof state.display === "object" ? state.display : (state.display = {});
+  if (typeof d.scale !== "number" || !isFinite(d.scale)) d.scale = 100;
+  d.scale = Math.max(80, Math.min(120, Math.round(d.scale)));
+  if (!["comfortable", "compact", "dense"].includes(d.density)) d.density = "comfortable";
+  return d;
+}
+function dispApply() {
+  const d = dispState();
+  // Master zoom = interface scale × density factor, so density always has a
+  // clearly visible effect on top of whatever scale is set.
+  const z = (d.scale / 100) * (DENSITY_FACTOR[d.density] || 1);
+  document.documentElement.style.zoom = Math.abs(z - 1) < 0.001 ? "" : String(+z.toFixed(3));
+  // Row-level tightening on top of the zoom, for extra density.
+  document.body.classList.remove("gt-density-compact", "gt-density-dense");
+  if (d.density === "compact") document.body.classList.add("gt-density-compact");
+  else if (d.density === "dense") document.body.classList.add("gt-density-dense");
+  // Ensure no panel is left hidden by the removed Show-panels feature.
+  for (const id of DISP_PANEL_IDS) {
+    const el = document.getElementById(id);
+    if (el && el.style.display === "none") el.style.display = "";
+  }
+  // The chart canvas must re-measure after a zoom change.
+  if (window.LSEChart && typeof window.LSEChart.resize === "function") {
+    try { window.LSEChart.resize(); } catch (e) { /* engine handles */ }
+  }
+}
+function dispSliderFill(scale) {
+  const pct = (scale - 80) / 40 * 100;
+  return `linear-gradient(90deg, var(--line-strong) 0 ${pct}%, var(--edge) ${pct}% 100%)`;
+}
+function dispRender() {
+  const body = $("disp-body");
+  if (!body) return;
+  const d = dispState();
+  body.innerHTML =
+    `<div class="disp-sec">` +
+      `<div class="disp-sec-lbl">Interface scale</div>` +
+      `<div class="disp-scale-row">` +
+        `<input type="range" id="disp-scale" min="80" max="120" step="5" value="${d.scale}" style="background:${dispSliderFill(d.scale)}">` +
+        `<span class="disp-scale-val" id="disp-scale-val">${d.scale}%</span>` +
+      `</div>` +
+      `<div class="disp-scale-ticks"><span>80%</span><span>120%</span></div>` +
+    `</div>` +
+    `<div class="disp-sec">` +
+      `<div class="disp-sec-lbl">Density</div>` +
+      `<div class="disp-seg" id="disp-density">` +
+        ["comfortable", "compact", "dense"].map((v) =>
+          `<button data-den="${v}" class="${d.density === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("") +
+      `</div>` +
+    `</div>` +
+    `<div class="disp-foot">` +
+      `<button class="disp-reset" id="disp-reset">Reset</button>` +
+      `<button class="disp-done" id="disp-done">Done</button>` +
+    `</div>`;
+
+  const slider = $("disp-scale");
+  slider.oninput = () => {
+    d.scale = Math.max(80, Math.min(120, parseInt(slider.value, 10) || 100));
+    $("disp-scale-val").textContent = d.scale + "%";
+    slider.style.background = dispSliderFill(d.scale);
+    dispApply(); saveShellState();
+  };
+  body.querySelectorAll("#disp-density button").forEach((b) => {
+    b.onclick = () => {
+      d.density = b.dataset.den;
+      body.querySelectorAll("#disp-density button").forEach((x) => x.classList.toggle("on", x === b));
+      dispApply(); saveShellState();
+    };
+  });
+  $("disp-reset").onclick = () => {
+    state.display = JSON.parse(JSON.stringify(DISP_DEFAULTS));
+    dispApply(); dispRender(); saveShellState();
+  };
+  $("disp-done").onclick = dispClose;
+}
+function dispOpen() { dispRender(); $("display-panel").classList.remove("hidden"); }
+function dispClose() { const p = $("display-panel"); if (p) p.classList.add("hidden"); }
 
 function pushToChart() {
   updateInstrumentBar();
@@ -740,6 +904,9 @@ function updateWindowTitle() {
 }
 
 async function loadChart() {
+  // Any explicit (re)load returns us to the live tail: drop the History
+  // Navigator's history pin so streaming resumes normally.
+  state.historyPinned = false;
   if (!state.provider || !state.symbol) {
     // Keyless / no instrument: stay in the honest waiting state.
     if (!state.provider || state.dataWaiting) {
@@ -758,6 +925,26 @@ async function loadChart() {
   // Level 3 button appears/disappears with the instrument (only the recorded
   // futures universe has order-by-order data)
   if (typeof l3SyncButton === "function") try { l3SyncButton(); } catch (e) { /* rail absent */ }
+  // Seconds tape (1s–45s): the candle API's finest history is 1-minute, so
+  // there are NO historical second bars to fetch. Rather than error, start an
+  // empty series and let onTick() bucket the live trade stream into second
+  // bars going forward. No socket / non-streaming provider → it stays empty
+  // and says so; we never fabricate bars to fill it.
+  if (/^\d+s$/.test(state.timeframe)) {
+    state.candleData = [];
+    state.engineIndicators = {};
+    state.lastBar = null;
+    pushToChart();
+    updateInstrumentBar();
+    // Honest on-chart notice while the empty tape waits for its first trade.
+    showSecondsNotice();
+    status(state.ws
+      ? `building live ${state.timeframe} bars from trades…`
+      : "waiting for live trades…");
+    return;
+  }
+  // Any non-seconds load leaves the seconds tape state behind.
+  hideSecondsNotice();
   status(`loading ${state.symbol}…`);
   // 5000 = the engine's per-request cap: open with one full page of history
   // so deep scrollback starts loaded instead of paging immediately.
@@ -780,8 +967,11 @@ async function loadChart() {
   state.candleData = data.candles.map(([t, o, h, l, c, v]) =>
     ({ time: t, open: o, high: h, low: l, close: c, volume: v }));
   // Python-computed indicators (built-ins and the user's own) ride along and
-  // are drawn by the chart as precomputed series.
-  state.engineIndicators = data.indicators || {};
+  // are drawn by the chart as precomputed series. In hosted mode the server
+  // sends none, so the core set is computed client-side and merged in here;
+  // this is also what carries the panel's Style/Visibility onto the chart.
+  state.serverIndicators = data.indicators || {};
+  state.engineIndicators = indMergedPayload();
   pushToChart();
   state.lastBar = state.candleData[state.candleData.length - 1] || null;
   updateInstrumentBar();
@@ -957,6 +1147,10 @@ function onTick(t) {
   }
   if (t.symbol !== state.symbol) { return; }
   refreshInstrumentBarSoon();
+  // History Navigator pinned an old window on screen: keep quotes/board live
+  // (done above) but do NOT append or reshape bars, or a 2026 tick would graft
+  // a phantom bar onto a 2023 view. reloadLatest() clears this.
+  if (state.historyPinned) return;
   if (state.timeframe === "tick") {
     // No lastBar guard here: a quiet symbol can open with an EMPTY tick
     // history (nothing in the replay window), and the tape must still
@@ -974,11 +1168,15 @@ function onTick(t) {
     pushToChart();
     return;
   }
-  if (!state.lastBar) return;
-  const step = TF_SECONDS[state.timeframe] || 3600;
-  const bucket = Math.floor((t.ts || Date.now() / 1000) / step) * step;
+  // A seconds tape opens with no history, so its FIRST live trade must be
+  // allowed to start bar #1. Every other timeframe still waits for real
+  // history before a tick may extend it (a lone tick must not graft a phantom
+  // 1h bar onto a series that simply failed to load).
+  const tfIsSeconds = /^\d+s$/.test(state.timeframe);
+  if (!state.lastBar && !tfIsSeconds) return;
+  const bucket = tfBucketStart(t.ts || Date.now() / 1000, state.timeframe);
   let bar = state.lastBar;
-  if (bucket > bar.time) {
+  if (!bar || bucket > bar.time) {
     bar = { time: bucket, open: t.price, high: t.price, low: t.price, close: t.price };
     state.candleData.push(bar);
   } else {
@@ -991,6 +1189,8 @@ function onTick(t) {
   // the new/updated bar actually repaints.
   state.candleData = state.candleData.slice();
   pushToChart();
+  // First seconds bar has printed — drop the "waiting for trades" notice.
+  if (tfIsSeconds) hideSecondsNotice();
 }
 
 /* ---------- indicator picker ---------- */
@@ -1006,28 +1206,13 @@ function paramSummary(item, spec) {
 }
 
 function renderActiveIndicators() {
+  // The old chip strip above the chart ("Simple Moving Average ×") is GONE:
+  // active indicators now live only in the on-chart legend (the chart bundle's
+  // OnChartHUD), which lists BOTH the chart's own indicators and these engine
+  // ones with per-row edit / hide / remove. The element is kept in the DOM
+  // (hidden via CSS) only as the anchor fallback for editIndicator().
   const wrap = $("ind-active");
-  wrap.innerHTML = "";
-  for (const item of state.activeIndicators) {
-    const spec = state.indicatorSpecs.find((s) => s.name === item.name);
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.title = "Customise " + (spec ? spec.title : item.name);
-    chip.textContent = (spec ? spec.title : item.name) + paramSummary(item, spec);
-    chip.onclick = () => openIndicatorConfig(item, chip);
-    const x = document.createElement("button");
-    x.textContent = "×";
-    x.title = "Remove";
-    x.onclick = (e) => {
-      e.stopPropagation();
-      state.activeIndicators = state.activeIndicators.filter((i) => i !== item);
-      renderActiveIndicators();
-      loadChart();
-      saveShellState();
-    };
-    chip.appendChild(x);
-    wrap.appendChild(chip);
-  }
+  if (wrap) wrap.innerHTML = "";
 }
 
 /* ---------- indicator browser + parameter editor ---------- */
@@ -1043,65 +1228,877 @@ function closeIndPanels() {
   $("ind-cfg").classList.add("hidden");
 }
 
-function renderIndicatorList() {
-  const q = $("ind-search").value.trim().toLowerCase();
-  const list = $("ind-list");
-  list.innerHTML = "";
-  // Starred indicators float to the top; the sort is stable, so both groups
-  // keep the registry's alphabetical order inside themselves.
-  const favs = new Set(state.favoriteIndicators);
-  const specs = [...state.indicatorSpecs]
-    .sort((a, b) => Number(favs.has(b.name)) - Number(favs.has(a.name)));
-  let pastFavs = false;
-  for (const s of specs) {
-    if (q && !(s.title.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))) continue;
-    const isFav = favs.has(s.name);
-    // Thin rule between the starred block and the rest, only when both exist.
-    if (!isFav && !pastFavs && list.children.length) {
+/* ── Item 7: advanced indicator browser ───────────────────────────────────
+   Three columns: category rail (renderIndCats) | card catalog
+   (renderIndicatorList) | live inspector (renderIndInspector). Engine wiring
+   is unchanged: cards toggle state.activeIndicators and call loadChart(), the
+   inspector edits params and live-updates both the chart and its own preview. */
+
+const IND_CATS = [
+  { id: "all", label: "All" },
+  { id: "fav", label: "Favourites", star: true },
+  { id: "trend", label: "Trend" },
+  { id: "momentum", label: "Momentum" },
+  { id: "volatility", label: "Volatility" },
+  { id: "volume", label: "Volume" },
+  { id: "bands", label: "Bands" },
+  { id: "my", label: "My indicators" },
+];
+const IND_CHIPS = [
+  { id: "overlay", label: "Overlay" },
+  { id: "pane", label: "Pane" },
+  { id: "fav", label: "Favourites" },
+];
+// Names owned by the user's own indicator files (/api/user-indicators); drives
+// the "My indicators" category. Refilled each time the browser opens.
+let indUserNames = new Set();
+
+// Keyword classifier: the engine specs carry no category, so bucket by
+// name/title, then fall back to overlay(=trend)/pane(=momentum).
+function indCategoryOf(spec) {
+  if (indUserNames.has(spec.name)) return "my";
+  const key = (spec.name + " " + (spec.title || "")).toLowerCase();
+  const has = (...ws) => ws.some((w) => key.includes(w));
+  if (has("bollinger", "keltner", "donchian", "envelope", "bband", " band")) return "bands";
+  if (has("volume", "obv", "vwap", "vwma", "mfi", "chaikin", "accumulation",
+          "cmf", "money flow", "pvt", "ease of movement", "eom", "klinger")) return "volume";
+  if (has("atr", "true range", "stddev", "std dev", "standard deviation",
+          "deviation", "volatility", "chandelier", "natr", "bandwidth")) return "volatility";
+  if (has("rsi", "macd", "stoch", "cci", "momentum", "rate of change", "roc",
+          "william", "%r", "tsi", "ultimate", "awesome", "kdj", "rvi", "cmo",
+          "ppo", "trix", "dpo", "fisher", "relative strength", "oscillator",
+          "connors", "coppock")) return "momentum";
+  if (has("sma", "ema", "wma", "dema", "tema", "hma", "vwma", "kama",
+          "moving average", "adx", "dmi", "ichimoku", "psar", "parabolic",
+          "supertrend", "aroon", "alma", "zlema", "lsma", "regression",
+          "gann", "hull", "mcginley", "trend")) return "trend";
+  return spec.overlay ? "trend" : "momentum";
+}
+
+function indPassesCat(spec, cat) {
+  if (cat === "all") return true;
+  if (cat === "fav") return state.favoriteIndicators.includes(spec.name);
+  if (cat === "my") return indUserNames.has(spec.name);
+  return indCategoryOf(spec) === cat;
+}
+
+// A stable little sparkline per card, seeded by the name so it never jitters
+// between renders. Overlays draw a drifting line, panes an oscillation.
+function indSpark(spec) {
+  let h = 0;
+  for (const c of spec.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const rnd = () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return (h % 1000) / 1000; };
+  const n = 24, w = 150, ht = 34, pad = 3;
+  const pts = [];
+  let v = 0.5;
+  for (let i = 0; i < n; i++) {
+    if (spec.overlay) v += (rnd() - 0.47) * 0.17;
+    else v = 0.5 + Math.sin(i / 2.1 + rnd() * 2) * 0.34 * (0.55 + rnd() * 0.6);
+    v = Math.max(0.06, Math.min(0.94, v));
+    const x = pad + (i / (n - 1)) * (w - pad * 2);
+    const y = pad + (1 - v) * (ht - pad * 2);
+    pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  return `<svg class="indb-spark" viewBox="0 0 ${w} ${ht}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<polyline fill="none" stroke="var(--accent-bar)" stroke-width="1.4" ` +
+    `stroke-linejoin="round" stroke-linecap="round" points="${pts.join(" ")}"/></svg>`;
+}
+
+function renderIndCats() {
+  const rail = $("indb-cats");
+  if (!rail) return;
+  state.indCat = state.indCat || "all";
+  const specs = state.indicatorSpecs || [];
+  rail.innerHTML = "";
+  for (const c of IND_CATS) {
+    if (c.id === "trend" || c.id === "my") {
       const sep = document.createElement("div");
-      sep.className = "ind-sep";
-      list.appendChild(sep);
+      sep.className = "indb-cat-sep";
+      rail.appendChild(sep);
     }
-    if (!isFav) pastFavs = true;
-    const active = state.activeIndicators.find((i) => i.name === s.name);
-    const row = document.createElement("div");
-    row.className = "ind-row" + (active ? " active" : "");
-    row.innerHTML =
-      `<span class="ind-check">${active ? "&#10003;" : ""}</span>` +
-      `<span class="ind-title">${s.title}</span>` +
-      `<button class="ind-star${isFav ? " fav" : ""}" title="${isFav ? "Unfavourite" : "Favourite: pins it to the top"}">${isFav ? "&#9733;" : "&#9734;"}</button>` +
-      `<span class="ind-tag">${s.overlay ? "overlay" : "pane"}</span>` +
-      (active ? `<button class="ind-gear" title="Parameters">&#9998;</button>` : "");
-    row.onclick = () => {
-      const cur = state.activeIndicators.find((i) => i.name === s.name);
-      if (cur) {
-        state.activeIndicators = state.activeIndicators.filter((i) => i !== cur);
-      } else {
-        state.activeIndicators.push({ name: s.name, params: {} });
-      }
-      renderActiveIndicators();
-      renderIndicatorList();
-      loadChart();
-      saveShellState();
-    };
-    const gear = row.querySelector(".ind-gear");
-    if (gear) gear.onclick = (e) => {
-      e.stopPropagation();
-      openIndicatorConfig(active, row);
-    };
-    row.querySelector(".ind-star").onclick = (e) => {
+    const n = specs.filter((s) => indPassesCat(s, c.id)).length;
+    const el = document.createElement("div");
+    el.className = "indb-cat" + (state.indCat === c.id ? " active" : "");
+    el.innerHTML = (c.star ? `<span class="indb-cat-star">&#9733;</span>` : "") +
+      `<span>${c.label}</span><span class="indb-cat-n">${n}</span>`;
+    el.onclick = () => { state.indCat = c.id; renderIndCats(); renderIndicatorList(); };
+    rail.appendChild(el);
+  }
+}
+
+function renderIndChips() {
+  const box = $("indb-chips");
+  if (!box) return;
+  state.indChips = state.indChips || { overlay: false, pane: false, fav: false };
+  box.innerHTML = "";
+  for (const c of IND_CHIPS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "indb-chip" + (state.indChips[c.id] ? " on" : "");
+    b.textContent = c.label;
+    b.onclick = () => { state.indChips[c.id] = !state.indChips[c.id]; renderIndChips(); renderIndicatorList(); };
+    box.appendChild(b);
+  }
+}
+
+function renderIndicatorList() {
+  const list = $("ind-list");
+  if (!list) return;
+  const q = ($("ind-search").value || "").trim().toLowerCase();
+  const favs = new Set(state.favoriteIndicators);
+  const chips = state.indChips || {};
+  list.innerHTML = "";
+  let specs = (state.indicatorSpecs || []).filter((s) => indPassesCat(s, state.indCat || "all"));
+  if (chips.overlay) specs = specs.filter((s) => s.overlay);
+  if (chips.pane) specs = specs.filter((s) => !s.overlay);
+  if (chips.fav) specs = specs.filter((s) => favs.has(s.name));
+  if (q) specs = specs.filter((s) => s.title.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
+  specs.sort((a, b) =>
+    Number(favs.has(b.name)) - Number(favs.has(a.name)) ||
+    a.title.localeCompare(b.title));
+  // Layout toggle (Item 7): "columns" is a dense multi-column list — a coloured
+  // dot · title · star per row, so far more indicators fit on screen at once;
+  // "cards" is the sparkline grid. The choice persists (setupIndicatorPanel).
+  const cols = state.indListView === "columns";
+  list.className = cols ? "indb-list-cols" : "";
+  if (cols) {
+    for (const s of specs) {
+      const isFav = favs.has(s.name);
+      const added = state.activeIndicators.some((i) => i.name === s.name);
+      const row = document.createElement("div");
+      row.className = "indb-crow" + (state.indSelected === s.name ? " selected" : "") + (added ? " added" : "");
+      row.dataset.name = s.name;
+      row.innerHTML =
+        `<span class="indb-crow-dot" title="${added ? "On chart" : (s.overlay ? "Overlay" : "Pane")}"></span>` +
+        `<span class="indb-crow-title">${s.title}</span>` +
+        `<button class="indb-card-star${isFav ? " fav" : ""}" title="${isFav ? "Unfavourite" : "Favourite"}">${isFav ? "&#9733;" : "&#9734;"}</button>`;
+      row.onclick = () => indSelect(s.name);
+      row.querySelector(".indb-card-star").onclick = (e) => {
+        e.stopPropagation();
+        const at = state.favoriteIndicators.indexOf(s.name);
+        if (at >= 0) state.favoriteIndicators.splice(at, 1);
+        else state.favoriteIndicators.push(s.name);
+        renderIndCats();
+        renderIndicatorList();
+        saveShellState();
+      };
+      list.appendChild(row);
+    }
+    if (!list.children.length) list.innerHTML = '<div class="ind-empty">Nothing matches.</div>';
+    return;
+  }
+  for (const s of specs) {
+    const isFav = favs.has(s.name);
+    const added = state.activeIndicators.some((i) => i.name === s.name);
+    const card = document.createElement("div");
+    card.className = "indb-card" + (state.indSelected === s.name ? " selected" : "") + (added ? " added" : "");
+    card.dataset.name = s.name;
+    card.innerHTML =
+      `<div class="indb-card-top">` +
+        `<span class="indb-card-title">${s.title}</span>` +
+        `<button class="indb-card-star${isFav ? " fav" : ""}" title="${isFav ? "Unfavourite" : "Favourite"}">${isFav ? "&#9733;" : "&#9734;"}</button>` +
+      `</div>` +
+      `<div class="indb-card-sub">${s.name}</div>` +
+      indSpark(s) +
+      `<div class="indb-card-foot">` +
+        `<span class="indb-card-tag">${s.overlay ? "overlay" : "pane"}</span>` +
+        `<span class="indb-card-added">&#10003; added</span>` +
+      `</div>`;
+    card.onclick = () => indSelect(s.name);
+    card.querySelector(".indb-card-star").onclick = (e) => {
       e.stopPropagation();
       const at = state.favoriteIndicators.indexOf(s.name);
       if (at >= 0) state.favoriteIndicators.splice(at, 1);
       else state.favoriteIndicators.push(s.name);
+      renderIndCats();
       renderIndicatorList();
       saveShellState();
     };
-    list.appendChild(row);
+    list.appendChild(card);
   }
   if (!list.children.length) {
     list.innerHTML = '<div class="ind-empty">Nothing matches.</div>';
   }
+}
+
+/* ---- inspector (right column) ---- */
+
+function indActiveItem(name) {
+  return state.activeIndicators.find((i) => i.name === name) || null;
+}
+// Seed the working draft from the on-chart params (if added) or defaults.
+function indSeedDraft(spec) {
+  const active = indActiveItem(spec.name);
+  const params = {};
+  for (const [k, p] of Object.entries(spec.params || {})) {
+    params[k] = (active && active.params && active.params[k] !== undefined)
+      ? active.params[k] : p.default;
+  }
+  state.indDraft = { name: spec.name, params };
+}
+function indSeedDefaults(spec) {
+  const params = {};
+  for (const [k, p] of Object.entries(spec.params || {})) params[k] = p.default;
+  state.indDraft = { name: spec.name, params };
+}
+// Only non-default params travel to the engine (matches indicatorQuery()).
+function indDraftToParams(spec) {
+  const out = {};
+  for (const [k, p] of Object.entries(spec.params || {})) {
+    const v = state.indDraft.params[k];
+    if (v !== "" && v !== undefined && String(p.default) !== String(v)) out[k] = v;
+  }
+  return out;
+}
+function indApplyDraft(name, addIfMissing) {
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === name);
+  if (!spec) return;
+  const params = indDraftToParams(spec);
+  let item = indActiveItem(name);
+  if (!item) {
+    if (!addIfMissing) return;
+    item = { name, params };
+    state.activeIndicators.push(item);
+  } else {
+    item.params = params;
+  }
+  renderActiveIndicators();
+  loadChart();
+  saveShellState();
+}
+
+function indSelect(name) {
+  state.indSelected = name;
+  state.indPvZoom = 1;          // fresh indicator opens fit-to-width
+  state.indPvCache = null;
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === name);
+  if (spec) indSeedDraft(spec);
+  renderIndicatorList();
+  renderIndInspector();
+}
+
+// ---- inspector tab-pane builders (shared by first render + post-fetch refresh) ----
+// The style/visibility lists are built from the plot columns the engine actually
+// returned for this indicator (state.indPvCols), so they scale to indicators
+// with one plot or ten. Colours/widths default from the palette; a value in
+// state.indStyle[name][col] is a user override.
+function indColStyle(name, col, idx) {
+  const o = ((state.indStyle || {})[name] || {})[col] || {};
+  return {
+    color: o.color || IND_PALETTE[idx % IND_PALETTE.length],
+    width: o.width || 2,
+    visible: o.visible !== false,
+  };
+}
+function indInputsHtml(spec) {
+  const entries = Object.entries(spec.params || {});
+  if (!entries.length) return `<div class="indb-insp-empty" style="padding:8px">This indicator has no parameters.</div>`;
+  return entries.map(([k, p]) => {
+    const step = p.type === "int" ? "1" : "any";
+    const bounds = `${p.min !== undefined ? `min="${p.min}"` : ""} ${p.max !== undefined ? `max="${p.max}"` : ""}`;
+    const val = state.indDraft.params[k];
+    return `<label class="indb-field"><span>${k}</span>` +
+      `<input type="number" data-param="${k}" value="${val}" step="${step}" ${bounds}></label>`;
+  }).join("");
+}
+function indStyleHtml(spec) {
+  const cols = (state.indPvCols || {})[spec.name];
+  if (!cols || !cols.length) return `<div class="indb-insp-empty" style="padding:8px">Loading plot styles from the live preview…</div>`;
+  return cols.map((c, idx) => {
+    const cur = indColStyle(spec.name, c.id, idx);
+    return `<div class="indb-field"><span>${c.label}</span>` +
+      `<span style="display:flex;gap:6px;align-items:center">` +
+      `<input type="color" data-style="${c.id}" data-k="color" value="${cur.color}" title="Colour">` +
+      `<input type="number" data-style="${c.id}" data-k="width" value="${cur.width}" min="1" max="6" step="1" style="width:52px" title="Line width">` +
+      `</span></div>`;
+  }).join("");
+}
+function indVisHtml(spec) {
+  const cols = (state.indPvCols || {})[spec.name];
+  if (!cols || !cols.length) return `<div class="indb-insp-empty" style="padding:8px">Loading plots from the live preview…</div>`;
+  return cols.map((c, idx) => {
+    const cur = indColStyle(spec.name, c.id, idx);
+    return `<label class="indb-field"><span>${c.label}</span>` +
+      `<input type="checkbox" data-vis="${c.id}" ${cur.visible ? "checked" : ""}></label>`;
+  }).join("");
+}
+function indPaneHtml(spec, tab) {
+  return tab === "inputs" ? indInputsHtml(spec) : tab === "style" ? indStyleHtml(spec) : indVisHtml(spec);
+}
+// Bind the live handlers for whichever inputs are present in the tab pane.
+function indBindTabPane(insp, spec) {
+  const name = spec.name;
+  insp.querySelectorAll("input[data-param]").forEach((inp) => {
+    inp.oninput = () => {
+      state.indDraft.params[inp.dataset.param] = inp.value;
+      indPreviewSchedule();
+      if (indActiveItem(name)) indApplyDraft(name); // live-update the chart too
+    };
+  });
+  insp.querySelectorAll("input[data-style]").forEach((inp) => {
+    inp.oninput = () => {
+      const store = indStyleFor(spec);
+      const o = store[inp.dataset.style] || (store[inp.dataset.style] = {});
+      if (inp.dataset.k === "width") o.width = Math.max(1, Math.min(6, parseInt(inp.value, 10) || 2));
+      else o.color = inp.value;
+      indPreviewRender();
+      if (indActiveItem(name)) indRefreshChart(); // carry the style onto the chart
+    };
+  });
+  insp.querySelectorAll("input[data-vis]").forEach((inp) => {
+    inp.onchange = () => {
+      const store = indStyleFor(spec);
+      const o = store[inp.dataset.vis] || (store[inp.dataset.vis] = {});
+      o.visible = inp.checked;
+      indPreviewRender();
+      if (indActiveItem(name)) indRefreshChart();
+    };
+  });
+}
+// After a preview fetch discovers the real plot columns, refresh JUST the tab
+// pane (never the whole inspector — that would recreate the canvas and loop).
+// Skips the rebuild when the pane is already in sync so it never interrupts a
+// colour drag or checkbox toggle.
+function indUpdateTabPane() {
+  const insp = $("indb-inspector");
+  if (!insp) return;
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === state.indSelected);
+  if (!spec) return;
+  const tab = state.indInspTab || "inputs";
+  if (tab === "inputs") return; // inputs don't depend on discovered columns
+  const pane = insp.querySelector(".indb-insp-tabpane");
+  if (!pane) return;
+  const cols = (state.indPvCols || {})[spec.name] || null;
+  const sel = tab === "style" ? "input[data-style]" : "input[data-vis]";
+  const have = pane.querySelectorAll(sel).length;
+  const want = cols ? cols.length : 0;
+  if (want > 0 && have === want) return; // already showing these columns
+  pane.innerHTML = indPaneHtml(spec, tab);
+  indBindTabPane(insp, spec);
+}
+
+function renderIndInspector() {
+  const insp = $("indb-inspector");
+  if (!insp) return;
+  const name = state.indSelected;
+  const spec = name ? (state.indicatorSpecs || []).find((s) => s.name === name) : null;
+  if (!spec) {
+    insp.innerHTML = `<div class="indb-insp-empty">Select an indicator to see its settings and a live preview.</div>`;
+    return;
+  }
+  if (!state.indDraft || state.indDraft.name !== name) indSeedDraft(spec);
+  const added = !!indActiveItem(name);
+  const tab = state.indInspTab || "inputs";
+
+  insp.innerHTML =
+    `<div class="indb-insp-head">` +
+      `<span class="indb-insp-title">${spec.title}</span>` +
+      `<button class="indb-insp-close" title="Close settings">&times;</button>` +
+    `</div>` +
+    `<div class="indb-insp-body">` +
+      `<div class="indb-preview-wrap">` +
+        `<canvas class="indb-preview-canvas" id="indb-preview"></canvas>` +
+        `<div class="indb-pv-zoom" role="group" aria-label="Preview zoom">` +
+          `<button data-z="out" title="Zoom out" aria-label="Zoom out">&minus;</button>` +
+          `<span id="indb-pv-zlvl">${Math.round((state.indPvZoom || 1) * 100)}%</span>` +
+          `<button data-z="in" title="Zoom in" aria-label="Zoom in">+</button>` +
+          `<button data-z="fit" class="indb-pv-fit" title="Fit all bars" aria-label="Fit all bars">` +
+            `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4M14 6V2h-4M10 14h4v-4M2 10v4h4"/></svg>` +
+          `</button>` +
+        `</div>` +
+      `</div>` +
+      `<div class="indb-preview-lbl">Live preview</div>` +
+      `<div class="indb-insp-tabs">` +
+        ["inputs", "style", "visibility"].map((t) =>
+          `<button class="indb-insp-tab${tab === t ? " on" : ""}" data-tab="${t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("") +
+      `</div>` +
+      `<div class="indb-insp-tabpane">` + indPaneHtml(spec, tab) + `</div>` +
+    `</div>` +
+    `<div class="indb-insp-foot">` +
+      (added
+        ? `<button class="indb-add remove" data-act="remove">Remove from chart</button>`
+        : `<button class="indb-reset" data-act="reset">Reset</button><button class="indb-add" data-act="add">Add to chart</button>`) +
+    `</div>`;
+
+  insp.querySelectorAll(".indb-insp-tab").forEach((b) => {
+    b.onclick = () => { state.indInspTab = b.dataset.tab; renderIndInspector(); };
+  });
+  insp.querySelector(".indb-insp-close").onclick = () => {
+    state.indSelected = null;
+    renderIndicatorList();
+    renderIndInspector();
+  };
+  indBindTabPane(insp, spec);
+  // Preview zoom controls (Item 7): +/− step by 1.4×, fit resets to 100%,
+  // and the mouse wheel over the preview zooms toward/away from the tail.
+  const zoomBox = insp.querySelector(".indb-pv-zoom");
+  if (zoomBox) {
+    zoomBox.querySelectorAll("[data-z]").forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const a = b.dataset.z;
+        if (a === "in") indPvSetZoom((state.indPvZoom || 1) * 1.4);
+        else if (a === "out") indPvSetZoom((state.indPvZoom || 1) / 1.4);
+        else indPvSetZoom(1);
+      };
+    });
+  }
+  const pvWrap = insp.querySelector(".indb-preview-wrap");
+  if (pvWrap) {
+    pvWrap.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      indPvSetZoom((state.indPvZoom || 1) * f);
+    }, { passive: false });
+  }
+  insp.querySelector(".indb-insp-foot").querySelectorAll("[data-act]").forEach((b) => {
+    b.onclick = () => {
+      const a = b.dataset.act;
+      if (a === "reset") { indSeedDefaults(spec); renderIndInspector(); }
+      else if (a === "add") { indApplyDraft(name, true); renderIndicatorList(); renderIndInspector(); }
+      else if (a === "remove") {
+        state.activeIndicators = state.activeIndicators.filter((i) => i.name !== name);
+        renderActiveIndicators();
+        loadChart();
+        saveShellState();
+        renderIndicatorList();
+        renderIndInspector();
+      }
+    };
+  });
+
+  indPreviewRender();
+}
+
+/* ---- live preview canvas ----
+   Fetches recent candles PLUS the selected indicator and draws the engine's
+   computed series over them (all 103 built-ins), so the preview matches the
+   chart. Sequenced + debounced so fast typing does not stack fetches. */
+let indPvTimer = null;
+function indPreviewSchedule() {
+  if (indPvTimer) clearTimeout(indPvTimer);
+  indPvTimer = setTimeout(indPreviewRender, 240);
+}
+function indCssCol(v, fallback) {
+  try { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback; }
+  catch (e) { return fallback; }
+}
+function indPvMsg(ctx, w, ht, msg) {
+  ctx.fillStyle = "rgba(255,255,255,.4)";
+  ctx.font = "11px ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(msg, w / 2, ht / 2);
+}
+/* ---- client-side core indicator maths ----
+   The engine skips indicators in hosted mode (the browser computes them), so
+   the preview computes a core set here to work everywhere. Each helper returns
+   an array aligned to the input, null until it has enough history. */
+const IND_PALETTE = ["#5b9bd5", "#d9a441", "#63b26a", "#b57bd5", "#d16d6d", "#4fb3a9"];
+function _sma(a, n) {
+  const o = Array(a.length).fill(null); let s = 0;
+  for (let i = 0; i < a.length; i++) { s += a[i]; if (i >= n) s -= a[i - n]; if (i >= n - 1) o[i] = s / n; }
+  return o;
+}
+function _ema(a, n) {
+  const o = Array(a.length).fill(null); const k = 2 / (n + 1); let e = null;
+  for (let i = 0; i < a.length; i++) { const v = a[i]; e = (e == null) ? v : v * k + e * (1 - k); if (i >= n - 1) o[i] = e; }
+  return o;
+}
+function _wma(a, n) {
+  const o = Array(a.length).fill(null); const d = n * (n + 1) / 2;
+  for (let i = n - 1; i < a.length; i++) { let s = 0; for (let j = 0; j < n; j++) s += a[i - j] * (n - j); o[i] = s / d; }
+  return o;
+}
+function _stddev(a, n) {
+  const o = Array(a.length).fill(null);
+  for (let i = n - 1; i < a.length; i++) {
+    let m = 0; for (let j = 0; j < n; j++) m += a[i - j]; m /= n;
+    let v = 0; for (let j = 0; j < n; j++) { const d = a[i - j] - m; v += d * d; }
+    o[i] = Math.sqrt(v / n);
+  }
+  return o;
+}
+function _rsi(a, n) {
+  const o = Array(a.length).fill(null); let g = 0, l = 0;
+  for (let i = 1; i < a.length; i++) {
+    const ch = a[i] - a[i - 1], up = Math.max(0, ch), dn = Math.max(0, -ch);
+    if (i <= n) { g += up; l += dn; if (i === n) { g /= n; l /= n; o[i] = 100 - 100 / (1 + (l === 0 ? 100 : g / l)); } }
+    else { g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n; o[i] = 100 - 100 / (1 + (l === 0 ? 100 : g / l)); }
+  }
+  return o;
+}
+function _macd(a, f, s, sig) {
+  const ef = _ema(a, f), es = _ema(a, s);
+  const macd = a.map((_, i) => (ef[i] != null && es[i] != null) ? ef[i] - es[i] : null);
+  const sigLine = _ema(macd.map((v) => v == null ? 0 : v), sig).map((v, i) => macd[i] == null ? null : v);
+  const hist = macd.map((v, i) => (v != null && sigLine[i] != null) ? v - sigLine[i] : null);
+  return { macd, signal: sigLine, hist };
+}
+function _wilder(a, n) {
+  const o = Array(a.length).fill(null); let e = null, seen = 0;
+  for (let i = 0; i < a.length; i++) { if (a[i] == null) continue; seen++; e = (e == null) ? a[i] : (e * (n - 1) + a[i]) / n; if (seen >= n) o[i] = e; }
+  return o;
+}
+function _atr(h, l, c, n) {
+  const tr = Array(c.length).fill(null);
+  for (let i = 0; i < c.length; i++) tr[i] = (i === 0) ? h[i] - l[i]
+    : Math.max(h[i] - l[i], Math.abs(h[i] - c[i - 1]), Math.abs(l[i] - c[i - 1]));
+  return _wilder(tr, n);
+}
+function _stoch(h, l, c, k, d) {
+  const kk = Array(c.length).fill(null);
+  for (let i = k - 1; i < c.length; i++) {
+    let hh = -Infinity, ll = Infinity;
+    for (let j = 0; j < k; j++) { hh = Math.max(hh, h[i - j]); ll = Math.min(ll, l[i - j]); }
+    kk[i] = hh === ll ? 50 : (c[i] - ll) / (hh - ll) * 100;
+  }
+  const dd = _sma(kk.map((v) => v == null ? 0 : v), d).map((v, i) => kk[i] == null ? null : v);
+  return { k: kk, d: dd };
+}
+function _cci(h, l, c, n) {
+  const tp = c.map((_, i) => (h[i] + l[i] + c[i]) / 3);
+  const ma = _sma(tp, n); const o = Array(c.length).fill(null);
+  for (let i = n - 1; i < c.length; i++) {
+    let md = 0; for (let j = 0; j < n; j++) md += Math.abs(tp[i - j] - ma[i]); md /= n;
+    o[i] = md === 0 ? 0 : (tp[i] - ma[i]) / (0.015 * md);
+  }
+  return o;
+}
+
+// Build plot descriptors for the selected spec + current draft params, or null
+// when the indicator is not in the core preview set.
+function indComputePlots(spec, candles, paramsOverride) {
+  const name = (spec.name + " " + (spec.title || "")).toLowerCase();
+  const has = (...ws) => ws.some((w) => name.includes(w));
+  const P = paramsOverride
+    || ((state.indDraft && state.indDraft.name === spec.name) ? state.indDraft.params : {});
+  const dflt = (k) => { const p = (spec.params || {})[k]; return p ? parseFloat(p.default) : undefined; };
+  const num = (k, d) => { let v = parseFloat(P[k]); if (!isFinite(v)) v = dflt(k); return isFinite(v) ? v : d; };
+  const closes = candles.map((c) => c[4]), highs = candles.map((c) => c[2]), lows = candles.map((c) => c[3]);
+  const lenKey = ["length", "period", "len", "window", "lookback", "n"].find((k) => (spec.params || {})[k] !== undefined);
+  const L = Math.max(1, Math.round(num(lenKey || "length", 14)));
+  const mk = (id, label, pane, type, values, ci) =>
+    ({ id, label, pane, type, values, color: IND_PALETTE[ci % IND_PALETTE.length], width: type === "hist" ? 1 : 2, visible: true });
+  if (has("bollinger", "bband")) {
+    const m = _sma(closes, L), sd = _stddev(closes, L), mult = num("mult", num("stddev", 2)) || 2;
+    return [mk("upper", "upper", "price", "line", m.map((v, i) => v == null ? null : v + mult * sd[i]), 0),
+            mk("middle", "middle", "price", "line", m, 1),
+            mk("lower", "lower", "price", "line", m.map((v, i) => v == null ? null : v - mult * sd[i]), 0)];
+  }
+  if (has("macd")) {
+    const r = _macd(closes, Math.round(num("fast", 12)), Math.round(num("slow", 26)), Math.round(num("signal", 9)));
+    return [mk("macd", "MACD", "sub", "line", r.macd, 0), mk("signal", "Signal", "sub", "line", r.signal, 1), mk("hist", "Histogram", "sub", "hist", r.hist, 2)];
+  }
+  if (has("rsi")) return [mk("rsi", "RSI " + L, "sub", "line", _rsi(closes, L), 0)];
+  if (has("stoch")) {
+    const r = _stoch(highs, lows, closes, Math.round(num("k", L)), Math.round(num("d", 3)));
+    return [mk("k", "%K", "sub", "line", r.k, 0), mk("d", "%D", "sub", "line", r.d, 1)];
+  }
+  if (has("cci")) return [mk("cci", "CCI " + L, "sub", "line", _cci(highs, lows, closes, L), 0)];
+  if (has("atr")) return [mk("atr", "ATR " + L, "sub", "line", _atr(highs, lows, closes, L), 0)];
+  if (has("ema")) return [mk("ema", "EMA " + L, "price", "line", _ema(closes, L), 0)];
+  if (has("wma")) return [mk("wma", "WMA " + L, "price", "line", _wma(closes, L), 0)];
+  if (has("sma") || has("moving average")) return [mk("sma", "SMA " + L, "price", "line", _sma(closes, L), 0)];
+  return null;
+}
+// Merge saved style/visibility overrides (state.indStyle) onto computed plots.
+function indStyleFor(spec) { state.indStyle = state.indStyle || {}; return state.indStyle[spec.name] || (state.indStyle[spec.name] = {}); }
+// Overlay the user's saved Style/Visibility overrides (state.indStyle, keyed by
+// column/plot id) onto computed plots. Overrides are stored ONLY when the user
+// changes something, so an unset plot keeps its computed default colour/width.
+function indApplyStyle(spec, plots) {
+  const st = indStyleFor(spec);
+  return plots.map((p) => {
+    const o = st[p.id] || {};
+    return { ...p, color: o.color || p.color, width: o.width || p.width, visible: o.visible !== false };
+  });
+}
+// The label the SERVER would give this indicator (name, or name(k=v;...)), so
+// the client payload collides on the same key and wins the merge below.
+function indClientLabel(item) {
+  const ps = Object.entries(item.params || {});
+  return item.name + (ps.length ? "(" + ps.map(([k, v]) => `${k}=${v}`).join(";") + ")" : "");
+}
+// Build an engineIndicators-shaped payload for the CORE indicator set from the
+// loaded candles. This is what makes indicators actually draw on the main chart
+// in hosted mode (where /api/candles returns none) AND what carries the panel's
+// Style/Visibility onto the chart. Non-core indicators are left to the server.
+function indClientPayload() {
+  const out = {};
+  const cd = state.candleData;
+  if (!cd || !cd.length) return out;
+  const arr = cd.map((c) => [c.time, c.open, c.high, c.low, c.close, c.volume]);
+  for (const item of state.activeIndicators || []) {
+    const spec = (state.indicatorSpecs || []).find((s) => s.name === item.name);
+    if (!spec) continue;
+    const plots = indComputePlots(spec, arr, item.params || {});
+    if (!plots) continue; // non-core: leave it to the server payload
+    const series = {};
+    for (const p of plots) {
+      const pts = [];
+      for (let i = 0; i < p.values.length; i++) {
+        const v = p.values[i];
+        if (v == null || !isFinite(v)) continue;
+        pts.push([Math.floor(cd[i].time / 1000), v]);
+      }
+      series[p.id] = {
+        kind: p.type === "hist" ? "histogram" : "line",
+        points: pts,
+        color: p.color,
+        width: p.width,
+        visible: true,
+      };
+    }
+    out[indClientLabel(item)] = { overlay: plots[0].pane === "price", series };
+  }
+  return out;
+}
+// Overlay the panel's Style/Visibility overrides onto an engineIndicators-shaped
+// payload, keyed by the SERVER's column names. Series objects are copied before
+// mutation so the cached server payload is never altered.
+function indApplyOverridesToPayload(payload) {
+  const all = state.indStyle || {};
+  for (const [label, ind] of Object.entries(payload)) {
+    const name = label.split("(")[0];
+    const ov = all[name];
+    if (!ov || !ind.series) continue;
+    for (const [col, s] of Object.entries(ind.series)) {
+      const o = ov[col];
+      if (!o) continue;
+      const next = { ...s };
+      if (o.color) next.color = o.color;
+      if (o.width) next.width = o.width;
+      if (o.visible !== undefined) next.visible = o.visible;
+      ind.series[col] = next;
+    }
+  }
+  return payload;
+}
+// Merge the client core payload (a fallback for the true embed mode, where the
+// server computes nothing) with the last server payload. The SERVER wins on a
+// colliding label — its maths is the tested source of truth — and the client
+// only fills labels the server did not return. Style/Visibility overrides are
+// then applied uniformly on top.
+function indMergedPayload() {
+  const merged = {};
+  for (const [k, v] of Object.entries(indClientPayload())) merged[k] = v;
+  for (const [k, v] of Object.entries(state.serverIndicators || {})) {
+    merged[k] = { overlay: v.overlay, series: { ...(v.series || {}) } }; // copy so overrides don't touch the cache
+  }
+  return indApplyOverridesToPayload(merged);
+}
+// Re-push indicators to the chart from the loaded candles WITHOUT a server
+// round-trip — used when Style/Visibility change (the maths is unchanged, only
+// colour/width/enabled), so the chart restyles instantly.
+function indRefreshChart() {
+  if (!state.candleData || !state.candleData.length) return;
+  state.engineIndicators = indMergedPayload();
+  pushToChart();
+}
+function _drawLine(ctx, x, w, n, p, yOf) {
+  ctx.strokeStyle = p.color; ctx.lineWidth = Math.max(1.8, p.width || 2);
+  ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.beginPath();
+  let started = false;
+  for (let i = 0; i < n; i++) {
+    const v = p.values[i];
+    if (v == null || !isFinite(v)) { started = false; continue; }
+    const cx = x + i * (w / n) + (w / n) / 2, cy = yOf(v);
+    if (!started) { ctx.moveTo(cx, cy); started = true; } else ctx.lineTo(cx, cy);
+  }
+  ctx.stroke();
+}
+function _drawPricePane(ctx, x, y, w, h, candles, plots) {
+  const padY = 8; let lo = Infinity, hi = -Infinity;
+  for (const c of candles) { lo = Math.min(lo, c[3]); hi = Math.max(hi, c[2]); }
+  for (const p of plots) for (const v of p.values) if (v != null && isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (!(hi > lo)) { indPvMsg(ctx, w, h, "No range"); return; }
+  const n = candles.length, cw = w / n;
+  const yOf = (v) => y + padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
+  const up = indCssCol("--up", "#63b26a"), down = indCssCol("--down", "#d16d6d");
+  // Candles are compressed tight and drawn dimmer than the indicator lines, so
+  // the indicator/script reads clearly on top instead of fighting the bodies.
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  for (let i = 0; i < n; i++) {
+    const [, o, hh, ll, c] = candles[i];
+    const cx = x + i * cw + cw / 2, green = c >= o;
+    ctx.strokeStyle = ctx.fillStyle = green ? up : down; ctx.lineWidth = Math.min(1, cw * 0.16);
+    ctx.beginPath(); ctx.moveTo(cx, yOf(hh)); ctx.lineTo(cx, yOf(ll)); ctx.stroke();
+    const bw = Math.max(0.75, cw * 0.5), yo = yOf(o), yc = yOf(c);
+    ctx.fillRect(cx - bw / 2, Math.min(yo, yc), bw, Math.max(0.75, Math.abs(yc - yo)));
+  }
+  ctx.restore();
+  for (const p of plots) _drawLine(ctx, x, w, n, p, yOf);
+}
+function _drawSubPane(ctx, x, y, w, h, plots) {
+  const padY = 6; let lo = Infinity, hi = -Infinity;
+  for (const p of plots) for (const v of p.values) if (v != null && isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const hasHist = plots.some((p) => p.type === "hist");
+  if (hasHist) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (!(hi > lo)) { if (!isFinite(lo)) { indPvMsg(ctx, w, h, "No data"); return; } hi = lo + 1; lo -= 1; }
+  const n = plots[0].values.length, cw = w / n;
+  const yOf = (v) => y + padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
+  if (lo < 0 && hi > 0) { ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, yOf(0)); ctx.lineTo(x + w, yOf(0)); ctx.stroke(); }
+  const down = indCssCol("--down", "#d16d6d");
+  for (const p of plots) {
+    if (p.type === "hist") {
+      const bw = Math.max(1, cw * 0.6);
+      for (let i = 0; i < n; i++) { const v = p.values[i]; if (v == null || !isFinite(v)) continue; const cx = x + i * cw + cw / 2, y0 = yOf(0), y1 = yOf(v); ctx.fillStyle = v >= 0 ? p.color : down; ctx.fillRect(cx - bw / 2, Math.min(y0, y1), bw, Math.max(1, Math.abs(y1 - y0))); }
+    } else { _drawLine(ctx, x, w, n, p, yOf); }
+  }
+}
+// Convert a server indicator payload entry ({overlay, series:{col:{kind,points}}})
+// into preview plot descriptors, aligning each sparse [ts,value] series onto the
+// candle index (the candle ts and the point ts come from the same server frame,
+// so they match exactly). Returns null when nothing lands on a candle.
+function indPayloadPlots(ind, candles, name) {
+  const cols = Object.keys(ind.series || {});
+  if (!cols.length) return null;
+  const idxByTime = new Map();
+  for (let i = 0; i < candles.length; i++) idxByTime.set(candles[i][0], i);
+  const ov = (state.indStyle || {})[name] || {};
+  let anyHit = false;
+  const plots = cols.map((col, idx) => {
+    const s = ind.series[col];
+    const values = new Array(candles.length).fill(null);
+    for (const [ts, v] of (s.points || [])) {
+      const i = idxByTime.get(ts);
+      if (i !== undefined) { values[i] = v; anyHit = true; }
+    }
+    const o = ov[col] || {};
+    return {
+      id: col, label: col, pane: ind.overlay ? "price" : "sub",
+      type: s.kind === "histogram" ? "hist" : "line",
+      values,
+      color: o.color || IND_PALETTE[idx % IND_PALETTE.length],
+      width: o.width || 2,
+      visible: o.visible !== false,
+    };
+  });
+  return anyHit ? plots : null;
+}
+// Draw an already-styled set of plots over the candles: overlays share the price
+// pane, oscillators get their own sub-pane. Hidden plots are dropped by caller.
+function indDrawPreview(ctx, w, ht, candles, plots, noteName) {
+  if (!candles.length) { indPvMsg(ctx, w, ht, "No candles"); return; }
+  // Zoom (Item 7): show only the last N bars, where N shrinks as the user zooms
+  // in, so each candle gets wider and the indicator/script line reads clearly.
+  // Candles AND every plot series are sliced by the same window so index i of a
+  // plot still lines up with index i of the candles.
+  const z = state.indPvZoom || 1;
+  if (z > 1.001 && candles.length > 12) {
+    const show = Math.max(12, Math.min(candles.length, Math.round(candles.length / z)));
+    const start = candles.length - show;
+    candles = candles.slice(start);
+    if (plots) plots = plots.map((p) => ({ ...p, values: (p.values || []).slice(start) }));
+  }
+  const vis = plots ? plots.filter((p) => p.visible !== false) : [];
+  const subPlots = vis.filter((p) => p.pane === "sub");
+  const pricePlots = vis.filter((p) => p.pane === "price");
+  const gap = 8;
+  const priceH = subPlots.length ? Math.round(ht * 0.62) : ht;
+  _drawPricePane(ctx, 0, 0, w, priceH, candles, pricePlots);
+  if (subPlots.length) {
+    ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, priceH + gap / 2); ctx.lineTo(w, priceH + gap / 2); ctx.stroke();
+    _drawSubPane(ctx, 0, priceH + gap, w, ht - priceH - gap, subPlots);
+  }
+  if (noteName) {
+    ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("preview: candles \u2014 add to chart to compute " + noteName, w / 2, ht - 4);
+  }
+}
+// The indicator query for the selected draft, in the engine's parse format
+// ("name" or "name:k=v;k=v"), sending only non-default params.
+function indDraftQuery(spec) {
+  const p = indDraftToParams(spec);
+  const ent = Object.entries(p);
+  return spec.name + (ent.length ? ":" + ent.map(([k, v]) => `${k}=${v}`).join(";") : "");
+}
+// Remember the plot columns discovered for an indicator so the Style/Visibility
+// tabs can list exactly the plots this indicator draws (any number of them).
+function indSetCols(name, plots) {
+  state.indPvCols = state.indPvCols || {};
+  state.indPvCols[name] = plots.map((p) => ({ id: p.id, label: p.label, type: p.type }));
+}
+async function indPreviewRender() {
+  const cv = document.getElementById("indb-preview");
+  if (!cv) return;
+  const rect = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width));
+  const ht = Math.max(1, Math.round(rect.height));
+  cv.width = w * dpr;
+  cv.height = ht * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, ht);
+  if (!state.provider || !state.symbol) { indPvMsg(ctx, w, ht, "Chart a symbol to preview"); return; }
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === state.indSelected);
+  const seq = (state.indPvSeq = (state.indPvSeq || 0) + 1);
+  // Fetch candles AND the selected indicator: the engine computes it (all 103
+  // built-ins, tested maths) and returns timestamped series we draw directly.
+  // Only the true site-embed (LSE_TERMINAL_HOSTED) computes nothing; there we
+  // fall back to the client core set below.
+  const q = spec ? indDraftQuery(spec) : "";
+  let data;
+  try {
+    const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
+      `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
+      `&limit=400&indicators=${encodeURIComponent(q)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("http");
+    data = await r.json();
+  } catch (e) {
+    if (seq === state.indPvSeq) indPvMsg(ctx, w, ht, "Preview unavailable (no live data)");
+    return;
+  }
+  if (seq !== state.indPvSeq) return;
+  const candles = data.candles || [];
+  let plots = null, note = null;
+  const entry = spec ? Object.values(data.indicators || {})[0] : null;
+  if (entry) plots = indPayloadPlots(entry, candles, spec.name);
+  if (spec && !plots) {
+    // Embed fallback: compute the core set on the client, honouring overrides.
+    const cp = indComputePlots(spec, candles);
+    if (cp) plots = indApplyStyle(spec, cp);
+    else note = spec.name;
+  }
+  if (plots) indSetCols(spec.name, plots);
+  // Cache the resolved series so the zoom buttons / wheel can re-slice and
+  // repaint instantly without re-fetching from the engine.
+  state.indPvCache = { candles, plots, note };
+  indDrawPreview(ctx, w, ht, candles, plots, note);
+  // Now that the real plot columns are known, fill in the Style/Visibility tabs.
+  indUpdateTabPane();
+}
+
+// Repaint the preview from the cached series at the current zoom (no fetch).
+function indPreviewRedraw() {
+  const cv = document.getElementById("indb-preview");
+  const cache = state.indPvCache;
+  if (!cv || !cache) return;
+  const rect = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width));
+  const ht = Math.max(1, Math.round(rect.height));
+  cv.width = w * dpr;
+  cv.height = ht * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, ht);
+  indDrawPreview(ctx, w, ht, cache.candles, cache.plots, cache.note);
+}
+
+// Set the preview zoom (1 = fit all bars, up to 8× in), update the readout and
+// repaint. Called by the +/−/fit buttons and the mouse wheel.
+function indPvSetZoom(z) {
+  state.indPvZoom = Math.max(1, Math.min(8, z));
+  const lvl = document.getElementById("indb-pv-zlvl");
+  if (lvl) lvl.textContent = Math.round(state.indPvZoom * 100) + "%";
+  indPreviewRedraw();
 }
 
 // The parameter editor: one input per spec param (already typed and bounded
@@ -1145,40 +2142,82 @@ function openIndicatorConfig(item, anchor) {
   $("cfg-close").onclick = () => cfg.classList.add("hidden");
 }
 
+// Open the advanced browser (centred modal). Populates all three columns and
+// auto-selects a card so the inspector is never empty.
+function openIndicatorBrowser() {
+  const panel = $("ind-panel");
+  if (!panel.classList.contains("hidden")) return;
+  state.indCat = state.indCat || "all";
+  state.indChips = state.indChips || { overlay: false, pane: false, fav: false };
+  indFetchUserNames();                 // async; re-renders cats/list when it lands
+  renderIndCats();
+  renderIndChips();
+  // Keep a valid selection; default to the first spec so the inspector shows.
+  if (!state.indSelected || !(state.indicatorSpecs || []).some((s) => s.name === state.indSelected)) {
+    state.indSelected = (state.indicatorSpecs || [])[0] ? state.indicatorSpecs[0].name : null;
+  }
+  if (state.indSelected) {
+    const spec = state.indicatorSpecs.find((s) => s.name === state.indSelected);
+    if (spec) indSeedDraft(spec);
+  }
+  renderIndicatorList();
+  renderIndInspector();
+  panel.classList.remove("hidden");
+  setTimeout(() => { const s = $("ind-search"); if (s) s.focus(); }, 0);
+}
+
+function indFetchUserNames() {
+  fetch("/api/user-indicators")
+    .then((r) => (r.ok ? r.json() : []))
+    .then((items) => {
+      indUserNames = new Set();
+      for (const it of (items || [])) for (const nm of (it.names || [])) indUserNames.add(nm);
+      if (!$("ind-panel").classList.contains("hidden")) { renderIndCats(); renderIndicatorList(); }
+    })
+    .catch(() => { /* no user indicators / offline: category stays empty */ });
+}
+
 function setupIndicatorPanel() {
   $("ind-open").onclick = (e) => {
     e.stopPropagation();
     const panel = $("ind-panel");
-    const opening = panel.classList.contains("hidden");
-    closeIndPanels();
-    if (!opening) return;
-    renderIndicatorList();
-    panel.classList.remove("hidden");
-    positionPanel(panel, $("ind-open"));
-    $("ind-search").focus();
+    if (!panel.classList.contains("hidden")) { closeIndPanels(); return; }
+    openIndicatorBrowser();
   };
   // The chart's tool rail and settings affordances (React island) have no
-  // indicator dialog of their own since the built-in indicator dialog was retired; they
-  // raise this event to open the shell's browser instead.
-  window.addEventListener("lset:open-indicators", () => {
-    // Deferred: the originating click is still bubbling and would hit the
-    // click-away closer below, shutting the panel the moment it opened.
-    setTimeout(() => {
-      const panel = $("ind-panel");
-      if (!panel.classList.contains("hidden")) return;
-      renderIndicatorList();
-      panel.classList.remove("hidden");
-      positionPanel(panel, $("ind-open"));
-      $("ind-search").focus();
-    }, 0);
-  });
+  // indicator dialog of their own; they raise this event to open the browser.
+  // Deferred so the originating click finishes bubbling first.
+  window.addEventListener("lset:open-indicators", () => setTimeout(openIndicatorBrowser, 0));
   $("ind-search").oninput = renderIndicatorList;
+  // Catalog layout toggle (Item 7): Cards ↔ Columns, remembered across sessions.
+  try { state.indListView = localStorage.getItem("gt-ind-view") === "columns" ? "columns" : "cards"; } catch (e) { state.indListView = "cards"; }
+  const syncViewBtns = () => {
+    const cards = $("indb-view-cards"), colsB = $("indb-view-cols");
+    if (cards) cards.classList.toggle("on", state.indListView !== "columns");
+    if (colsB) colsB.classList.toggle("on", state.indListView === "columns");
+  };
+  const setView = (v) => {
+    state.indListView = v;
+    try { localStorage.setItem("gt-ind-view", v); } catch (e) { /* storage off */ }
+    syncViewBtns();
+    renderIndicatorList();
+  };
+  if ($("indb-view-cards")) $("indb-view-cards").onclick = () => setView("cards");
+  if ($("indb-view-cols")) $("indb-view-cols").onclick = () => setView("columns");
+  syncViewBtns();
   $("ind-create").onclick = () => { closeIndPanels(); openEditor(); };
-  // Click-away closes; clicks inside the panels stay.
+  $("indb-backdrop").onclick = () => closeIndPanels();
+  // Esc closes the modal.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("ind-panel").classList.contains("hidden")) closeIndPanels();
+  });
+  // Click-away still closes the legacy #ind-cfg popup (chip-strip editor);
+  // the modal itself is dismissed via its backdrop / Esc, never this handler
+  // (all its content lives inside #ind-panel, so contains() is always true).
   document.addEventListener("click", (e) => {
     if (!$("ind-panel").contains(e.target) && !$("ind-cfg").contains(e.target) &&
         e.target !== $("ind-open")) {
-      closeIndPanels();
+      $("ind-cfg").classList.add("hidden");
     }
   });
 }
@@ -3069,6 +4108,23 @@ function renderTimeframes() {
     }
     nav.appendChild(b);
   }
+  syncBarTypeSelector();
+}
+
+/* Keeps the cTrader-style timeframe/bar-type mega-selector (mounted into
+   #bar-type-slot by the chart bundle) showing the shell's current timeframe
+   and chart type. No-ops until the bundle has mounted the selector and handed
+   back its updater, so it is safe to call from the early boot render passes. */
+function syncBarTypeSelector() {
+  if (typeof window.__btSelUpdate === "function") {
+    try { window.__btSelUpdate({ timeframe: state.timeframe, chartType: state.chartType }); }
+    catch (e) { /* selector not ready */ }
+  }
+  // Keep the dedicated Bar-style menu's trigger label in step too (feature 2).
+  if (typeof window.__ctMenuUpdate === "function") {
+    try { window.__ctMenuUpdate(state.chartType); }
+    catch (e) { /* menu not ready */ }
+  }
 }
 
 /* The resolution a dataset was imported at ("30m"), or "" for anything not in
@@ -3395,6 +4451,46 @@ function setupLayouts() {
       pushToChart();
       return true;
     },
+    // Phase 1b: the chart bundle's per-pane symbol browser (Watchlists tab)
+    // reads the ACTIVE provider's saved lists through here. Shape matches the
+    // shell store: [{ id, name, symbols[] }]. Returns [] before wlEnsure has a
+    // provider, so the bundle simply shows its empty state.
+    getWatchlists: () => {
+      try {
+        return wlLists().map((l) => ({
+          id: l.id,
+          name: l.name,
+          symbols: Array.isArray(l.symbols) ? l.symbols.slice() : [],
+        }));
+      } catch (_) { return []; }
+    },
+    // Phase 2 (History Navigator): "Go to date/range" past the loaded window.
+    // Pages a REAL candle window [startSec, endSec] from the engine and shows
+    // it, pinning history so live ticks don't graft a bar onto an old view.
+    // Returns the number of bars loaded (0 = nothing served → caller keeps its
+    // current data rather than blanking the chart).
+    loadHistoryWindow: async (startSec, endSec) => {
+      if (!state.provider || !state.symbol) return 0;
+      try {
+        const startISO = new Date(Math.max(0, startSec) * 1000).toISOString();
+        const endISO = new Date(Math.max(0, endSec) * 1000).toISOString();
+        const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
+          `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
+          `&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}&limit=5000`;
+        const res = await fetch(url);
+        if (!res.ok) return 0;
+        const data = await res.json();
+        const rows = (data.candles || []).map(([t, o, h, l, c, v]) =>
+          ({ time: t, open: o, high: h, low: l, close: c, volume: v }));
+        if (!rows.length) return 0;
+        state.candleData = rows;
+        state.historyPinned = true;   // browsing history: pause live bar-forming
+        pushToChart();
+        return rows.length;
+      } catch (e) { return 0; }
+    },
+    // Return to the live tail (Navigator "Latest"): unpin and reload recent.
+    reloadLatest: () => { state.historyPinned = false; loadChart(); },
     layouts: () => layoutsZone.rows.map((r) => ({ id: r.id, name: r.name })),
     applyLayout: (id) => {
       const row = layoutsZone.rows.find((r) => r.id === id);
@@ -10537,6 +11633,13 @@ document.addEventListener("dblclick", (e) => {
   focusEnter(typeof st.activePanel === "number" ? st.activePanel : 0);
 });
 if ($("focus-back")) $("focus-back").onclick = focusExit;
+// The per-pane header's ⤢ button (rendered by TerminalMultiGrid) asks the shell
+// to focus that pane solo. Decoupled via a DOM event so the React island needs
+// no direct handle on the shell's focus machinery.
+window.addEventListener("gt-focus-pane", (e) => {
+  const i = e && e.detail && typeof e.detail.index === "number" ? e.detail.index : 0;
+  focusEnter(i);
+});
 
 /* ═══ Top-tools dock: Lasso + camera live in the TOPLINE (upper bar) in ══
    normal mode and ride the fullscreen command strip in ws-fullscreen. ONE
@@ -10576,6 +11679,14 @@ function paneGrid() {
 }
 function paneBadgesUpdate() {
   let wrap = $("pane-badges");
+  // Pane badges RETIRED. Each pane now carries its own interactive header
+  // (pair picker + timeframe/bar selector + a ⤢ focus button), so the old
+  // top-left overlay badge only duplicated that info AND covered the pair
+  // picker on first load. Keep the element hidden; the header's ⤢ button
+  // dispatches "gt-focus-pane" which drives focusEnter() below.
+  if (wrap) wrap.classList.add("hidden");
+  return;
+  // eslint-disable-next-line no-unreachable
   const ls = window.LSEChart && window.LSEChart.layoutStore;
   const st = ls && ls.get ? ls.get() : null;
   const grid = paneGrid();
@@ -14004,6 +15115,17 @@ function setupRail() {
     $("guide").classList.remove("hidden");
     gdOpen();
   };
+  // Item 3: DISPLAY is a modal overlay, not a section — it opens over whatever
+  // is on screen and never changes the active rail section.
+  const dispBtn = $("rail-display");
+  if (dispBtn) dispBtn.onclick = () => dispOpen();
+  const dispBd = $("disp-backdrop");
+  if (dispBd) dispBd.onclick = dispClose;
+  const dispX = $("disp-close");
+  if (dispX) dispX.onclick = dispClose;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("display-panel").classList.contains("hidden")) dispClose();
+  });
 }
 
 /* The MARKETS connect form. Saving is not enough: the key is proved against
@@ -16935,6 +18057,10 @@ async function boot() {
     state.chartType = shell.chartType;
     $("chart-type").value = shell.chartType;
   }
+  // Item 3: restore Display prefs (interface scale / density / panels) and
+  // apply them before the first paint so the UI opens at the saved size.
+  if (shell && shell.display && typeof shell.display === "object") state.display = shell.display;
+  if (typeof dispApply === "function") dispApply();
   // Phase 2 workspace: reopen the charted instrument + timeframe as left.
   // Symbol apply happens after providers load (see boot restore below);
   // stash until then so a half-ready boot cannot fetch with a null provider.
@@ -16975,6 +18101,7 @@ async function boot() {
     state.chartType = e.target.value;
     pushToChart();
     saveShellState();
+    syncBarTypeSelector();
   };
 
   // Chart colours & settings: opens the appearance dialog inside the mounted
@@ -19054,6 +20181,59 @@ try {
     // Title follows the selected pane: re-derive it whenever the layout,
     // selection, or a pane's symbol changes.
     try { window.LSEChart.layoutStore.subscribe(() => { try { updateWindowTitle(); } catch (e) { /* pre-init */ } }); } catch (e) { /* bundle without layoutStore */ }
+    // cTrader-style timeframe / bar-type mega-selector, mounted beside the
+    // timeframe rail. Its onChange drives the shell's own state (and keeps the
+    // rail + chart-type <select> in step); __btSelUpdate lets those controls
+    // push their changes back to the button label. Non-fatal if unavailable.
+    try {
+      const btEl = document.getElementById("bar-type-slot");
+      if (btEl && typeof window.LSEChart.mountTimeframeSelector === "function") {
+        window.__btSelUpdate = window.LSEChart.mountTimeframeSelector(
+          btEl,
+          { timeframe: state.timeframe, chartType: state.chartType },
+          (sel) => {
+            state.timeframe = sel.timeframe;
+            state.chartType = sel.chartType;
+            const ct = document.getElementById("chart-type");
+            if (ct) ct.value = sel.chartType;
+            renderTimeframes();
+            loadChart();
+            saveShellState();
+          }
+        );
+      }
+    } catch (e) { console.error("bar-type selector", e); }
+    // Feature 2: dedicated advanced Bar-style menu (15 types, 4 groups, search
+    // + live descriptions) in its own toolbar slot. It drives ONLY the chart
+    // type (timeframe stays with the ⋮ menu): a change re-renders in place via
+    // pushToChart (no data round-trip). __ctMenuUpdate keeps its trigger label
+    // in step when the type changes elsewhere (syncBarTypeSelector).
+    try {
+      const ctEl = document.getElementById("chart-type-slot");
+      if (ctEl && typeof window.LSEChart.mountChartTypeMenu === "function") {
+        window.__ctMenuUpdate = window.LSEChart.mountChartTypeMenu(
+          ctEl,
+          state.chartType,
+          (chartType) => {
+            state.chartType = chartType;
+            const ct = document.getElementById("chart-type");
+            if (ct) ct.value = chartType;
+            pushToChart();
+            saveShellState();
+            syncBarTypeSelector();
+          }
+        );
+      }
+    } catch (e) { console.error("chart-type menu", e); }
+    // Phase 2: History Navigator (quick ranges + Go to date/range) over the
+    // time axis. Reads the loaded candles and drives the chart viewport; the
+    // "Go to" older-than-loaded path calls back into loadHistoryWindow above.
+    try {
+      const gnEl = document.getElementById("goto-nav-slot");
+      if (gnEl && typeof window.LSEChart.mountGoToNavigator === "function") {
+        window.LSEChart.mountGoToNavigator(gnEl);
+      }
+    } catch (e) { console.error("goto navigator", e); }
   } else {
     setTimeout(mountLayoutBtn, 250);
   }

@@ -113,6 +113,9 @@ header {
   padding: 4px 12px; flex-wrap: nowrap; overflow-x: auto;
   background: var(--panel); border-bottom: 1px solid var(--accent-bar);
   scrollbar-width: none;
+  /* Lives at the top of the #charts flex column now (moved out of <header>);
+     keep its own height and full chart-column width. */
+  flex: none;
 }
 #controls::-webkit-scrollbar { display: none; }
 #controls .ws-sep {
@@ -145,6 +148,8 @@ input#symbol:focus { outline: none; border-color: var(--dim); }
    (it is first of the pair, so the push carries Chart layout right with it),
    Chart layout follows with a small gap (the layout picker sits to the
    LEFT of Chart layout on the right-hand side). */
+/* Right-aligned toolbar group: #sl-slot owns the auto push so the layout /
+   templates / workspace controls sit at the right edge. */
 #controls > #sl-slot { margin-left: auto; }
 /* No extra margin: the toolbar's own 4px gap is the whole separation
    (the 8px margin plus both buttons' transparent padding read as too
@@ -171,6 +176,7 @@ input#symbol:focus { outline: none; border-color: var(--dim); }
   padding: 4px 7px;
 }
 #controls select:hover { color: var(--text); }
+/* The timeframe rail LEADS the toolbar at the far left. */
 nav#timeframes { display: flex; gap: 1px; margin-right: 8px; flex: none; }
 nav#timeframes button { border-radius: 2px; padding: 3px 7px; color: var(--dim); border-color: transparent; font-variant-numeric: tabular-nums; }
 nav#timeframes button.active { color: #0a0f0c; background: var(--accent-bar); }
@@ -212,11 +218,10 @@ nav#timeframes button:disabled { opacity: .35; cursor: default; }
   margin-right: 5px; vertical-align: middle; border-radius: 50%;
   background: currentColor;
 }
-#ind-active {
-  display: flex; gap: 4px; flex-wrap: wrap; padding: 0 10px;
-  background: var(--panel); border-bottom: 1px solid var(--edge);
-}
-#ind-active:not(:empty) { padding: 4px 10px; }
+/* The old active-indicator chip strip above the chart is retired: indicators
+   now live in the on-chart legend (OnChartHUD). The element stays in the DOM
+   as the anchor fallback for editIndicator(), but never takes any space. */
+#ind-active { display: none; }
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--active); border: 1px solid var(--edge); border-radius: 2px;
@@ -2032,7 +2037,13 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
   background: var(--accent-bar); border: none; cursor: pointer;
   opacity: .85; transition: opacity .18s ease;
 }
-#dockzone:hover #dock-handle, #dockzone:focus-within #dock-handle { opacity: 0; }
+/* Only a DIRECT hover of the brass handle itself (or the already-open pill, or
+   keyboard focus) melts the handle away. Hovering merely NEAR the zone no
+   longer counts — the collapsed pill used to occupy invisible space above the
+   handle, so being close popped G-FLOW open. Gated on #dock-handle:hover now. */
+#dockzone:has(#dock-handle:hover) #dock-handle,
+#dockzone:has(#subrail:hover) #dock-handle,
+#dockzone:focus-within #dock-handle { opacity: 0; }
 #subrail {
   display: flex; justify-content: center; gap: 4px;
   margin: 0 0 8px; padding: 6px 8px;
@@ -2046,7 +2057,12 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
   opacity: 0; transform: translateY(8px) scale(.97); pointer-events: none;
   transition: opacity .18s ease .12s, transform .18s ease .12s;
 }
-#dockzone:hover #subrail, #dockzone:focus-within #subrail {
+/* Open the pill on a direct handle hover; keep it open while the pointer is
+   inside the pill itself (the .12s close delay above covers the tiny gap the
+   pointer crosses travelling from the handle up into the pill). */
+#dockzone:has(#dock-handle:hover) #subrail,
+#subrail:hover,
+#dockzone:focus-within #subrail {
   opacity: 1; transform: none; pointer-events: auto;
   transition-delay: 0s;
 }
@@ -2509,13 +2525,13 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 .tree-saved-backtest:hover .md-actions { top: auto; bottom: 3px; transform: none; }
 
 /* indicator browser + parameter editor (JS-positioned dropdown cards) */
-#ind-panel, #ind-cfg, #tpl-panel {
+#ind-cfg, #tpl-panel {
   position: fixed; z-index: 60; width: 280px;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 2px;
   box-shadow: 0 6px 20px var(--shadow); padding: 6px;
   display: flex; flex-direction: column; gap: 5px;
 }
-#ind-panel.hidden, #ind-cfg.hidden, #tpl-panel.hidden { display: none; }
+#ind-cfg.hidden, #tpl-panel.hidden { display: none; }
 /* Template rows share the indicator-row look; the delete x arms red. */
 .tpl-row {
   display: flex; align-items: center; gap: 8px;
@@ -2533,32 +2549,173 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 #tpl-name-row { display: flex; gap: 4px; align-items: center; }
 #tpl-name-input { flex: 1; min-width: 0; font-size: 12px; }
 #tpl-name-save { flex: none; font-size: 12px; }
-#ind-search { width: 100%; }
-#ind-list { max-height: 320px; overflow-y: auto; }
-.ind-row {
-  display: flex; align-items: center; gap: 7px;
-  padding: 4px 7px; border-radius: 2px; cursor: pointer;
+/* ── Item 7: advanced indicator browser ──────────────────────────────────
+   A centred modal over a dimmed backdrop, three columns:
+   [category rail] [search + card catalog] [live inspector]. */
+#ind-panel {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center;
 }
-.ind-row:hover { background: var(--edge); }
-.ind-row.active .ind-title { color: var(--text); }
-.ind-check { width: 14px; color: var(--up); flex: none; }
-.ind-title { flex: 1; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ind-tag { font-size: 10px; color: var(--dim); border: 1px solid var(--edge); border-radius: 2px; padding: 0 4px; flex: none; letter-spacing: .04em; }
-.ind-gear { border: none; background: none; color: var(--dim); padding: 2px 4px; flex: none; }
-.ind-gear:hover { color: var(--text); }
-/* Hover-reveal star, always visible once set: the resting list stays quiet,
-   favourites read at a glance. */
-.ind-star {
-  border: none; background: none; color: var(--dim); padding: 2px 4px;
-  flex: none; font-size: 12px; visibility: hidden; cursor: pointer;
+#ind-panel.hidden { display: none; }
+#indb-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .55); }
+#indb-modal {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 184px minmax(340px, 1fr) 322px;
+  width: min(1080px, 94vw); height: min(680px, 88vh);
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px;
+  box-shadow: 0 18px 60px var(--shadow); overflow: hidden;
 }
-.ind-row:hover .ind-star { visibility: visible; }
-.ind-star:hover { color: var(--text); }
-.ind-star.fav { visibility: visible; color: var(--accent-bar); }
-.ind-sep { height: 1px; background: var(--edge); margin: 3px 6px; }
-.ind-empty { padding: 8px; color: var(--dim); }
-#ind-create { width: 100%; text-align: left; color: var(--dim); border-style: dashed; }
-#ind-create:hover { color: var(--text); }
+
+/* LEFT — category rail */
+#indb-cats {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 14px 8px; border-right: 1px solid var(--edge);
+  background: var(--bg); overflow-y: auto;
+}
+.indb-cat {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 4px; cursor: pointer;
+  color: var(--dim); font-size: 12.5px; border-left: 2px solid transparent;
+  white-space: nowrap;
+}
+.indb-cat:hover { background: var(--edge); color: var(--text); }
+.indb-cat.active {
+  color: var(--text); background: color-mix(in srgb, var(--accent-bar) 14%, transparent);
+  border-left-color: var(--accent-bar);
+}
+.indb-cat .indb-cat-n { margin-left: auto; color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.indb-cat.active .indb-cat-n { color: var(--text); }
+.indb-cat-star { color: var(--accent-bar); font-size: 12px; }
+.indb-cat-sep { height: 1px; background: var(--edge); margin: 8px 6px; }
+
+/* CENTER — catalog */
+#indb-catalog { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#indb-head { padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 9px; border-bottom: 1px solid var(--edge); }
+#ind-search {
+  width: 100%; background: var(--bg); border: 1px solid var(--edge);
+  border-radius: 6px; padding: 8px 11px; color: var(--text); font-size: 13px;
+}
+#ind-search:focus { outline: none; border-color: var(--dim); }
+#indb-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.indb-chip {
+  font-size: 11px; color: var(--dim); background: transparent;
+  border: 1px solid var(--edge); border-radius: 999px; padding: 3px 11px;
+  cursor: pointer; letter-spacing: .02em;
+}
+.indb-chip:hover { color: var(--text); border-color: var(--dim); }
+.indb-chip.on { color: #0a0f0c; background: var(--accent-bar); border-color: var(--accent-bar); }
+
+/* Search row + catalog layout toggle (Item 7) */
+.indb-head-top { display: flex; align-items: center; gap: 8px; }
+.indb-head-top #ind-search { flex: 1; }
+#indb-view { display: inline-flex; flex: none; border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; }
+.indb-view-btn {
+  display: flex; align-items: center; justify-content: center; width: 30px; height: 32px;
+  background: var(--bg); border: none; color: var(--dim); cursor: pointer; padding: 0;
+}
+.indb-view-btn + .indb-view-btn { border-left: 1px solid var(--edge); }
+.indb-view-btn:hover { color: var(--text); }
+.indb-view-btn.on { color: #0a0f0c; background: var(--accent-bar); }
+
+#ind-list {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px; align-content: start;
+}
+/* Columns view: dense multi-column list (dot · title · star) */
+#ind-list.indb-list-cols {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 2px 14px;
+}
+.indb-crow {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 5px 8px; border-radius: 5px; cursor: pointer; border: 1px solid transparent;
+}
+.indb-crow:hover { background: var(--bg2, rgba(255,255,255,.04)); }
+.indb-crow.selected { border-color: var(--accent-bar); box-shadow: 0 0 0 1px var(--accent-bar) inset; }
+.indb-crow-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--edge); }
+.indb-crow.added .indb-crow-dot { background: var(--up); }
+.indb-crow-title { flex: 1; color: var(--text); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.indb-crow .indb-card-star { font-size: 12px; }
+.indb-card {
+  position: relative; display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 11px 9px; border: 1px solid var(--edge); border-radius: 7px;
+  background: var(--bg); cursor: pointer; min-width: 0;
+}
+.indb-card:hover { border-color: var(--dim); }
+.indb-card.selected { border-color: var(--accent-bar); box-shadow: 0 0 0 1px var(--accent-bar) inset; }
+.indb-card-top { display: flex; align-items: center; gap: 6px; }
+.indb-card-title { flex: 1; color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.indb-card-sub { color: var(--dim); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.indb-card-star { border: none; background: none; color: var(--dim); padding: 0; font-size: 13px; line-height: 1; flex: none; cursor: pointer; }
+.indb-card-star:hover { color: var(--text); }
+.indb-card-star.fav { color: var(--accent-bar); }
+.indb-spark { display: block; width: 100%; height: 34px; margin: 3px 0 1px; }
+.indb-card-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; }
+.indb-card-tag { font-size: 9.5px; color: var(--dim); border: 1px solid var(--edge); border-radius: 3px; padding: 0 5px; letter-spacing: .05em; text-transform: uppercase; }
+.indb-card-added { margin-left: auto; font-size: 10px; color: var(--accent-bar); display: none; }
+.indb-card.added .indb-card-added { display: inline; }
+.indb-card.added { border-color: color-mix(in srgb, var(--accent-bar) 45%, var(--edge)); }
+.ind-empty { grid-column: 1 / -1; padding: 24px 8px; color: var(--dim); text-align: center; }
+#ind-create {
+  flex: none; margin: 0 16px 14px; text-align: left; color: var(--dim);
+  background: transparent; border: 1px dashed var(--edge); border-radius: 6px; padding: 8px 11px;
+}
+#ind-create:hover { color: var(--text); border-color: var(--dim); }
+
+/* RIGHT — inspector (Part B fills the live preview + Style/Visibility) */
+#indb-inspector {
+  display: flex; flex-direction: column; min-height: 0;
+  border-left: 1px solid var(--edge); background: var(--bg);
+}
+.indb-insp-empty { margin: auto; padding: 24px; color: var(--dim); text-align: center; font-size: 12.5px; line-height: 1.6; }
+.indb-insp-head { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px; border-bottom: 1px solid var(--edge); }
+.indb-insp-title { flex: 1; color: var(--text); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.indb-insp-close { border: none; background: none; color: var(--dim); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.indb-insp-close:hover { color: var(--text); }
+.indb-insp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+.indb-insp-sect-t { color: var(--dim); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 2px; }
+.indb-field { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 3px 0; }
+.indb-field span { color: var(--dim); font-size: 12.5px; }
+.indb-field input, .indb-field select {
+  width: 120px; background: var(--bg2, var(--panel)); border: 1px solid var(--edge);
+  border-radius: 5px; padding: 5px 8px; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.indb-field input:focus, .indb-field select:focus { outline: none; border-color: var(--dim); }
+.indb-insp-foot { flex: none; display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--edge); }
+.indb-insp-foot .indb-reset { color: var(--dim); background: transparent; border: 1px solid var(--edge); border-radius: 6px; padding: 8px 14px; }
+.indb-insp-foot .indb-reset:hover { color: var(--text); border-color: var(--dim); }
+.indb-insp-foot .indb-add {
+  flex: 1; color: #0a0f0c; background: var(--accent-bar); border: none;
+  border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer;
+}
+.indb-insp-foot .indb-add.remove { color: var(--text); background: transparent; border: 1px solid var(--down); }
+.indb-preview-wrap { position: relative; border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; background: #050706; }
+.indb-preview-canvas { display: block; width: 100%; height: 150px; }
+/* Preview zoom control (Item 7): brass pill top-right of the live preview. */
+.indb-pv-zoom {
+  position: absolute; top: 7px; right: 7px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 1px;
+  background: rgba(5,8,10,.72); border: 1px solid color-mix(in srgb, var(--accent-bar) 55%, var(--edge));
+  border-radius: 999px; padding: 2px; backdrop-filter: blur(3px);
+}
+.indb-pv-zoom button {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 20px; padding: 0 4px;
+  background: transparent; border: none; color: var(--text); cursor: pointer;
+  font-size: 14px; line-height: 1; border-radius: 999px;
+}
+.indb-pv-zoom button:hover { background: rgba(244,241,232,.12); }
+.indb-pv-zoom #indb-pv-zlvl {
+  min-width: 40px; text-align: center; color: var(--dim);
+  font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: .02em; padding: 0 2px;
+}
+.indb-pv-zoom .indb-pv-fit { color: var(--accent-bar); }
+.indb-preview-lbl { font-size: 10px; color: var(--dim); text-align: center; padding: 3px 0 5px; letter-spacing: .06em; }
+.indb-insp-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--edge); }
+.indb-insp-tab { color: var(--dim); background: none; border: none; padding: 6px 10px; font-size: 12.5px; cursor: pointer; border-bottom: 2px solid transparent; }
+.indb-insp-tab:hover { color: var(--text); }
+.indb-insp-tab.on { color: var(--text); border-bottom-color: var(--accent-bar); }
 .cfg-title { font-size: 12.5px; color: var(--text); padding: 2px 0 4px; }
 .cfg-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .cfg-row span { color: var(--dim); }
@@ -3440,6 +3597,8 @@ nav#timeframes button { font-family: var(--mono); font-size: 11.5px; }
 /* Toolbar group seams: a quiet vertical rule between the
    search/timeframe cluster and the chart-type/indicator cluster. */
 #controls select { margin-left: 2px; }
+/* Group seam to the RIGHT of the rail, separating the timeframe cluster from
+   the Candles / Indicators tools that follow it. */
 nav#timeframes {
   padding-right: 10px; margin-right: 10px;
   border-right: 1px solid var(--edge);
@@ -4592,6 +4751,67 @@ body { padding-bottom: 22px; padding-left: 62px; }
   opacity: 0.85;
 }
 
+/* ── Seconds-tape on-chart notice ──────────────────────────────────────────
+   Non-destructive: it does NOT blank the chart (the empty grid stays visible
+   behind it) and it never clears the instrument. A centred status card, styled
+   to match the terminal, reading as a live instrument message not an error. */
+#seconds-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;           /* chart stays interactive underneath */
+}
+#seconds-notice.hidden { display: none !important; }
+#seconds-notice .sn-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 460px;
+  padding: 12px 16px;
+  border: 1px solid var(--edge, #243028);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel, #0d130f) 88%, transparent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  text-align: left;
+}
+#seconds-notice .sn-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dim, #7a8a80);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--dim, #7a8a80) 70%, transparent);
+}
+/* Live (socket up, waiting on a trade): green pulsing heartbeat. */
+#seconds-notice.sn-live .sn-dot {
+  background: var(--up, #3fb950);
+  animation: sn-pulse 1.6s ease-out infinite;
+}
+/* Market closed: steady amber, no pulse (nothing is coming). */
+#seconds-notice.sn-closed .sn-dot { background: var(--logo-down, #b08d57); animation: none; }
+/* No feed: steady muted red. */
+#seconds-notice.sn-nofeed .sn-dot { background: var(--down, #e5534b); animation: none; }
+@keyframes sn-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--up, #3fb950) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 7px color-mix(in srgb, var(--up, #3fb950) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--up, #3fb950) 0%, transparent); }
+}
+#seconds-notice .sn-title {
+  font: 600 12px/1.3 var(--sans, system-ui, sans-serif);
+  letter-spacing: 0.08em;
+  color: var(--text, #d7e2db);
+}
+#seconds-notice .sn-detail {
+  margin-top: 2px;
+  font: 11px/1.45 var(--sans, system-ui, sans-serif);
+  color: var(--dim, #9aaba2);
+}
+
 
 /* ── Phase 4: ORDER FLOW (hosts real EdgeDepth WASM) ───────────────────── */
 #orderflow {
@@ -4696,3 +4916,81 @@ body { padding-bottom: 22px; padding-left: 62px; }
   display: block;
   background: #05080a;
 }
+
+/* ============================================================================
+   Item 3: DISPLAY settings modal — interface scale, density, panel visibility.
+   Centered modal over a dim backdrop; matches the terminal's dark-green +
+   brass palette. Kept self-contained so it never disturbs the app layout.
+   ========================================================================== */
+#display-panel { position: fixed; inset: 0; z-index: 1200; }
+#display-panel.hidden { display: none; }
+#disp-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); }
+#disp-modal {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 460px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px);
+  overflow: auto; background: var(--panel); border: 1px solid var(--edge);
+  border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  color: var(--text); font-size: 13px;
+}
+#disp-head {
+  display: flex; align-items: center; justify-content: center; position: relative;
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--edge);
+}
+#disp-title { font-size: 12px; letter-spacing: 3px; color: var(--title); }
+#disp-head::after {
+  content: ""; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+  width: 54px; height: 2px; background: var(--accent-bar); border-radius: 2px;
+}
+#disp-close {
+  position: absolute; right: 10px; top: 10px; width: 26px; height: 26px;
+  background: transparent; border: none; color: var(--dim); font-size: 20px;
+  line-height: 1; border-radius: 6px; cursor: pointer;
+}
+#disp-close:hover { color: var(--text); background: var(--hover); }
+#disp-body { padding: 4px 16px 14px; }
+.disp-sec { padding: 14px 0; border-bottom: 1px solid var(--edge); }
+.disp-sec:last-child { border-bottom: none; }
+.disp-sec-lbl { color: var(--dim); font-size: 11px; letter-spacing: .4px; margin-bottom: 10px; }
+.disp-scale-row { display: flex; align-items: center; gap: 12px; }
+.disp-scale-row input[type=range] {
+  -webkit-appearance: none; appearance: none; flex: 1; height: 4px; border-radius: 3px;
+  background: var(--edge); outline: none; cursor: pointer;
+}
+.disp-scale-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%;
+  background: var(--line-strong); border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--line-strong); cursor: grab;
+}
+.disp-scale-row input[type=range]::-moz-range-thumb {
+  width: 15px; height: 15px; border-radius: 50%; background: var(--line-strong);
+  border: 2px solid var(--panel); cursor: grab;
+}
+.disp-scale-val { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--text); }
+.disp-scale-ticks { display: flex; justify-content: space-between; margin-top: 6px; color: var(--dim); font-size: 10px; }
+/* segmented density control */
+.disp-seg { display: flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+.disp-seg button {
+  flex: 1; padding: 8px 6px; background: transparent; border: none; color: var(--dim);
+  font-size: 12px; cursor: pointer; border-right: 1px solid var(--edge); position: relative;
+}
+.disp-seg button:last-child { border-right: none; }
+.disp-seg button:hover { background: var(--hover); color: var(--text); }
+.disp-seg button.on { background: var(--active); color: var(--text); }
+.disp-seg button.on::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: 0; height: 2px; background: var(--accent-bar); }
+/* footer */
+.disp-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 14px; }
+.disp-reset { background: transparent; border: none; color: var(--dim); font-size: 12px; cursor: pointer; padding: 8px 10px; border-radius: 6px; }
+.disp-reset:hover { color: var(--text); background: var(--hover); }
+.disp-done { background: var(--raise); border: 1px solid var(--edge); color: var(--text); font-size: 13px; padding: 8px 18px; border-radius: 6px; cursor: pointer; }
+.disp-done:hover { background: var(--raise-h); }
+
+/* ---- density presets: tighten row-level spacing app-wide. Comfortable is the
+   default (no class). Compact/Dense progressively reduce list paddings. ---- */
+body.gt-density-compact .wrow { padding-top: 1px; padding-bottom: 1px; }
+body.gt-density-dense .wrow { padding-top: 0; padding-bottom: 0; }
+body.gt-density-dense #watchlist { font-size: 12px; }
+body.gt-density-compact .conn-row,
+body.gt-density-compact .conn-brow { padding-top: 2px; padding-bottom: 2px; }
+body.gt-density-dense .conn-row,
+body.gt-density-dense .conn-brow { padding-top: 1px; padding-bottom: 1px; }
+body.gt-density-compact .indb-field { padding-top: 2px; padding-bottom: 2px; }
+body.gt-density-dense .indb-field { padding-top: 1px; padding-bottom: 1px; }

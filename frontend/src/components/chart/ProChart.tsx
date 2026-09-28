@@ -19,6 +19,8 @@ import { calculateEMA, calculateSMA, calculateSMMA, calculateBollingerBands, cal
 import { evaluateFormula, type CustomIndicator } from '@/lib/formulaEngine';
 import { MAType, IndicatorConfig } from './IndicatorSettings';
 import IndicatorPanelSettings, { IndicatorType } from './IndicatorPanelSettings';
+import OnChartHUD from './OnChartHUD';
+import { deriveHudItems, type HudIndicatorItem } from './onChartHudData';
 // Registry-driven legend metadata. Replaces the hand-typed overlayOrder /
 // allSubplots arrays that used to live inline below; adding indicator #106
 // now means one entry in INDICATOR_DISPLAY, not parallel edits across two
@@ -45,6 +47,7 @@ import type { Drawing } from './ChartDrawingOverlay';
 // to avoid duplication and enable sharing across chart components
 import { type Candle, type ChartType, type ProChartProps, getDefaultColors, CANDLE_GAP_RATIO } from './core/types';
 import { transformSeries } from '@/engine/transforms';
+import { toLineBreak, toKagi, toPointFigure } from '@/engine/priceCharts';
 import { renderGenericSubplots, renderPhase2Overlays, renderSubplotSelectionDots, type SubplotRenderContext } from "./renderers/subplotRenderer";
 import { renderOptionsPdfHeatmap, renderOrderBookHeatmap, renderL2DepthOverlay, type HeatmapRenderContext } from "./renderers/heatmapRenderer";
 import { renderPositionLines, renderSelectedPositionSLTP, type PositionRenderContext } from "./renderers/positionRenderer";
@@ -108,12 +111,17 @@ const ProChart: React.FC<ProChartProps> = ({
   onRemoveBruePlot,
   onRemoveEngineIndicator,
   onEditEngineIndicator,
+  onToggleEngineHidden,
+  onSetAllEngineHidden,
   onConverterReady,
   onVisibleRangeChange,
   onViewportTimeChange,
   syncedViewportTime,
   disableAutoFollow = false,
   scrollToIndex,
+  scrollNonce,
+  fitRange,
+  followLatest,
   chartType = 'candlestick',
   onScrollingChange,
   onScrollSync,
@@ -464,6 +472,17 @@ const ProChart: React.FC<ProChartProps> = ({
     position: { x: number; y: number };
   } | null>(null);
 
+  // ── Item 8: on-chart indicator HUD ──────────────────────────────────────
+  // The brass instrument-cluster HUD replaces the old canvas text legend.
+  // Always on: it IS the legend now (OHLC removed per spec). hudHiddenKeys
+  // persists a "hidden but still listed" state for single-key indicators;
+  // hiddenMaLines stashes hidden moving-average lines so they can be restored
+  // (the config has no per-line visibility flag of its own).
+  const hudEnabled = true;
+  const [hudHiddenKeys, setHudHiddenKeys] = useState<Set<string>>(() => new Set());
+  const [hiddenMaLines, setHiddenMaLines] = useState<any[]>([]);
+  const hudSnapshotsRef = useRef<Record<string, HudIndicatorItem>>({});
+
   // Per-instance Brue settings state removed alongside the cog button.
 
   // Track indicator panel boundaries for click detection
@@ -744,6 +763,10 @@ const ProChart: React.FC<ProChartProps> = ({
 
   const MIN_CANDLE_WIDTH = 1;
   const MAX_CANDLE_WIDTH = 50;
+  // Fit operations (History Navigator "All"/wide ranges) may go below the
+  // manual zoom floor so an entire span fits; the renderer switches to a price
+  // line when candles get this thin.
+  const FIT_MIN_CANDLE_WIDTH = 0.04;
 
   // TradingView-style discrete zoom levels (~40 steps from min to max)
   // Using exponential scale for natural feel: each step is ~10% change
@@ -1789,8 +1812,28 @@ const ProChart: React.FC<ProChartProps> = ({
     const candleBodyWidth = Math.max(currentCandleWidth * 0.7, 3);
     const wickWidth = Math.max(1, candleBodyWidth * 0.15);
 
+    // Overview fallback: a "fit" that framed thousands of bars (History
+    // Navigator "All"/wide ranges) drives the candle width below 1px, where the
+    // 3px-minimum bodies would overlap into a solid block AND the old 1px floor
+    // could only show the oldest slice — both read as "blank". Below the manual
+    // zoom floor, draw the close-price line so the whole span reads cleanly.
+    const isDiscreteType = chartType === 'bars' || chartType === 'candlestick'
+      || chartType === 'hollowCandle' || chartType === 'volumeCandle'
+      || chartType === 'heikinAshi' || chartType === 'renko';
+    if (isDiscreteType && currentCandleWidth < MIN_CANDLE_WIDTH) {
+      ctx.strokeStyle = colors.bullish;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const y = mainPriceToY(candle.close);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
     // Phase 2: OHLC bars — real open/high/low/close ticks (not a label swap).
-    if (chartType === 'bars') {
+    } else if (chartType === 'bars') {
       visible.candles.forEach((candle, i) => {
         const x = indexToX(visible.startIndex + i, visible.startIndex);
         const isBullish = candle.close >= candle.open;
@@ -1935,6 +1978,282 @@ const ProChart: React.FC<ProChartProps> = ({
         }
       });
       ctx.stroke();
+    } else if (chartType === 'hollowCandle') {
+      // Hollow candles: body is hollow when close>open (up bar), filled when
+      // close<open (down bar). Colour reflects direction vs the PREVIOUS close
+      // (green if close>=prevClose, red otherwise) — 4 visual combinations.
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const prevIdx = visible.startIndex + i - 1;
+        const prevClose = prevIdx >= 0 ? candles[prevIdx].close : candle.open;
+        const upVsPrev = candle.close >= prevClose;
+        const hollow = candle.close >= candle.open;
+        const col = upVsPrev ? colors.bullish : colors.bearish;
+        const border = upVsPrev ? colors.bullishBorder : colors.bearishBorder;
+        const openY = mainPriceToY(candle.open);
+        const closeY = mainPriceToY(candle.close);
+        const highY = mainPriceToY(candle.high);
+        const lowY = mainPriceToY(candle.low);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = wickWidth;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, highY);
+        ctx.lineTo(x, lowY);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        if (hollow) {
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.4;
+          ctx.strokeRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
+        } else {
+          ctx.fillStyle = col;
+          ctx.fillRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
+          ctx.strokeStyle = border;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x - candleBodyWidth / 2, bodyTop, candleBodyWidth, bodyHeight);
+        }
+      });
+    } else if (chartType === 'volumeCandle') {
+      // Volume candles: standard candles whose BODY WIDTH is proportional to
+      // the bar's traded volume (relative to the max volume in view).
+      let maxVol = 0;
+      for (const c of visible.candles) maxVol = Math.max(maxVol, c.volume || 0);
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const isBullish = candle.close >= candle.open;
+        const vFrac = maxVol > 0 ? (candle.volume || 0) / maxVol : 0.5;
+        const bw = Math.max(2, candleBodyWidth * (0.25 + 0.75 * vFrac));
+        const openY = mainPriceToY(candle.open);
+        const closeY = mainPriceToY(candle.close);
+        const highY = mainPriceToY(candle.high);
+        const lowY = mainPriceToY(candle.low);
+        ctx.strokeStyle = isBullish ? colors.bullishWick : colors.bearishWick;
+        ctx.lineWidth = wickWidth;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, highY);
+        ctx.lineTo(x, lowY);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+        const bodyTop = Math.min(openY, closeY);
+        const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+        ctx.fillStyle = isBullish ? colors.bullish : colors.bearish;
+        ctx.fillRect(x - bw / 2, bodyTop, bw, bodyHeight);
+        ctx.strokeStyle = isBullish ? colors.bullishBorder : colors.bearishBorder;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - bw / 2, bodyTop, bw, bodyHeight);
+      });
+    } else if (chartType === 'lineMarkers') {
+      // Close line with a dot marker on every bar (markers hidden when dense).
+      ctx.strokeStyle = colors.bullish;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const y = mainPriceToY(candle.close);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      if (candleBodyWidth >= 3) {
+        const r = Math.min(3.5, Math.max(1.5, candleBodyWidth * 0.28));
+        ctx.fillStyle = colors.bullish;
+        visible.candles.forEach((candle, i) => {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          const y = mainPriceToY(candle.close);
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+    } else if (chartType === 'stepLine') {
+      // Staircase: horizontal hold at the previous close, then a vertical
+      // jump to the current close.
+      ctx.strokeStyle = colors.bullish;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'miter';
+      ctx.beginPath();
+      visible.candles.forEach((candle, i) => {
+        const x = indexToX(visible.startIndex + i, visible.startIndex);
+        const y = mainPriceToY(candle.close);
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          const prevY = mainPriceToY(visible.candles[i - 1].close);
+          ctx.lineTo(x, prevY);
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+    } else if (chartType === 'hlcArea') {
+      // Filled band between high and low, with the close drawn as a line.
+      if (visible.candles.length > 0) {
+        ctx.beginPath();
+        visible.candles.forEach((candle, i) => {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          const y = mainPriceToY(candle.high);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        for (let i = visible.candles.length - 1; i >= 0; i--) {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          ctx.lineTo(x, mainPriceToY(visible.candles[i].low));
+        }
+        ctx.closePath();
+        ctx.save();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = colors.bullish;
+        ctx.fill();
+        ctx.restore();
+        ctx.strokeStyle = colors.bullish;
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        visible.candles.forEach((candle, i) => {
+          const x = indexToX(visible.startIndex + i, visible.startIndex);
+          const y = mainPriceToY(candle.close);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+    } else if (chartType === 'baseline') {
+      // Close line with a reference level (first visible close): area/line is
+      // green above the baseline, red below it.
+      if (visible.candles.length > 0) {
+        const base = visible.candles[0].close;
+        const baseY = mainPriceToY(base);
+        const pts = visible.candles.map((c, i) => ({
+          x: indexToX(visible.startIndex + i, visible.startIndex),
+          y: mainPriceToY(c.close),
+        }));
+        const areaPath = () => {
+          ctx.beginPath();
+          pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+          ctx.lineTo(pts[pts.length - 1].x, baseY);
+          ctx.lineTo(pts[0].x, baseY);
+          ctx.closePath();
+        };
+        // Green region above the baseline
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, chartWidth, Math.max(0, baseY));
+        ctx.clip();
+        areaPath();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = colors.bullish;
+        ctx.fill();
+        ctx.restore();
+        // Red region below the baseline
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, baseY, chartWidth, Math.max(0, mainChartHeight - baseY));
+        ctx.clip();
+        areaPath();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = colors.bearish;
+        ctx.fill();
+        ctx.restore();
+        // Close line, coloured per segment by its side of the baseline
+        ctx.lineWidth = 2;
+        for (let i = 1; i < pts.length; i++) {
+          const mid = (visible.candles[i - 1].close + visible.candles[i].close) / 2;
+          ctx.strokeStyle = mid >= base ? colors.bullish : colors.bearish;
+          ctx.beginPath();
+          ctx.moveTo(pts[i - 1].x, pts[i - 1].y);
+          ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.stroke();
+        }
+        // Dashed baseline
+        ctx.save();
+        ctx.strokeStyle = colors.textDim;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, baseY);
+        ctx.lineTo(chartWidth, baseY);
+        ctx.stroke();
+        ctx.restore();
+      }
+    } else if (chartType === 'lineBreak') {
+      // Three-line break: time-independent lines derived from closes, packed
+      // left→right and right-anchored (computed from the visible window so the
+      // price axis stays consistent).
+      const lines = toLineBreak(visible.candles.map((c) => c.close), 3);
+      const bw = Math.max(3, candleBodyWidth);
+      const step = bw * 1.25;
+      const fit = Math.max(1, Math.floor(chartWidth / step));
+      const startI = Math.max(0, lines.length - fit);
+      for (let idx = startI; idx < lines.length; idx++) {
+        const l = lines[idx];
+        const x = chartWidth - (lines.length - idx) * step;
+        const top = mainPriceToY(l.top);
+        const bot = mainPriceToY(l.bottom);
+        const h = Math.max(1, bot - top);
+        ctx.fillStyle = l.up ? colors.bullish : colors.bearish;
+        ctx.fillRect(x, top, bw, h);
+        ctx.strokeStyle = l.up ? colors.bullishBorder : colors.bearishBorder;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, top, bw, h);
+      }
+    } else if (chartType === 'kagi') {
+      // Kagi: time-independent zig-zag; thick (yang) when price is rising above
+      // the prior high, thin (yin) when falling below the prior low.
+      const { vertices, thick } = toKagi(visible.candles.map((c) => c.close));
+      const n = vertices.length;
+      if (n >= 2) {
+        const step = chartWidth / Math.max(1, n - 1);
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+        for (let v = 1; v < n; v++) {
+          const x0 = (v - 1) * step;
+          const x1 = v * step;
+          const y0 = mainPriceToY(vertices[v - 1]);
+          const y1 = mainPriceToY(vertices[v]);
+          ctx.strokeStyle = thick[v - 1] ? colors.bullish : colors.bearish;
+          ctx.lineWidth = thick[v - 1] ? 3 : 1.4;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        }
+      }
+    } else if (chartType === 'pointFigure') {
+      // Point & Figure: columns of X (rising) and O (falling), packed
+      // left→right and right-anchored.
+      const { columns, box } = toPointFigure(visible.candles, undefined, 3);
+      const bw = Math.max(6, candleBodyWidth * 1.2);
+      const step = bw * 1.3;
+      const fit = Math.max(1, Math.floor(chartWidth / step));
+      const startI = Math.max(0, columns.length - fit);
+      const refClose = visible.candles[0]?.close || box;
+      const boxPx = Math.abs(mainPriceToY(refClose) - mainPriceToY(refClose + box));
+      const half = (Math.min(bw, boxPx) / 2) * 0.8;
+      ctx.lineWidth = 1.8;
+      for (let ci = startI; ci < columns.length; ci++) {
+        const col = columns[ci];
+        const x = (ci - startI) * step + bw / 2;
+        ctx.strokeStyle = col.up ? colors.bullish : colors.bearish;
+        for (const price of col.boxes) {
+          const cy = mainPriceToY(price);
+          if (col.up) {
+            ctx.beginPath();
+            ctx.moveTo(x - half, cy - half);
+            ctx.lineTo(x + half, cy + half);
+            ctx.moveTo(x + half, cy - half);
+            ctx.lineTo(x - half, cy + half);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.ellipse(x, cy, half, half, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+      }
     } else if (chartType === 'renko') {
       // Calculate Renko bricks
       const renkoSize = priceRange.range * 0.02; // 2% of visible range as brick size
@@ -5099,7 +5418,9 @@ const ProChart: React.FC<ProChartProps> = ({
       indicatorData,
       indicators,
       indicatorHeightRatio,
-      showOHLC,
+      // Item 8: the on-chart HUD IS the legend now, so the canvas OHLC +
+      // indicator text legend is suppressed while the HUD is enabled.
+      showOHLC: showOHLC && !hudEnabled,
       isDesktop,
       PRICE_AXIS_WIDTH,
       TIME_AXIS_HEIGHT,
@@ -7607,20 +7928,31 @@ const ProChart: React.FC<ProChartProps> = ({
     prevPrependShiftRef.current = prependShift;
   }, [prependShift]);
 
-  // Scroll to specific index when requested (for replay mode)
+  // Scroll to specific index when requested ("Go to date" + replay mode).
+  const lastScrollNonceRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (scrollToIndex === undefined || scrollToIndex === null) {
       lastScrolledIndexRef.current = undefined;
+      lastScrollNonceRef.current = undefined;
       return;
     }
     if (candles.length === 0) return;
 
-    // Only scroll if this is a NEW scroll request (not just a dependency change)
-    if (lastScrolledIndexRef.current === scrollToIndex) return;
+    // Only scroll on a NEW request. When a nonce rides along (History
+    // Navigator) key off it, so jumping to the SAME index twice — or
+    // Latest -> a date -> the same date again — still moves. Fall back to the
+    // raw value for the legacy replay caller that passes no nonce.
+    const key = scrollNonce !== undefined ? scrollNonce : scrollToIndex;
+    if (lastScrollNonceRef.current === key) return;
+    lastScrollNonceRef.current = key;
     lastScrolledIndexRef.current = scrollToIndex;
 
     const chartWidth = dimensions.width - PRICE_AXIS_WIDTH;
-    const candleSpacing = viewState.candleWidth * (1 + CANDLE_GAP_RATIO);
+    // A date jump should land on real candles. If we're coming from a sub-pixel
+    // "All"/wide fit (line overview), restore a normal candle width so the user
+    // sees bars around the target instead of a zoomed-out line.
+    const effCandleWidth = viewState.candleWidth < MIN_CANDLE_WIDTH ? 6 : viewState.candleWidth;
+    const candleSpacing = effCandleWidth * (1 + CANDLE_GAP_RATIO);
     const visibleCount = Math.floor(chartWidth / candleSpacing);
 
     // Clamp scrollToIndex to valid range
@@ -7630,8 +7962,48 @@ const ProChart: React.FC<ProChartProps> = ({
     // This ensures the "current" replay position is visible at the right
     const targetPosition = Math.floor(visibleCount * 0.9);
     const newStartIndex = Math.max(0, clampedIndex - targetPosition);
-    setViewState(prev => ({ ...prev, startIndex: newStartIndex, autoFollowLatest: false }));
-  }, [scrollToIndex, candles.length, dimensions.width, viewState.candleWidth]);
+    setViewState(prev => ({ ...prev, startIndex: newStartIndex, candleWidth: effCandleWidth, autoFollowLatest: false }));
+  }, [scrollToIndex, scrollNonce, candles.length, dimensions.width, viewState.candleWidth]);
+
+  // Frame an index range so it fills the viewport (History Navigator quick
+  // ranges + "Go to range"). Re-applies only when the nonce changes, so ordinary
+  // candle/dimension updates never yank the user's manual zoom.
+  const lastFitNonceRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!fitRange || candles.length === 0) return;
+    if (lastFitNonceRef.current === fitRange.nonce) return;
+    lastFitNonceRef.current = fitRange.nonce;
+
+    const chartWidth = dimensions.width - PRICE_AXIS_WIDTH;
+    if (chartWidth <= 0) return;
+    const startIndex = Math.max(0, Math.min(fitRange.startIndex, candles.length - 1));
+    const endIndex = Math.max(startIndex, Math.min(fitRange.endIndex, candles.length - 1));
+    const count = Math.max(1, endIndex - startIndex + 1);
+    // Leave ~8% breathing room on the right so the newest bar isn't hard against
+    // the price axis, matching the feel of a manual fit.
+    let cw = (chartWidth * 0.92) / (count * (1 + CANDLE_GAP_RATIO));
+    // A framed range must show the WHOLE span, not just its oldest slice. The
+    // manual zoom floor (1px) caps the view at ~780 bars, so "All"/wide ranges
+    // used to render only the oldest bars with the recent price off-screen —
+    // reading as a blank chart. Let a fit go sub-pixel down to FIT_MIN so the
+    // entire range lands on screen; the renderer draws a price line instead of
+    // candles once bars get thinner than 1px (see drawChart).
+    cw = Math.min(MAX_CANDLE_WIDTH, Math.max(FIT_MIN_CANDLE_WIDTH, cw));
+    setViewState(prev => ({ ...prev, startIndex, candleWidth: cw, autoFollowLatest: false }));
+  }, [fitRange, candles.length, dimensions.width]);
+
+  // Return to the live tail and resume auto-follow (History Navigator "Latest").
+  // A jump clears autoFollowLatest; without this the chart would reload recent
+  // candles but stay frozen wherever the last jump left it. Setting the flag
+  // hands the new candles to the anchoring effect, which pins them to the right.
+  const lastFollowNonceRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!followLatest) return;
+    if (lastFollowNonceRef.current === followLatest.nonce) return;
+    lastFollowNonceRef.current = followLatest.nonce;
+    if (disableAutoFollow) return; // replay owns its own position
+    setViewState(prev => ({ ...prev, autoFollowLatest: true }));
+  }, [followLatest, disableAutoFollow]);
 
   useEffect(() => {
     // Skip during active scroll: the scroll RAF (wheelRAFRef) already calls
@@ -8419,6 +8791,8 @@ const ProChart: React.FC<ProChartProps> = ({
           top: 3,
           left: showOHLC ? ((ohlcTextWidth || 295) + 6) : 6,
           pointerEvents: 'auto',
+          // Item 8: the HUD replaces this legacy OHLC toggle + session dot.
+          display: hudEnabled ? 'none' : undefined,
         }}
         onMouseEnter={() => { sessionControlHoveredRef.current = true; }}
         onMouseLeave={() => { sessionControlHoveredRef.current = false; }}
@@ -8720,8 +9094,147 @@ const ProChart: React.FC<ProChartProps> = ({
       })()}
       </div>
 
+      {/* ═══ Item 8: on-chart indicator HUD (brass instrument cluster) ═══ */}
+      {hudEnabled && indicators && onIndicatorsChange && (() => {
+        const raw = deriveHudItems(indicators, indicatorData, '#b08d57');
+        for (const it of raw) if (it.lineIndex === null) hudSnapshotsRef.current[it.configKey] = it;
+        const rawKeys = new Set(raw.map((r) => r.configKey));
+        const hudItems: HudIndicatorItem[] = raw.map((it) => ({ ...it, hidden: false }));
+        // Persistent hidden placeholders (single-key indicators).
+        for (const key of hudHiddenKeys) {
+          if (!rawKeys.has(key) && hudSnapshotsRef.current[key]) {
+            hudItems.push({ ...hudSnapshotsRef.current[key], hidden: true, valueText: '—', gaugePct: null });
+          }
+        }
+        // Persistent hidden placeholders (moving-average lines).
+        hiddenMaLines.forEach((ln, i) => {
+          hudItems.push({
+            key: `ma-hidden-${i}`, configKey: 'movingAverages', lineIndex: null,
+            title: `${ln.type} ${ln.period}`, valueText: '—', color: ln.color || '#b08d57',
+            gaugePct: null, display: 'overlay', hidden: true,
+          });
+        });
+
+        const hudEdit = (item: HudIndicatorItem) => {
+          if (item.kind === 'engine' && item.engineLabel) { onEditEngineIndicator?.(item.engineLabel); return; }
+          setSelectedIndicator({ type: item.configKey as IndicatorType, position: { x: 60, y: 72 } });
+        };
+        const hudDelete = (item: HudIndicatorItem) => {
+          if (item.kind === 'engine' && item.engineLabel) { onRemoveEngineIndicator?.(item.engineLabel); return; }
+          if (!onIndicatorsChange) return;
+          if (item.key.startsWith('ma-hidden-')) {
+            const idx = Number(item.key.slice('ma-hidden-'.length));
+            setHiddenMaLines((lines) => lines.filter((_, i) => i !== idx));
+            return;
+          }
+          if (item.configKey === 'movingAverages' && item.lineIndex !== null) {
+            const lines = (indicators as any).movingAverages?.lines ?? [];
+            onIndicatorsChange({ ...indicators, movingAverages: {
+              ...(indicators as any).movingAverages,
+              lines: lines.filter((_: any, i: number) => i !== item.lineIndex),
+            } } as any);
+            return;
+          }
+          const cfg = (indicators as any)[item.configKey];
+          if (cfg) onIndicatorsChange({ ...indicators, [item.configKey]: { ...cfg, enabled: false } });
+          setHudHiddenKeys((s) => { const n = new Set(s); n.delete(item.configKey); return n; });
+        };
+        const hudHide = (item: HudIndicatorItem) => {
+          if (item.kind === 'engine' && item.engineLabel) { onToggleEngineHidden?.(item.engineLabel); return; }
+          if (!onIndicatorsChange) return;
+          // Unhide a stashed MA line.
+          if (item.key.startsWith('ma-hidden-')) {
+            const idx = Number(item.key.slice('ma-hidden-'.length));
+            const ln = hiddenMaLines[idx];
+            if (!ln) return;
+            setHiddenMaLines((lines) => lines.filter((_, i) => i !== idx));
+            const cur = (indicators as any).movingAverages || { enabled: true, lines: [] };
+            onIndicatorsChange({ ...indicators, movingAverages: {
+              ...cur, enabled: true, lines: [...(cur.lines || []), ln],
+            } } as any);
+            return;
+          }
+          // Hide a visible MA line: stash it and drop it from the drawn set.
+          if (item.configKey === 'movingAverages' && item.lineIndex !== null) {
+            const lines = (indicators as any).movingAverages?.lines ?? [];
+            const ln = lines[item.lineIndex];
+            if (ln) setHiddenMaLines((l) => [...l, ln]);
+            onIndicatorsChange({ ...indicators, movingAverages: {
+              ...(indicators as any).movingAverages,
+              lines: lines.filter((_: any, i: number) => i !== item.lineIndex),
+            } } as any);
+            return;
+          }
+          // Single-key indicator: reversible enabled toggle + persistence.
+          const cfg = (indicators as any)[item.configKey];
+          if (!cfg) return;
+          if (item.hidden) {
+            onIndicatorsChange({ ...indicators, [item.configKey]: { ...cfg, enabled: true } });
+            setHudHiddenKeys((s) => { const n = new Set(s); n.delete(item.configKey); return n; });
+          } else {
+            onIndicatorsChange({ ...indicators, [item.configKey]: { ...cfg, enabled: false } });
+            setHudHiddenKeys((s) => { const n = new Set(s); n.add(item.configKey); return n; });
+          }
+        };
+        const hudAdd = () => { onOpenSettings?.(); };
+
+        // ── Hide / show ALL indicators at once ──────────────────────────────
+        // If anything is visible, one click hides everything (native configs go
+        // enabled:false + tracked; MA lines are stashed; engine labels are
+        // pushed to the shell's hidden set). If everything is already hidden,
+        // the click restores it all. Native changes are batched into ONE
+        // onIndicatorsChange so they cannot clobber each other.
+        const hudAllHidden = hudItems.length > 0 && hudItems.every((i) => i.hidden);
+        const hudToggleAll = () => {
+          if (!hudAllHidden) {
+            let next: any = { ...indicators };
+            const newHiddenKeys = new Set(hudHiddenKeys);
+            const maLinesNow: any[] = (indicators as any).movingAverages?.lines ?? [];
+            let anyEngine = false;
+            for (const it of hudItems) {
+              if (it.hidden) continue;
+              if (it.kind === 'engine') { anyEngine = true; continue; }
+              if (it.configKey === 'movingAverages') continue; // handled below
+              const cfg = next[it.configKey];
+              if (cfg && cfg.enabled) { next = { ...next, [it.configKey]: { ...cfg, enabled: false } }; newHiddenKeys.add(it.configKey); }
+            }
+            if (maLinesNow.length) {
+              setHiddenMaLines((prev) => [...prev, ...maLinesNow]);
+              next = { ...next, movingAverages: { ...(next.movingAverages || {}), lines: [] } };
+            }
+            onIndicatorsChange?.(next);
+            setHudHiddenKeys(newHiddenKeys);
+            if (anyEngine) onSetAllEngineHidden?.(true);
+          } else {
+            let next: any = { ...indicators };
+            for (const k of hudHiddenKeys) { const cfg = next[k]; if (cfg) next = { ...next, [k]: { ...cfg, enabled: true } }; }
+            if (hiddenMaLines.length) {
+              const cur = (next as any).movingAverages || { enabled: true, lines: [] };
+              next = { ...next, movingAverages: { ...cur, enabled: true, lines: [...(cur.lines || []), ...hiddenMaLines] } };
+              setHiddenMaLines([]);
+            }
+            onIndicatorsChange?.(next);
+            setHudHiddenKeys(new Set());
+            onSetAllEngineHidden?.(false);
+          }
+        };
+
+        return (
+          <OnChartHUD
+            symbol={symbol}
+            items={hudItems}
+            onEdit={hudEdit}
+            onHide={hudHide}
+            onDelete={hudDelete}
+            onAdd={hudAdd}
+            onToggleAll={hudToggleAll}
+            allHidden={hudAllHidden}
+          />
+        );
+      })()}
+
       {/* ═══ TradingView-style clickable overlay indicator labels + inline toolbar ═══ */}
-      {showOHLC && indicators && onIndicatorsChange && (() => {
+      {!hudEnabled && showOHLC && indicators && onIndicatorsChange && (() => {
         // ── Registry-driven overlay list ───────────────────────────────
         // Iteration order, titles, and pane assignment all come from
         // INDICATOR_DISPLAY now. The bespoke endX vars below stay because

@@ -31,6 +31,12 @@ export interface EngineIndicatorPayload {
       [column: string]: {
         kind: string;              // "line" | "histogram" | ...
         points: [number, number][]; // [epoch seconds, value]
+        // Optional per-series style, set when the series is computed on the
+        // client (the shell's indicator panel). Absent for server payloads,
+        // which fall back to the palette / defaults below.
+        color?: string;
+        width?: number;
+        visible?: boolean;
       };
     };
   };
@@ -104,16 +110,21 @@ export function toCustomIndicators(
       // multi-column ones need the column to disambiguate ("MACD signal").
       const name = columns.length > 1 ? `${label} ${column}` : label;
 
+      // Honour client-supplied style (colour / width / visibility) when the
+      // series carries it; otherwise fall back to the rotating palette so
+      // server payloads look exactly as before.
+      const color = series.color || PALETTE[colorIdx++ % PALETTE.length];
+
       out.push({
         id: `local-${label}-${column}`,
         name,
         // The prefix is what tells ProChart's formula evaluator to leave this
         // series alone and draw the precomputed values.
         expression: `local:${label}:${column}`,
-        enabled: true,
+        enabled: series.visible !== false,
         display: ind.overlay ? 'overlay' : 'subplot',
-        color: PALETTE[colorIdx++ % PALETTE.length],
-        lineWidth: 2,
+        color,
+        lineWidth: series.width || 2,
         zeroLine: false,
         data,
         kind: series.kind,
