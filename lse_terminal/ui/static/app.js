@@ -1876,7 +1876,8 @@ function indRefreshChart() {
   pushToChart();
 }
 function _drawLine(ctx, x, w, n, p, yOf) {
-  ctx.strokeStyle = p.color; ctx.lineWidth = p.width || 2; ctx.beginPath();
+  ctx.strokeStyle = p.color; ctx.lineWidth = Math.max(1.8, p.width || 2);
+  ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.beginPath();
   let started = false;
   for (let i = 0; i < n; i++) {
     const v = p.values[i];
@@ -1894,14 +1895,19 @@ function _drawPricePane(ctx, x, y, w, h, candles, plots) {
   const n = candles.length, cw = w / n;
   const yOf = (v) => y + padY + (1 - (v - lo) / (hi - lo)) * (h - padY * 2);
   const up = indCssCol("--up", "#63b26a"), down = indCssCol("--down", "#d16d6d");
+  // Candles are compressed tight and drawn dimmer than the indicator lines, so
+  // the indicator/script reads clearly on top instead of fighting the bodies.
+  ctx.save();
+  ctx.globalAlpha = 0.6;
   for (let i = 0; i < n; i++) {
     const [, o, hh, ll, c] = candles[i];
     const cx = x + i * cw + cw / 2, green = c >= o;
-    ctx.strokeStyle = ctx.fillStyle = green ? up : down; ctx.lineWidth = 1;
+    ctx.strokeStyle = ctx.fillStyle = green ? up : down; ctx.lineWidth = Math.min(1, cw * 0.16);
     ctx.beginPath(); ctx.moveTo(cx, yOf(hh)); ctx.lineTo(cx, yOf(ll)); ctx.stroke();
-    const bw = Math.max(1, cw * 0.62), yo = yOf(o), yc = yOf(c);
-    ctx.fillRect(cx - bw / 2, Math.min(yo, yc), bw, Math.max(1, Math.abs(yc - yo)));
+    const bw = Math.max(0.75, cw * 0.5), yo = yOf(o), yc = yOf(c);
+    ctx.fillRect(cx - bw / 2, Math.min(yo, yc), bw, Math.max(0.75, Math.abs(yc - yo)));
   }
+  ctx.restore();
   for (const p of plots) _drawLine(ctx, x, w, n, p, yOf);
 }
 function _drawSubPane(ctx, x, y, w, h, plots) {
@@ -2009,7 +2015,7 @@ async function indPreviewRender() {
   try {
     const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
       `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
-      `&limit=300&indicators=${encodeURIComponent(q)}`;
+      `&limit=400&indicators=${encodeURIComponent(q)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error("http");
     data = await r.json();
