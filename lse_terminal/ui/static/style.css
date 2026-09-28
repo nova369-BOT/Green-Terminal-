@@ -4800,3 +4800,109 @@ body { padding-bottom: 22px; padding-left: 62px; }
   display: block;
   background: #05080a;
 }
+
+/* ============================================================================
+   Item 3: DISPLAY settings modal — interface scale, density, panel visibility.
+   Centered modal over a dim backdrop; matches the terminal's dark-green +
+   brass palette. Kept self-contained so it never disturbs the app layout.
+   ========================================================================== */
+#display-panel { position: fixed; inset: 0; z-index: 1200; }
+#display-panel.hidden { display: none; }
+#disp-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); }
+#disp-modal {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 460px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px);
+  overflow: auto; background: var(--panel); border: 1px solid var(--edge);
+  border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  color: var(--text); font-size: 13px;
+}
+#disp-head {
+  display: flex; align-items: center; justify-content: center; position: relative;
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--edge);
+}
+#disp-title { font-size: 12px; letter-spacing: 3px; color: var(--title); }
+#disp-head::after {
+  content: ""; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+  width: 54px; height: 2px; background: var(--accent-bar); border-radius: 2px;
+}
+#disp-close {
+  position: absolute; right: 10px; top: 10px; width: 26px; height: 26px;
+  background: transparent; border: none; color: var(--dim); font-size: 20px;
+  line-height: 1; border-radius: 6px; cursor: pointer;
+}
+#disp-close:hover { color: var(--text); background: var(--hover); }
+#disp-body { padding: 4px 16px 14px; }
+.disp-sec { padding: 14px 0; border-bottom: 1px solid var(--edge); }
+.disp-sec:last-child { border-bottom: none; }
+.disp-sec-lbl { color: var(--dim); font-size: 11px; letter-spacing: .4px; margin-bottom: 10px; }
+.disp-scale-row { display: flex; align-items: center; gap: 12px; }
+.disp-scale-row input[type=range] {
+  -webkit-appearance: none; appearance: none; flex: 1; height: 4px; border-radius: 3px;
+  background: var(--edge); outline: none; cursor: pointer;
+}
+.disp-scale-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%;
+  background: var(--line-strong); border: 2px solid var(--panel); box-shadow: 0 0 0 1px var(--line-strong); cursor: grab;
+}
+.disp-scale-row input[type=range]::-moz-range-thumb {
+  width: 15px; height: 15px; border-radius: 50%; background: var(--line-strong);
+  border: 2px solid var(--panel); cursor: grab;
+}
+.disp-scale-val { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; font-size: 15px; color: var(--text); }
+.disp-scale-ticks { display: flex; justify-content: space-between; margin-top: 6px; color: var(--dim); font-size: 10px; }
+/* segmented density control */
+.disp-seg { display: flex; border: 1px solid var(--edge); border-radius: 8px; overflow: hidden; }
+.disp-seg button {
+  flex: 1; padding: 8px 6px; background: transparent; border: none; color: var(--dim);
+  font-size: 12px; cursor: pointer; border-right: 1px solid var(--edge); position: relative;
+}
+.disp-seg button:last-child { border-right: none; }
+.disp-seg button:hover { background: var(--hover); color: var(--text); }
+.disp-seg button.on { background: var(--active); color: var(--text); }
+.disp-seg button.on::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: 0; height: 2px; background: var(--accent-bar); }
+/* toggle rows */
+.disp-tog-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; }
+.disp-tog-row span { color: var(--text); }
+.disp-tog { position: relative; width: 38px; height: 21px; flex: none; }
+.disp-tog input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.disp-tog .disp-tog-track {
+  position: absolute; inset: 0; background: var(--edge); border-radius: 999px; transition: background .15s;
+}
+.disp-tog .disp-tog-knob {
+  position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%;
+  background: #cfd6cd; transition: transform .15s;
+}
+.disp-tog input:checked ~ .disp-tog-track { background: var(--up); }
+.disp-tog input:checked ~ .disp-tog-knob { transform: translateX(17px); background: #fff; }
+/* preview */
+.disp-prev-frame {
+  border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden; background: var(--bg);
+  height: 96px; display: flex;
+}
+.disp-prev-side { width: 26%; border-right: 1px solid var(--edge); background: var(--bg2); }
+.disp-prev-side i { display: block; height: 5px; margin: 5px 6px; background: var(--edge); border-radius: 2px; }
+.disp-prev-chart { flex: 1; position: relative; background:
+  repeating-linear-gradient(90deg, transparent 0 11px, rgba(255,255,255,.03) 11px 12px); }
+.disp-prev-chart b {
+  position: absolute; bottom: 8px; width: 4px; border-radius: 1px; background: var(--up);
+}
+.disp-prev-right { width: 22%; border-left: 1px solid var(--edge); background: var(--bg2); }
+.disp-prev-note { margin-top: 6px; color: var(--dim); font-size: 10px; text-align: center; }
+/* footer */
+.disp-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 14px; }
+.disp-reset { background: transparent; border: none; color: var(--dim); font-size: 12px; cursor: pointer; padding: 8px 10px; border-radius: 6px; }
+.disp-reset:hover { color: var(--text); background: var(--hover); }
+.disp-done { background: var(--raise); border: 1px solid var(--edge); color: var(--text); font-size: 13px; padding: 8px 18px; border-radius: 6px; cursor: pointer; }
+.disp-done:hover { background: var(--raise-h); }
+
+/* ---- density presets: tighten row-level spacing app-wide. Comfortable is the
+   default (no class). Compact/Dense progressively reduce list paddings. ---- */
+body.gt-density-compact .wrow { padding-top: 1px; padding-bottom: 1px; }
+body.gt-density-dense .wrow { padding-top: 0; padding-bottom: 0; }
+body.gt-density-dense #watchlist { font-size: 12px; }
+body.gt-density-compact .conn-row,
+body.gt-density-compact .conn-brow { padding-top: 2px; padding-bottom: 2px; }
+body.gt-density-dense .conn-row,
+body.gt-density-dense .conn-brow { padding-top: 1px; padding-bottom: 1px; }
+body.gt-density-compact .indb-field { padding-top: 2px; padding-bottom: 2px; }
+body.gt-density-dense .indb-field { padding-top: 1px; padding-bottom: 1px; }
