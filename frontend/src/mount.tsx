@@ -346,13 +346,37 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     return () => { alive = false; };
   }, [instrumentKey]);
 
+  // Debounced persistence: the UI state updates instantly (setDrawings), but the
+  // network/disk write is coalesced so a slider drag or resize (which commits at
+  // ~60fps) writes ONCE after the interaction settles instead of 60x/second.
+  const persistTimerRef = useRef<number | null>(null);
+  const pendingPersistRef = useRef<{ key: string; data: Drawing[] } | null>(null);
+  const flushPersist = useCallback(() => {
+    if (persistTimerRef.current !== null) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; }
+    const p = pendingPersistRef.current;
+    if (p) { pendingPersistRef.current = null; void api.setDrawings(p.key, p.data); }
+  }, []);
+
   const handleDrawingsChange = useCallback((next: Drawing[]) => {
-    setDrawings(next);
-    // Fire-and-forget: persistence must never block the drawing interaction.
+    setDrawings(next); // instant, never blocked by persistence
     if (loadedKeyRef.current === instrumentKey) {
-      void api.setDrawings(instrumentKey, next);
+      pendingPersistRef.current = { key: instrumentKey, data: next };
+      if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = window.setTimeout(() => {
+        persistTimerRef.current = null;
+        const p = pendingPersistRef.current;
+        if (p) { pendingPersistRef.current = null; void api.setDrawings(p.key, p.data); }
+      }, 450);
     }
   }, [instrumentKey]);
+
+  // Never lose the last edit: flush pending writes on symbol switch, unmount,
+  // and tab close.
+  useEffect(() => {
+    const onHide = () => flushPersist();
+    window.addEventListener('beforeunload', onHide);
+    return () => { window.removeEventListener('beforeunload', onHide); flushPersist(); };
+  }, [instrumentKey, flushPersist]);
 
   const handleSelectDrawing = useCallback((id: string | null, pos?: { x: number; y: number }) => {
     setSelectedDrawingId(id);
@@ -569,6 +593,37 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     [indicators]
   );
 
+  // Dockable drawing-tools rail: drag the grip to snap it to the left or right
+  // edge of the chart. Preference persists across sessions.
+  const [railSide, setRailSide] = useState<'left' | 'right'>(() => {
+    try { return (localStorage.getItem('gt-rail-side') as 'left' | 'right') || 'left'; } catch { return 'left'; }
+  });
+  // While dragging the rail grip we track live cursor position + the side it
+  // would snap to, so a floating "ghost" chip can follow the pointer and make
+  // the drag genuinely visible (not just a static edge tint).
+  const [railDrag, setRailDrag] = useState<{ x: number; y: number; side: 'left' | 'right' } | null>(null);
+  const commitRailSide = (side: 'left' | 'right') => {
+    setRailSide(side);
+    try { localStorage.setItem('gt-rail-side', side); } catch { /* ignore */ }
+  };
+  const beginRailDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const pick = (x: number): 'left' | 'right' => (x > window.innerWidth / 2 ? 'right' : 'left');
+    const move = (ev: MouseEvent) => setRailDrag({ x: ev.clientX, y: ev.clientY, side: pick(ev.clientX) });
+    const up = (ev: MouseEvent) => {
+      commitRailSide(pick(ev.clientX));
+      setRailDrag(null);
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    setRailDrag({ x: e.clientX, y: e.clientY, side: pick(e.clientX) });
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  const toggleRailSide = () => commitRailSide(railSide === 'left' ? 'right' : 'left');
+
   // Backtest fills are rendered through the chart's own position-line layer,
   // which is what draws entry markers on the live charts. Live sim positions
   // ride the same layer with their real ids so select/modify/close route back
@@ -598,12 +653,67 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
 
   return (
     <div className="relative h-full w-full flex">
+      {railDrag && (
+        <>
+          {/* Drop-zone previews: the target edge lights up teal so you can see
+              where the rail will land before releasing. */}
+          <div className={`pointer-events-none absolute inset-y-0 left-0 z-50 w-16 transition-all duration-150 ${railDrag.side === 'left' ? 'bg-gradient-to-r from-teal-400/25 to-transparent border-r-2 border-teal-400' : ''}`} />
+          <div className={`pointer-events-none absolute inset-y-0 right-0 z-50 w-16 transition-all duration-150 ${railDrag.side === 'right' ? 'bg-gradient-to-l from-teal-400/25 to-transparent border-l-2 border-teal-400' : ''}`} />
+          {/* Floating rail ghost that follows the cursor — a translucent copy of
+              the tool rail so the drag reads as physically moving the panel. */}
+          <div
+            className="pointer-events-none fixed z-[70] flex flex-col items-center gap-1.5 rounded-xl border border-teal-400/60 bg-[var(--panel)] px-1.5 py-2 shadow-2xl shadow-black/60 backdrop-blur-md"
+            style={{ left: railDrag.x + 18, top: railDrag.y - 96, opacity: 0.96 }}
+          >
+            {/* grip */}
+            <div className="mb-0.5 grid grid-cols-3 grid-rows-2 gap-[3px]">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <span key={i} className="h-[3px] w-[3px] rounded-full bg-teal-400" />
+              ))}
+            </div>
+            {/* faux tool buttons */}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span key={i} className="h-6 w-6 rounded-md border border-teal-400/25 bg-teal-400/10" />
+            ))}
+            <span className="mt-1 flex items-center gap-1 whitespace-nowrap text-[10px] font-semibold tracking-wide text-teal-300">
+              Dock {railDrag.side}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railDrag.side === 'left' ? 'scaleX(-1)' : undefined }}>
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </span>
+          </div>
+        </>
+      )}
       {/* Tool rail: the chart's drawing-tools panel, so every one of the
           engine's 33 drawing tools is reachable exactly as on the live chart. */}
       {/* The rail wears the SHELL's chrome vars, not the chart palette: it
           must follow the terminal's light/dark class like every other panel. */}
-      <div className="shrink-0 border-r border-[var(--edge)] bg-[var(--panel)] overflow-y-auto">
+      <div
+        className={`shrink-0 flex flex-col bg-[var(--panel)] border-[var(--edge)] transition-opacity duration-150 ${railSide === 'right' ? 'border-l' : 'border-r'} ${railDrag ? 'opacity-40' : 'opacity-100'}`}
+        style={{ order: railSide === 'right' ? 2 : 0 }}
+      >
+        <div
+          className={`group flex h-7 shrink-0 items-center justify-center border-b border-[var(--edge)] ${railDrag ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onMouseDown={beginRailDrag}
+          onDoubleClick={toggleRailSide}
+          title="Drag to dock left or right · double-click to flip side"
+        >
+          {/* Grip: a 6-dot matrix inside a soft pill that lifts to teal on
+              hover/drag — reads instantly as a drag handle, our own style. */}
+          <div className={`flex items-center gap-2 rounded-full border px-2.5 py-1 transition-all duration-150 ${railDrag ? 'border-teal-400/60 bg-teal-400/15' : 'border-transparent group-hover:border-teal-400/30 group-hover:bg-teal-400/10'}`}>
+            <div className="grid grid-cols-3 grid-rows-2 gap-[3px]">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <span
+                  key={i}
+                  className={`h-[3px] w-[3px] rounded-full transition-colors duration-150 ${railDrag ? 'bg-teal-400' : 'bg-foreground/30 group-hover:bg-teal-400'}`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
         <DrawingToolsPanel
+          railSide={railSide}
           activeTool={activeTool}
           onToolSelect={setActiveTool}
           drawings={drawings}
@@ -618,12 +728,13 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           onClearIndicators={() => handleIndicatorsChange(DEFAULT_INDICATOR_CONFIG)}
           onOpenSettings={openIndicatorBrowser}
         />
+        </div>
       </div>
 
       <div
         ref={chartAreaRef}
         className="relative flex-1 min-w-0"
-        style={flipped ? { transform: 'scaleY(-1)' } : undefined}
+        style={{ order: 1, ...(flipped ? { transform: 'scaleY(-1)' as const } : {}) }}
         onContextMenu={(e) => {
           e.preventDefault();
           setTplOpen(false);

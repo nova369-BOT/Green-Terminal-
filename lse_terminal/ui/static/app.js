@@ -11104,44 +11104,216 @@ const FLYOUT_SECTIONS = {
   "rail-markets": "markets", "rail-backtest": "backtest", "rail-econ": "econ",
   "rail-workspace": "workspace", "rail-research": "research",
 };
+// Smart-hover state: previewing a section on hover vs. pinned open after a click.
+let flyoutPinned = false;        // true once a rail section is clicked → stays open
+let flyoutHoverTimer = null;     // debounce before a hover opens the menu
+let flyoutCloseTimer = null;     // grace period before a leave closes it
+let flyoutSection = null;        // the section currently shown
+let flyoutSelecting = false;     // an item is being clicked → suppress reopen, then exit
+let flyoutPreviewing = false;    // an item is being hover-previewed → suppress reopen
+let flyoutPreviewTimer = null;   // debounce before a hovered item previews its view
 function hideFlyout() {
   const fly = $("flyout");
   if (fly) fly.classList.add("hidden");
+  flyoutPinned = false;
+  flyoutSection = null;
+  clearTimeout(flyoutHoverTimer);
+  clearTimeout(flyoutCloseTimer);
+  clearTimeout(flyoutPreviewTimer);
 }
-function renderFlyout(section, anchorBtn) {
+/* Section titles shown as the flyout header, so the menu reads as a real
+   navigation panel and not a bare list. */
+const FLYOUT_TITLES = {
+  markets: "MARKETS", backtest: "BACKTEST", econ: "ECONOMIC",
+  workspace: "WORKSPACE", research: "RESEARCH",
+};
+/* Line-style icons (stroke = currentColor so they inherit the row state).
+   Keyed by sub-view id; missing keys just render label-only, cleanly. */
+const FLYOUT_ICONS = {
+  "sub-mk-charts": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="M7.5 14l3-4 3 3 4-6"/></svg>',
+  "sub-mk-flow": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 10.5h15M4 15h8.5M4 19.5h12.5"/></svg>',
+  "sub-mk-options": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
+  "sub-mk-news": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 8h3v9a2 2 0 0 1-2 2"/><path d="M7.5 9h6M7.5 12h6M7.5 15h4"/></svg>',
+  "sub-mk-screener": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></svg>',
+};
+/* Short one-liners (the long registry descriptions get clamped to 2 lines
+   below; these keep the marquee sections crisp). */
+const FLYOUT_DESCS = {
+  "sub-mk-charts": "Live price action & drawing tools",
+  "sub-mk-flow": "Real-time order-flow & market depth",
+  "sub-mk-options": "Options chain, greeks & strategies",
+  "sub-mk-news": "Global headline wall & newsroom",
+  "sub-mk-screener": "Scan the whole live universe",
+};
+/* Command-palette flyout: a search field + a keyboard-navigable list of the
+   section's sub-views. Type to filter, Up/Down to move, Enter to open, Esc to
+   close. Everything shown is real and clickable; no fake shortcut affordances. */
+function renderFlyout(section, anchorBtn, focusSearch = true) {
   const items = SUBRAIL[section];
   const fly = $("flyout");
   if (!items || !items.length || !fly) { hideFlyout(); return; }
-  const activeId = document.querySelector("#subrail .subrail-btn.active");
-  const active = activeId ? activeId.id : null;
+  const activeEl = document.querySelector("#subrail .subrail-btn.active");
+  const active = activeEl ? activeEl.id : null;
   fly.innerHTML = "";
+
+  // Search / command bar with a magnifier and an ESC hint.
+  const bar = document.createElement("div");
+  bar.className = "flyout-search";
+  bar.innerHTML = '<svg class="flyout-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.2-4.2"/></svg>';
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Search or jump to\u2026";
+  input.className = "flyout-input";
+  input.setAttribute("aria-label", "Search " + (FLYOUT_TITLES[section] || "sections"));
+  bar.appendChild(input);
+  const esc = document.createElement("span");
+  esc.className = "flyout-kbd";
+  esc.textContent = "ESC";
+  bar.appendChild(esc);
+  fly.appendChild(bar);
+
+  // Section label.
+  const head = document.createElement("div");
+  head.className = "flyout-head";
+  head.textContent = FLYOUT_TITLES[section] || "";
+  fly.appendChild(head);
+
+  // Rows.
+  const list = document.createElement("div");
+  list.className = "flyout-list";
+  fly.appendChild(list);
+
+  const rows = [];
   for (const it of items) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "flyout-row" + (it.id === active ? " active" : "")
       + (it.go ? "" : " soon");
-    b.textContent = it.label;
+    const icon = FLYOUT_ICONS[it.id] || "";
+    const desc = FLYOUT_DESCS[it.id] || it.desc || "";
+    b.innerHTML =
+      '<span class="flyout-ico">' + icon + '</span>'
+      + '<span class="flyout-txt">'
+      + '<span class="flyout-lbl">' + it.label + '</span>'
+      + (desc ? '<span class="flyout-desc">' + desc + '</span>' : '')
+      + '</span>'
+      + (it.go ? '<span class="flyout-go">&#8250;</span>'
+               : '<span class="flyout-soon-tag">SOON</span>');
+    b._hay = (it.label + " " + desc).toLowerCase();
+    b._soon = !it.go;
     if (it.go) {
-      b.onclick = () => { hideFlyout(); it.go(); };
-      if (it.desc) b.title = it.desc;
+      // Click commits the selection and EXITS the menu. it.go() re-clicks the
+      // rail (which would normally reopen the menu); flyoutSelecting suppresses
+      // that so the menu closes and stays closed.
+      b.onclick = () => {
+        flyoutSelecting = true;
+        try { it.go(); } finally { hideFlyout(); flyoutSelecting = false; }
+      };
+      // Hovering an item live-previews its view without pinning the menu, so
+      // gliding down the list switches the page as you go — in every section.
+      b.addEventListener("mouseenter", () => {
+        clearTimeout(flyoutPreviewTimer);
+        flyoutPreviewTimer = setTimeout(() => {
+          flyoutPreviewing = true;
+          try { it.go(); } finally { flyoutPreviewing = false; }
+        }, 150);
+      });
+      b.addEventListener("mouseleave", () => clearTimeout(flyoutPreviewTimer));
+      if (desc) b.title = desc;
     } else {
       b.title = "Coming soon";
     }
-    fly.appendChild(b);
+    list.appendChild(b);
+    rows.push(b);
   }
+
+  // Keyboard selection state.
+  let sel = rows.findIndex(r => r.classList.contains("active"));
+  if (sel < 0) sel = rows.findIndex(r => !r._soon);
+  const paint = () => rows.forEach((r, i) => r.classList.toggle("kbdsel", i === sel));
+  const visible = () => rows.filter(r => r.style.display !== "none");
+  paint();
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    rows.forEach(r => { r.style.display = (!q || r._hay.includes(q)) ? "" : "none"; });
+    const vis = visible();
+    sel = vis.length ? rows.indexOf(vis[0]) : -1;
+    paint();
+  });
+  input.addEventListener("keydown", (e) => {
+    const vis = visible();
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (vis.length) { const ci = vis.indexOf(rows[sel]); sel = rows.indexOf(vis[Math.min(vis.length - 1, ci < 0 ? 0 : ci + 1)]); paint(); }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (vis.length) { const ci = vis.indexOf(rows[sel]); sel = rows.indexOf(vis[Math.max(0, ci < 0 ? 0 : ci - 1)]); paint(); }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const r = rows[sel] || vis[0];
+      if (r && !r._soon) r.click();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      hideFlyout();
+    }
+  });
+
   fly.classList.remove("hidden");
   const r = anchorBtn.getBoundingClientRect();
   const top = Math.max(8, Math.min(r.top, window.innerHeight - fly.offsetHeight - 30));
   fly.style.top = top + "px";
+  if (focusSearch !== false) setTimeout(() => { try { input.focus(); } catch (_) {} }, 0);
 }
+// Open (or switch to) a section's menu after a short hover, unless it's already
+// showing that section. Cancels any pending close so moving rail → menu keeps it up.
+function flyoutHoverOpen(section, btn) {
+  clearTimeout(flyoutCloseTimer);
+  if (flyoutSection === section && !$("flyout").classList.contains("hidden")) return;
+  clearTimeout(flyoutHoverTimer);
+  flyoutHoverTimer = setTimeout(() => {
+    flyoutSection = section;
+    renderFlyout(section, btn, false); // hover preview: don't steal focus
+  }, 90);
+}
+// Close after a grace period — but never while pinned (a section was clicked).
+function flyoutHoverClose() {
+  clearTimeout(flyoutHoverTimer);
+  if (flyoutPinned) return;
+  clearTimeout(flyoutCloseTimer);
+  flyoutCloseTimer = setTimeout(hideFlyout, 260);
+}
+// Hovering a rail section previews its menu; moving to another switches it.
+document.addEventListener("mouseover", (ev) => {
+  const t = ev.target;
+  if (!t || !t.closest) return;
+  const rb = t.closest("#rail .rail-btn");
+  if (rb && FLYOUT_SECTIONS[rb.id]) { flyoutHoverOpen(FLYOUT_SECTIONS[rb.id], rb); return; }
+  if (t.closest("#flyout")) { clearTimeout(flyoutCloseTimer); clearTimeout(flyoutHoverTimer); }
+});
+// Leaving both the rail button and the menu (not just crossing into a child)
+// starts the close timer.
+document.addEventListener("mouseout", (ev) => {
+  const t = ev.target;
+  if (!t || !t.closest) return;
+  if (!t.closest("#rail .rail-btn") && !t.closest("#flyout")) return;
+  const to = ev.relatedTarget;
+  if (to && to.closest && (to.closest("#rail .rail-btn") || to.closest("#flyout"))) return;
+  flyoutHoverClose();
+});
 document.addEventListener("click", (ev) => {
   const t = ev.target;
   const rb = t && t.closest ? t.closest("#rail .rail-btn") : null;
   if (rb && FLYOUT_SECTIONS[rb.id]) {
-    // The button's own handler runs first (opens the default view); the
-    // chooser appears right after, same tick pattern as the ai-click sync.
+    // Ignore the synthetic rail click that item navigation fires — otherwise
+    // choosing / previewing an item would reopen the menu instead of exiting.
+    if (flyoutSelecting || flyoutPreviewing) return;
+    // Click pins the menu open (stays put until an item or outside is clicked);
+    // the button's own handler opens the default view on the same tick.
     const section = FLYOUT_SECTIONS[rb.id];
-    setTimeout(() => renderFlyout(section, rb), 0);
+    flyoutPinned = true;
+    clearTimeout(flyoutCloseTimer);
+    setTimeout(() => { flyoutSection = section; renderFlyout(section, rb); }, 0);
     return;
   }
   if (!t || !t.closest || !t.closest("#flyout")) hideFlyout();
@@ -20528,3 +20700,6 @@ function scrShowCard(r) {
   }
   back.classList.remove("hidden");
 }
+
+/* TEMP PREVIEW ONLY - not committed */
+setTimeout(function(){ try { enterLiveSource("demo"); } catch(e){ console.error(e); } }, 1500);
