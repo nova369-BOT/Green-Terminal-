@@ -1369,6 +1369,106 @@ function indSelect(name) {
   renderIndInspector();
 }
 
+// ---- inspector tab-pane builders (shared by first render + post-fetch refresh) ----
+// The style/visibility lists are built from the plot columns the engine actually
+// returned for this indicator (state.indPvCols), so they scale to indicators
+// with one plot or ten. Colours/widths default from the palette; a value in
+// state.indStyle[name][col] is a user override.
+function indColStyle(name, col, idx) {
+  const o = ((state.indStyle || {})[name] || {})[col] || {};
+  return {
+    color: o.color || IND_PALETTE[idx % IND_PALETTE.length],
+    width: o.width || 2,
+    visible: o.visible !== false,
+  };
+}
+function indInputsHtml(spec) {
+  const entries = Object.entries(spec.params || {});
+  if (!entries.length) return `<div class="indb-insp-empty" style="padding:8px">This indicator has no parameters.</div>`;
+  return entries.map(([k, p]) => {
+    const step = p.type === "int" ? "1" : "any";
+    const bounds = `${p.min !== undefined ? `min="${p.min}"` : ""} ${p.max !== undefined ? `max="${p.max}"` : ""}`;
+    const val = state.indDraft.params[k];
+    return `<label class="indb-field"><span>${k}</span>` +
+      `<input type="number" data-param="${k}" value="${val}" step="${step}" ${bounds}></label>`;
+  }).join("");
+}
+function indStyleHtml(spec) {
+  const cols = (state.indPvCols || {})[spec.name];
+  if (!cols || !cols.length) return `<div class="indb-insp-empty" style="padding:8px">Loading plot styles from the live preview…</div>`;
+  return cols.map((c, idx) => {
+    const cur = indColStyle(spec.name, c.id, idx);
+    return `<div class="indb-field"><span>${c.label}</span>` +
+      `<span style="display:flex;gap:6px;align-items:center">` +
+      `<input type="color" data-style="${c.id}" data-k="color" value="${cur.color}" title="Colour">` +
+      `<input type="number" data-style="${c.id}" data-k="width" value="${cur.width}" min="1" max="6" step="1" style="width:52px" title="Line width">` +
+      `</span></div>`;
+  }).join("");
+}
+function indVisHtml(spec) {
+  const cols = (state.indPvCols || {})[spec.name];
+  if (!cols || !cols.length) return `<div class="indb-insp-empty" style="padding:8px">Loading plots from the live preview…</div>`;
+  return cols.map((c, idx) => {
+    const cur = indColStyle(spec.name, c.id, idx);
+    return `<label class="indb-field"><span>${c.label}</span>` +
+      `<input type="checkbox" data-vis="${c.id}" ${cur.visible ? "checked" : ""}></label>`;
+  }).join("");
+}
+function indPaneHtml(spec, tab) {
+  return tab === "inputs" ? indInputsHtml(spec) : tab === "style" ? indStyleHtml(spec) : indVisHtml(spec);
+}
+// Bind the live handlers for whichever inputs are present in the tab pane.
+function indBindTabPane(insp, spec) {
+  const name = spec.name;
+  insp.querySelectorAll("input[data-param]").forEach((inp) => {
+    inp.oninput = () => {
+      state.indDraft.params[inp.dataset.param] = inp.value;
+      indPreviewSchedule();
+      if (indActiveItem(name)) indApplyDraft(name); // live-update the chart too
+    };
+  });
+  insp.querySelectorAll("input[data-style]").forEach((inp) => {
+    inp.oninput = () => {
+      const store = indStyleFor(spec);
+      const o = store[inp.dataset.style] || (store[inp.dataset.style] = {});
+      if (inp.dataset.k === "width") o.width = Math.max(1, Math.min(6, parseInt(inp.value, 10) || 2));
+      else o.color = inp.value;
+      indPreviewRender();
+      if (indActiveItem(name)) indRefreshChart(); // carry the style onto the chart
+    };
+  });
+  insp.querySelectorAll("input[data-vis]").forEach((inp) => {
+    inp.onchange = () => {
+      const store = indStyleFor(spec);
+      const o = store[inp.dataset.vis] || (store[inp.dataset.vis] = {});
+      o.visible = inp.checked;
+      indPreviewRender();
+      if (indActiveItem(name)) indRefreshChart();
+    };
+  });
+}
+// After a preview fetch discovers the real plot columns, refresh JUST the tab
+// pane (never the whole inspector — that would recreate the canvas and loop).
+// Skips the rebuild when the pane is already in sync so it never interrupts a
+// colour drag or checkbox toggle.
+function indUpdateTabPane() {
+  const insp = $("indb-inspector");
+  if (!insp) return;
+  const spec = (state.indicatorSpecs || []).find((s) => s.name === state.indSelected);
+  if (!spec) return;
+  const tab = state.indInspTab || "inputs";
+  if (tab === "inputs") return; // inputs don't depend on discovered columns
+  const pane = insp.querySelector(".indb-insp-tabpane");
+  if (!pane) return;
+  const cols = (state.indPvCols || {})[spec.name] || null;
+  const sel = tab === "style" ? "input[data-style]" : "input[data-vis]";
+  const have = pane.querySelectorAll(sel).length;
+  const want = cols ? cols.length : 0;
+  if (want > 0 && have === want) return; // already showing these columns
+  pane.innerHTML = indPaneHtml(spec, tab);
+  indBindTabPane(insp, spec);
+}
+
 function renderIndInspector() {
   const insp = $("indb-inspector");
   if (!insp) return;
@@ -1381,36 +1481,6 @@ function renderIndInspector() {
   if (!state.indDraft || state.indDraft.name !== name) indSeedDraft(spec);
   const added = !!indActiveItem(name);
   const tab = state.indInspTab || "inputs";
-  const paramEntries = Object.entries(spec.params || {});
-  const inputsHtml = paramEntries.length
-    ? paramEntries.map(([k, p]) => {
-        const step = p.type === "int" ? "1" : "any";
-        const bounds = `${p.min !== undefined ? `min="${p.min}"` : ""} ${p.max !== undefined ? `max="${p.max}"` : ""}`;
-        const val = state.indDraft.params[k];
-        return `<label class="indb-field"><span>${k}</span>` +
-          `<input type="number" data-param="${k}" value="${val}" step="${step}" ${bounds}></label>`;
-      }).join("")
-    : `<div class="indb-insp-empty" style="padding:8px">This indicator has no parameters.</div>`;
-
-  // Style / Visibility lists, built from the indicator's plots. Seed defaults
-  // so the colour swatches show the real plot colours immediately.
-  const plotMeta = indPlotMeta(spec);
-  const st = indStyleFor(spec);
-  if (plotMeta) for (const pl of plotMeta) { if (!st[pl.id]) st[pl.id] = { color: pl.color, width: pl.width, visible: true }; }
-  const notCore = `<div class="indb-insp-empty" style="padding:8px">This indicator renders on the chart when added. The styled live preview covers the core set: moving averages, RSI, MACD, Bollinger, Stochastic, CCI and ATR.</div>`;
-  const styleHtml = plotMeta ? plotMeta.map((pl) => {
-    const o = st[pl.id];
-    return `<div class="indb-field"><span>${pl.label}</span>` +
-      `<span style="display:flex;gap:6px;align-items:center">` +
-      `<input type="color" data-style="${pl.id}" data-k="color" value="${o.color}" title="Colour">` +
-      `<input type="number" data-style="${pl.id}" data-k="width" value="${o.width}" min="1" max="6" step="1" style="width:52px" title="Line width">` +
-      `</span></div>`;
-  }).join("") : notCore;
-  const visHtml = plotMeta ? plotMeta.map((pl) => {
-    const o = st[pl.id];
-    return `<label class="indb-field"><span>${pl.label}</span>` +
-      `<input type="checkbox" data-vis="${pl.id}" ${o.visible !== false ? "checked" : ""}></label>`;
-  }).join("") : notCore;
 
   insp.innerHTML =
     `<div class="indb-insp-head">` +
@@ -1424,11 +1494,7 @@ function renderIndInspector() {
         ["inputs", "style", "visibility"].map((t) =>
           `<button class="indb-insp-tab${tab === t ? " on" : ""}" data-tab="${t}">${t[0].toUpperCase() + t.slice(1)}</button>`).join("") +
       `</div>` +
-      `<div class="indb-insp-tabpane">` +
-        (tab === "inputs" ? inputsHtml :
-         tab === "style" ? styleHtml :
-         visHtml) +
-      `</div>` +
+      `<div class="indb-insp-tabpane">` + indPaneHtml(spec, tab) + `</div>` +
     `</div>` +
     `<div class="indb-insp-foot">` +
       (added
@@ -1444,34 +1510,7 @@ function renderIndInspector() {
     renderIndicatorList();
     renderIndInspector();
   };
-  insp.querySelectorAll("input[data-param]").forEach((inp) => {
-    inp.oninput = () => {
-      state.indDraft.params[inp.dataset.param] = inp.value;
-      indPreviewSchedule();
-      if (indActiveItem(name)) indApplyDraft(name); // live-update the chart too
-    };
-  });
-  // Style tab: colour + line width per plot, restyling the live preview.
-  insp.querySelectorAll("input[data-style]").forEach((inp) => {
-    inp.oninput = () => {
-      const store = indStyleFor(spec);
-      const o = store[inp.dataset.style] || (store[inp.dataset.style] = {});
-      if (inp.dataset.k === "width") o.width = Math.max(1, Math.min(6, parseInt(inp.value, 10) || 2));
-      else o.color = inp.value;
-      indPreviewRender();
-      if (indActiveItem(name)) indRefreshChart(); // carry the style onto the chart
-    };
-  });
-  // Visibility tab: show/hide each plot in the preview and on the chart.
-  insp.querySelectorAll("input[data-vis]").forEach((inp) => {
-    inp.onchange = () => {
-      const store = indStyleFor(spec);
-      const o = store[inp.dataset.vis] || (store[inp.dataset.vis] = {});
-      o.visible = inp.checked;
-      indPreviewRender();
-      if (indActiveItem(name)) indRefreshChart();
-    };
-  });
+  indBindTabPane(insp, spec);
   insp.querySelector(".indb-insp-foot").querySelectorAll("[data-act]").forEach((b) => {
     b.onclick = () => {
       const a = b.dataset.act;
@@ -1492,9 +1531,9 @@ function renderIndInspector() {
 }
 
 /* ---- live preview canvas ----
-   Draws recent real candles for the charted instrument so the inspector shows
-   the indicator's context. The indicator-line overlay + Style/Visibility land
-   in Part B. Sequenced + debounced so fast typing does not stack fetches. */
+   Fetches recent candles PLUS the selected indicator and draws the engine's
+   computed series over them (all 103 built-ins), so the preview matches the
+   chart. Sequenced + debounced so fast typing does not stack fetches. */
 let indPvTimer = null;
 function indPreviewSchedule() {
   if (indPvTimer) clearTimeout(indPvTimer);
@@ -1603,9 +1642,9 @@ function indComputePlots(spec, candles, paramsOverride) {
     ({ id, label, pane, type, values, color: IND_PALETTE[ci % IND_PALETTE.length], width: type === "hist" ? 1 : 2, visible: true });
   if (has("bollinger", "bband")) {
     const m = _sma(closes, L), sd = _stddev(closes, L), mult = num("mult", num("stddev", 2)) || 2;
-    return [mk("upper", "Upper", "price", "line", m.map((v, i) => v == null ? null : v + mult * sd[i]), 0),
-            mk("mid", "Basis", "price", "line", m, 1),
-            mk("lower", "Lower", "price", "line", m.map((v, i) => v == null ? null : v - mult * sd[i]), 0)];
+    return [mk("upper", "upper", "price", "line", m.map((v, i) => v == null ? null : v + mult * sd[i]), 0),
+            mk("middle", "middle", "price", "line", m, 1),
+            mk("lower", "lower", "price", "line", m.map((v, i) => v == null ? null : v - mult * sd[i]), 0)];
   }
   if (has("macd")) {
     const r = _macd(closes, Math.round(num("fast", 12)), Math.round(num("slow", 26)), Math.round(num("signal", 9)));
@@ -1625,11 +1664,14 @@ function indComputePlots(spec, candles, paramsOverride) {
 }
 // Merge saved style/visibility overrides (state.indStyle) onto computed plots.
 function indStyleFor(spec) { state.indStyle = state.indStyle || {}; return state.indStyle[spec.name] || (state.indStyle[spec.name] = {}); }
+// Overlay the user's saved Style/Visibility overrides (state.indStyle, keyed by
+// column/plot id) onto computed plots. Overrides are stored ONLY when the user
+// changes something, so an unset plot keeps its computed default colour/width.
 function indApplyStyle(spec, plots) {
   const st = indStyleFor(spec);
   return plots.map((p) => {
-    const o = st[p.id] || (st[p.id] = { color: p.color, width: p.width, visible: true });
-    return { ...p, color: o.color, width: o.width, visible: o.visible !== false };
+    const o = st[p.id] || {};
+    return { ...p, color: o.color || p.color, width: o.width || p.width, visible: o.visible !== false };
   });
 }
 // The label the SERVER would give this indicator (name, or name(k=v;...)), so
@@ -1652,10 +1694,8 @@ function indClientPayload() {
     if (!spec) continue;
     const plots = indComputePlots(spec, arr, item.params || {});
     if (!plots) continue; // non-core: leave it to the server payload
-    const st = indStyleFor(spec);
     const series = {};
     for (const p of plots) {
-      const o = st[p.id] || {};
       const pts = [];
       for (let i = 0; i < p.values.length; i++) {
         const v = p.values[i];
@@ -1665,24 +1705,48 @@ function indClientPayload() {
       series[p.id] = {
         kind: p.type === "hist" ? "histogram" : "line",
         points: pts,
-        color: o.color || p.color,
-        width: o.width || p.width,
-        visible: o.visible !== false,
+        color: p.color,
+        width: p.width,
+        visible: true,
       };
     }
     out[indClientLabel(item)] = { overlay: plots[0].pane === "price", series };
   }
   return out;
 }
-// Merge the last server payload with the client core payload. Client core wins
-// on a colliding label (drops a duplicate server entry); every other server
-// indicator passes through untouched.
+// Overlay the panel's Style/Visibility overrides onto an engineIndicators-shaped
+// payload, keyed by the SERVER's column names. Series objects are copied before
+// mutation so the cached server payload is never altered.
+function indApplyOverridesToPayload(payload) {
+  const all = state.indStyle || {};
+  for (const [label, ind] of Object.entries(payload)) {
+    const name = label.split("(")[0];
+    const ov = all[name];
+    if (!ov || !ind.series) continue;
+    for (const [col, s] of Object.entries(ind.series)) {
+      const o = ov[col];
+      if (!o) continue;
+      const next = { ...s };
+      if (o.color) next.color = o.color;
+      if (o.width) next.width = o.width;
+      if (o.visible !== undefined) next.visible = o.visible;
+      ind.series[col] = next;
+    }
+  }
+  return payload;
+}
+// Merge the client core payload (a fallback for the true embed mode, where the
+// server computes nothing) with the last server payload. The SERVER wins on a
+// colliding label — its maths is the tested source of truth — and the client
+// only fills labels the server did not return. Style/Visibility overrides are
+// then applied uniformly on top.
 function indMergedPayload() {
-  const client = indClientPayload();
   const merged = {};
-  for (const [k, v] of Object.entries(state.serverIndicators || {})) if (!(k in client)) merged[k] = v;
-  for (const [k, v] of Object.entries(client)) merged[k] = v;
-  return merged;
+  for (const [k, v] of Object.entries(indClientPayload())) merged[k] = v;
+  for (const [k, v] of Object.entries(state.serverIndicators || {})) {
+    merged[k] = { overlay: v.overlay, series: { ...(v.series || {}) } }; // copy so overrides don't touch the cache
+  }
+  return indApplyOverridesToPayload(merged);
 }
 // Re-push indicators to the chart from the loaded candles WITHOUT a server
 // round-trip — used when Style/Visibility change (the maths is unchanged, only
@@ -1692,14 +1756,6 @@ function indRefreshChart() {
   state.engineIndicators = indMergedPayload();
   pushToChart();
 }
-// Plot ids/labels for the Style/Visibility lists (computed on synthetic bars).
-function indPlotMeta(spec) {
-  const synth = []; let p = 100;
-  for (let i = 0; i < 140; i++) { const o = p, c = p + Math.sin(i / 5) * 0.8; synth.push([i, o, Math.max(o, c) + 0.5, Math.min(o, c) - 0.5, c, 100]); p = c; }
-  const plots = indComputePlots(spec, synth);
-  return plots ? plots.map((pl) => ({ id: pl.id, label: pl.label, type: pl.type, color: pl.color, width: pl.width })) : null;
-}
-
 function _drawLine(ctx, x, w, n, p, yOf) {
   ctx.strokeStyle = p.color; ctx.lineWidth = p.width || 2; ctx.beginPath();
   let started = false;
@@ -1746,12 +1802,43 @@ function _drawSubPane(ctx, x, y, w, h, plots) {
     } else { _drawLine(ctx, x, w, n, p, yOf); }
   }
 }
-function indDrawPreview(ctx, w, ht, candles, spec) {
+// Convert a server indicator payload entry ({overlay, series:{col:{kind,points}}})
+// into preview plot descriptors, aligning each sparse [ts,value] series onto the
+// candle index (the candle ts and the point ts come from the same server frame,
+// so they match exactly). Returns null when nothing lands on a candle.
+function indPayloadPlots(ind, candles, name) {
+  const cols = Object.keys(ind.series || {});
+  if (!cols.length) return null;
+  const idxByTime = new Map();
+  for (let i = 0; i < candles.length; i++) idxByTime.set(candles[i][0], i);
+  const ov = (state.indStyle || {})[name] || {};
+  let anyHit = false;
+  const plots = cols.map((col, idx) => {
+    const s = ind.series[col];
+    const values = new Array(candles.length).fill(null);
+    for (const [ts, v] of (s.points || [])) {
+      const i = idxByTime.get(ts);
+      if (i !== undefined) { values[i] = v; anyHit = true; }
+    }
+    const o = ov[col] || {};
+    return {
+      id: col, label: col, pane: ind.overlay ? "price" : "sub",
+      type: s.kind === "histogram" ? "hist" : "line",
+      values,
+      color: o.color || IND_PALETTE[idx % IND_PALETTE.length],
+      width: o.width || 2,
+      visible: o.visible !== false,
+    };
+  });
+  return anyHit ? plots : null;
+}
+// Draw an already-styled set of plots over the candles: overlays share the price
+// pane, oscillators get their own sub-pane. Hidden plots are dropped by caller.
+function indDrawPreview(ctx, w, ht, candles, plots, noteName) {
   if (!candles.length) { indPvMsg(ctx, w, ht, "No candles"); return; }
-  let plots = spec ? indComputePlots(spec, candles) : null;
-  if (plots) plots = indApplyStyle(spec, plots).filter((p) => p.visible !== false);
-  const subPlots = plots ? plots.filter((p) => p.pane === "sub") : [];
-  const pricePlots = plots ? plots.filter((p) => p.pane === "price") : [];
+  const vis = plots ? plots.filter((p) => p.visible !== false) : [];
+  const subPlots = vis.filter((p) => p.pane === "sub");
+  const pricePlots = vis.filter((p) => p.pane === "price");
   const gap = 8;
   const priceH = subPlots.length ? Math.round(ht * 0.62) : ht;
   _drawPricePane(ctx, 0, 0, w, priceH, candles, pricePlots);
@@ -1760,11 +1847,24 @@ function indDrawPreview(ctx, w, ht, candles, spec) {
     ctx.beginPath(); ctx.moveTo(0, priceH + gap / 2); ctx.lineTo(w, priceH + gap / 2); ctx.stroke();
     _drawSubPane(ctx, 0, priceH + gap, w, ht - priceH - gap, subPlots);
   }
-  if (spec && !plots) {
+  if (noteName) {
     ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.font = "10px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "bottom";
-    ctx.fillText("preview: candles \u2014 add to chart to compute " + spec.name, w / 2, ht - 4);
+    ctx.fillText("preview: candles \u2014 add to chart to compute " + noteName, w / 2, ht - 4);
   }
+}
+// The indicator query for the selected draft, in the engine's parse format
+// ("name" or "name:k=v;k=v"), sending only non-default params.
+function indDraftQuery(spec) {
+  const p = indDraftToParams(spec);
+  const ent = Object.entries(p);
+  return spec.name + (ent.length ? ":" + ent.map(([k, v]) => `${k}=${v}`).join(";") : "");
+}
+// Remember the plot columns discovered for an indicator so the Style/Visibility
+// tabs can list exactly the plots this indicator draws (any number of them).
+function indSetCols(name, plots) {
+  state.indPvCols = state.indPvCols || {};
+  state.indPvCols[name] = plots.map((p) => ({ id: p.id, label: p.label, type: p.type }));
 }
 async function indPreviewRender() {
   const cv = document.getElementById("indb-preview");
@@ -1781,12 +1881,16 @@ async function indPreviewRender() {
   if (!state.provider || !state.symbol) { indPvMsg(ctx, w, ht, "Chart a symbol to preview"); return; }
   const spec = (state.indicatorSpecs || []).find((s) => s.name === state.indSelected);
   const seq = (state.indPvSeq = (state.indPvSeq || 0) + 1);
-  // Candles only: indicators are computed client-side above so the preview
-  // works in hosted mode (where /api/candles returns no indicators).
+  // Fetch candles AND the selected indicator: the engine computes it (all 103
+  // built-ins, tested maths) and returns timestamped series we draw directly.
+  // Only the true site-embed (LSE_TERMINAL_HOSTED) computes nothing; there we
+  // fall back to the client core set below.
+  const q = spec ? indDraftQuery(spec) : "";
   let data;
   try {
     const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
-      `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}&limit=160&indicators=`;
+      `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
+      `&limit=300&indicators=${encodeURIComponent(q)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error("http");
     data = await r.json();
@@ -1795,7 +1899,20 @@ async function indPreviewRender() {
     return;
   }
   if (seq !== state.indPvSeq) return;
-  indDrawPreview(ctx, w, ht, data.candles || [], spec);
+  const candles = data.candles || [];
+  let plots = null, note = null;
+  const entry = spec ? Object.values(data.indicators || {})[0] : null;
+  if (entry) plots = indPayloadPlots(entry, candles, spec.name);
+  if (spec && !plots) {
+    // Embed fallback: compute the core set on the client, honouring overrides.
+    const cp = indComputePlots(spec, candles);
+    if (cp) plots = indApplyStyle(spec, cp);
+    else note = spec.name;
+  }
+  if (plots) indSetCols(spec.name, plots);
+  indDrawPreview(ctx, w, ht, candles, plots, note);
+  // Now that the real plot columns are known, fill in the Style/Visibility tabs.
+  indUpdateTabPane();
 }
 
 // The parameter editor: one input per spec param (already typed and bounded
