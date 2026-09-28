@@ -10012,22 +10012,59 @@ function hideFlyout() {
   const fly = $("flyout");
   if (fly) fly.classList.add("hidden");
 }
+/* Section titles shown as the flyout header, so the menu reads as a real
+   navigation panel and not a bare list. */
+const FLYOUT_TITLES = {
+  markets: "MARKETS", backtest: "BACKTEST", econ: "ECONOMIC",
+  workspace: "WORKSPACE", research: "RESEARCH",
+};
+/* Line-style icons (stroke = currentColor so they inherit the row state).
+   Keyed by sub-view id; missing keys just render label-only, cleanly. */
+const FLYOUT_ICONS = {
+  "sub-mk-charts": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="M7.5 14l3-4 3 3 4-6"/></svg>',
+  "sub-mk-flow": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 10.5h15M4 15h8.5M4 19.5h12.5"/></svg>',
+  "sub-mk-options": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
+  "sub-mk-news": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 8h3v9a2 2 0 0 1-2 2"/><path d="M7.5 9h6M7.5 12h6M7.5 15h4"/></svg>',
+  "sub-mk-screener": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></svg>',
+};
+/* Short one-liners (the long registry descriptions get clamped to 2 lines
+   below; these keep the marquee sections crisp). */
+const FLYOUT_DESCS = {
+  "sub-mk-charts": "Live price action & drawing tools",
+  "sub-mk-flow": "Real-time order-flow & market depth",
+  "sub-mk-options": "Options chain, greeks & strategies",
+  "sub-mk-news": "Global headline wall & newsroom",
+  "sub-mk-screener": "Scan the whole live universe",
+};
 function renderFlyout(section, anchorBtn) {
   const items = SUBRAIL[section];
   const fly = $("flyout");
   if (!items || !items.length || !fly) { hideFlyout(); return; }
-  const activeId = document.querySelector("#subrail .subrail-btn.active");
-  const active = activeId ? activeId.id : null;
+  const activeEl = document.querySelector("#subrail .subrail-btn.active");
+  const active = activeEl ? activeEl.id : null;
   fly.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "flyout-head";
+  head.textContent = FLYOUT_TITLES[section] || "";
+  fly.appendChild(head);
   for (const it of items) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "flyout-row" + (it.id === active ? " active" : "")
       + (it.go ? "" : " soon");
-    b.textContent = it.label;
+    const icon = FLYOUT_ICONS[it.id] || "";
+    const desc = FLYOUT_DESCS[it.id] || it.desc || "";
+    b.innerHTML =
+      '<span class="flyout-ico">' + icon + '</span>'
+      + '<span class="flyout-txt">'
+      + '<span class="flyout-lbl">' + it.label + '</span>'
+      + (desc ? '<span class="flyout-desc">' + desc + '</span>' : '')
+      + '</span>'
+      + (it.go ? '<span class="flyout-go">&#8250;</span>'
+               : '<span class="flyout-soon-tag">SOON</span>');
     if (it.go) {
       b.onclick = () => { hideFlyout(); it.go(); };
-      if (it.desc) b.title = it.desc;
+      if (desc) b.title = desc;
     } else {
       b.title = "Coming soon";
     }
@@ -19348,3 +19385,6 @@ function scrShowCard(r) {
   }
   back.classList.remove("hidden");
 }
+
+/* TEMP PREVIEW ONLY - not committed */
+setTimeout(function(){ try { enterLiveSource("demo"); } catch(e){ console.error(e); } }, 1500);
