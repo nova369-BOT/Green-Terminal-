@@ -251,10 +251,36 @@ const ChartDrawingOverlayComponent = ({
   const getNewDrawingFillColor = (fallback?: string) => toolSettings?.fillColor ?? fallback;
   const getNewDrawingFillOpacity = () => toolSettings?.fillOpacity ?? 100;
 
+  // ── Perf cache ─────────────────────────────────────────────────────────
+  // VWAP / Volume Profile / Regression each scan hundreds–thousands of candles.
+  // renderDrawing runs for EVERY drawing on EVERY hover/selection re-render, so
+  // without memoing these, moving the mouse over a chart that has a few
+  // analytics drawings re-scans all candles many times per second. We cache by
+  // an input signature: params + candle-set signature (+ view transform for
+  // results expressed in pixels). The map is capped so it can't grow unbounded.
+  const computeCacheRef = useRef<Map<string, any>>(new Map());
+  const candleSig = (): string => {
+    const cs = candlesProp;
+    if (!cs || cs.length === 0) return '0';
+    const f = cs[0], l = cs[cs.length - 1];
+    return `${cs.length}|${f.time}|${l.time}|${l.close}|${l.volume ?? 0}`;
+  };
+  const viewSig = (): string =>
+    `${converter.timeToX(0)}|${converter.timeToX(1e9)}|${converter.priceToY(0)}|${converter.priceToY(1e6)}`;
+  const memoCompute = <T,>(key: string, fn: () => T): T => {
+    const cache = computeCacheRef.current;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit as T;
+    const val = fn();
+    if (cache.size > 240) cache.clear();
+    cache.set(key, val);
+    return val;
+  };
+
   // Anchored VWAP: cumulative volume-weighted average price from an anchor bar to
   // the latest bar, with running standard-deviation bands (±1σ/±2σ). Uses REAL
   // candle volume only; returns null when no volume is available in range.
-  const computeAnchoredVwap = (anchorTime: number, source: string = 'hlc3', m1: number = 1, m2: number = 2) => {
+  const computeAnchoredVwapImpl = (anchorTime: number, source: string = 'hlc3', m1: number = 1, m2: number = 2) => {
     const cs = candlesProp;
     if (!cs || cs.length === 0) return null;
     let startIdx = cs.findIndex((c) => c.time >= anchorTime);
@@ -280,10 +306,14 @@ const ChartDrawingOverlayComponent = ({
     if (line.length === 0) return null;
     return { line, u1, l1, u2, l2, lastVwap };
   };
+  // Cached wrapper: pixel output → key includes the view transform.
+  const computeAnchoredVwap = (anchorTime: number, source: string = 'hlc3', m1: number = 1, m2: number = 2) =>
+    memoCompute(`vwap|${anchorTime}|${source}|${m1}|${m2}|${candleSig()}|${viewSig()}`,
+      () => computeAnchoredVwapImpl(anchorTime, source, m1, m2));
 
   // Fixed-Range Volume Profile: bins REAL volume of candles inside a time range
   // across the price axis, splitting up/down volume, and finds POC + 70% value area.
-  const computeVolumeProfile = (t1: number, t2: number, rows: number = 24, vaPct: number = 0.7) => {
+  const computeVolumeProfileImpl = (t1: number, t2: number, rows: number = 24, vaPct: number = 0.7) => {
     const cs = candlesProp;
     if (!cs || cs.length === 0) return null;
     const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
@@ -320,10 +350,14 @@ const ChartDrawingOverlayComponent = ({
     }
     return { N, rowH, up, down, totals, priceLo, priceHi, maxVol, totalVol, pocIdx, vaLo, vaHi };
   };
+  // Cached wrapper: result is in price/volume space (no view transform needed).
+  const computeVolumeProfile = (t1: number, t2: number, rows: number = 24, vaPct: number = 0.7) =>
+    memoCompute(`vp|${t1}|${t2}|${rows}|${vaPct}|${candleSig()}`,
+      () => computeVolumeProfileImpl(t1, t2, rows, vaPct));
 
   // Linear Regression Trend: least-squares fit of REAL closes over a bar range,
   // with ±1σ/±2σ residual channel and Pearson R² (goodness of fit).
-  const computeRegression = (t1: number, t2: number) => {
+  const computeRegressionImpl = (t1: number, t2: number) => {
     const cs = candlesProp;
     if (!cs || cs.length === 0) return null;
     const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
@@ -353,6 +387,10 @@ const ChartDrawingOverlayComponent = ({
     }
     return { line, u1, l1, u2, l2, r2: r * r };
   };
+  // Cached wrapper: pixel output → key includes the view transform.
+  const computeRegression = (t1: number, t2: number) =>
+    memoCompute(`reg|${t1}|${t2}|${candleSig()}|${viewSig()}`,
+      () => computeRegressionImpl(t1, t2));
 
   // Performance optimization: Use refs for smooth dragging without React re-renders
   const rafIdRef = useRef<number | null>(null);
