@@ -10113,18 +10113,16 @@ function renderFlyout(section, anchorBtn, focusSearch = true) {
         flyoutSelecting = true;
         try { it.go(); } finally { hideFlyout(); flyoutSelecting = false; }
       };
-      // Hovering a Markets item live-previews its view without pinning the menu,
-      // so gliding down CHART → G-FLOW → OPTIONS switches the page as you go.
-      if (section === "markets") {
-        b.addEventListener("mouseenter", () => {
-          clearTimeout(flyoutPreviewTimer);
-          flyoutPreviewTimer = setTimeout(() => {
-            flyoutPreviewing = true;
-            try { it.go(); } finally { flyoutPreviewing = false; }
-          }, 150);
-        });
-        b.addEventListener("mouseleave", () => clearTimeout(flyoutPreviewTimer));
-      }
+      // Hovering an item live-previews its view without pinning the menu, so
+      // gliding down the list switches the page as you go — in every section.
+      b.addEventListener("mouseenter", () => {
+        clearTimeout(flyoutPreviewTimer);
+        flyoutPreviewTimer = setTimeout(() => {
+          flyoutPreviewing = true;
+          try { it.go(); } finally { flyoutPreviewing = false; }
+        }, 150);
+      });
+      b.addEventListener("mouseleave", () => clearTimeout(flyoutPreviewTimer));
       if (desc) b.title = desc;
     } else {
       b.title = "Coming soon";
