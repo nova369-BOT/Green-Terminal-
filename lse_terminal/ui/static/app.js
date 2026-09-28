@@ -761,40 +761,39 @@ function saveShellState() {
 // objects above still back the backtest equity curve; they no longer draw the
 // price chart.
 
-/* ---------- Item 3: DISPLAY settings (interface scale / density / panels) ----
-   A centered modal that shrinks or enlarges the whole terminal (Chromium zoom,
-   which reflows correctly), tightens row density, and hides/shows the main
-   panels. Every change applies live and persists in the workspace shell. */
-const DISP_DEFAULTS = { scale: 100, density: "comfortable", panels: { side: true, controls: true, status: true, dock: true } };
-const DISP_PANELS = [
-  { key: "side", id: "side", label: "Watchlist" },
-  { key: "controls", id: "controls", label: "Toolbar" },
-  { key: "status", id: "status", label: "Status bar" },
-  { key: "dock", id: "dockzone", label: "Section dock" },
-];
+/* ---------- Item 3: DISPLAY settings (interface scale + density) ----
+   A centered modal that shrinks or enlarges the whole terminal. Interface scale
+   is the master zoom; Density folds an extra compaction factor into that same
+   zoom (so Compact/Dense visibly tighten everything) and also nudges row
+   paddings. Chromium zoom reflows the layout correctly. Persists in the shell. */
+const DISP_DEFAULTS = { scale: 100, density: "comfortable" };
+const DENSITY_FACTOR = { comfortable: 1, compact: 0.9, dense: 0.82 };
+// Panels the earlier build could hide; we now force them visible so no element
+// stays stuck hidden from a previously-saved state.
+const DISP_PANEL_IDS = ["side", "controls", "status", "dockzone"];
 function dispState() {
   const d = state.display && typeof state.display === "object" ? state.display : (state.display = {});
   if (typeof d.scale !== "number" || !isFinite(d.scale)) d.scale = 100;
   d.scale = Math.max(80, Math.min(120, Math.round(d.scale)));
   if (!["comfortable", "compact", "dense"].includes(d.density)) d.density = "comfortable";
-  d.panels = Object.assign({ side: true, controls: true, status: true, dock: true }, d.panels || {});
   return d;
 }
 function dispApply() {
   const d = dispState();
-  // Interface scale: zoom reflows the layout (transform:scale would not).
-  const z = d.scale / 100;
-  document.documentElement.style.zoom = z === 1 ? "" : String(z);
-  // Density.
+  // Master zoom = interface scale × density factor, so density always has a
+  // clearly visible effect on top of whatever scale is set.
+  const z = (d.scale / 100) * (DENSITY_FACTOR[d.density] || 1);
+  document.documentElement.style.zoom = Math.abs(z - 1) < 0.001 ? "" : String(+z.toFixed(3));
+  // Row-level tightening on top of the zoom, for extra density.
   document.body.classList.remove("gt-density-compact", "gt-density-dense");
   if (d.density === "compact") document.body.classList.add("gt-density-compact");
   else if (d.density === "dense") document.body.classList.add("gt-density-dense");
-  // Panel visibility.
-  for (const p of DISP_PANELS) {
-    const el = document.getElementById(p.id);
-    if (el) el.style.display = d.panels[p.key] === false ? "none" : "";
+  // Ensure no panel is left hidden by the removed Show-panels feature.
+  for (const id of DISP_PANEL_IDS) {
+    const el = document.getElementById(id);
+    if (el && el.style.display === "none") el.style.display = "";
   }
-  // The chart canvas must re-measure after a scale or panel change.
+  // The chart canvas must re-measure after a zoom change.
   if (window.LSEChart && typeof window.LSEChart.resize === "function") {
     try { window.LSEChart.resize(); } catch (e) { /* engine handles */ }
   }
@@ -802,15 +801,6 @@ function dispApply() {
 function dispSliderFill(scale) {
   const pct = (scale - 80) / 40 * 100;
   return `linear-gradient(90deg, var(--line-strong) 0 ${pct}%, var(--edge) ${pct}% 100%)`;
-}
-function dispPreviewHtml() {
-  const d = dispState();
-  const bars = [38, 52, 30, 60, 46, 68, 40, 74, 58, 80, 64, 88, 54, 70]
-    .map((h, i) => `<b style="left:${8 + i * 6.4}%;height:${Math.round(h * (d.scale / 100))}%;background:${i % 3 === 0 ? "var(--down)" : "var(--up)"}"></b>`).join("");
-  const side = d.panels.side ? `<div class="disp-prev-side"><i></i><i></i><i></i><i></i><i></i><i></i></div>` : "";
-  const right = `<div class="disp-prev-right"></div>`;
-  return `<div class="disp-prev-frame">${side}<div class="disp-prev-chart">${bars}</div>${right}</div>` +
-    `<div class="disp-prev-note">Interface at ${d.scale}% · ${d.density}</div>`;
 }
 function dispRender() {
   const body = $("disp-body");
@@ -832,42 +822,23 @@ function dispRender() {
           `<button data-den="${v}" class="${d.density === v ? "on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("") +
       `</div>` +
     `</div>` +
-    `<div class="disp-sec">` +
-      `<div class="disp-sec-lbl">Show panels</div>` +
-      DISP_PANELS.map((p) =>
-        `<div class="disp-tog-row"><span>${p.label}</span>` +
-          `<label class="disp-tog"><input type="checkbox" data-panel="${p.key}" ${d.panels[p.key] !== false ? "checked" : ""}>` +
-          `<span class="disp-tog-track"></span><span class="disp-tog-knob"></span></label>` +
-        `</div>`).join("") +
-    `</div>` +
-    `<div class="disp-sec">` +
-      `<div class="disp-sec-lbl">Preview</div>` +
-      `<div id="disp-preview">${dispPreviewHtml()}</div>` +
-    `</div>` +
     `<div class="disp-foot">` +
       `<button class="disp-reset" id="disp-reset">Reset</button>` +
       `<button class="disp-done" id="disp-done">Done</button>` +
     `</div>`;
 
-  const refreshPreview = () => { const pv = $("disp-preview"); if (pv) pv.innerHTML = dispPreviewHtml(); };
   const slider = $("disp-scale");
   slider.oninput = () => {
     d.scale = Math.max(80, Math.min(120, parseInt(slider.value, 10) || 100));
     $("disp-scale-val").textContent = d.scale + "%";
     slider.style.background = dispSliderFill(d.scale);
-    dispApply(); refreshPreview(); saveShellState();
+    dispApply(); saveShellState();
   };
   body.querySelectorAll("#disp-density button").forEach((b) => {
     b.onclick = () => {
       d.density = b.dataset.den;
       body.querySelectorAll("#disp-density button").forEach((x) => x.classList.toggle("on", x === b));
-      dispApply(); refreshPreview(); saveShellState();
-    };
-  });
-  body.querySelectorAll("input[data-panel]").forEach((inp) => {
-    inp.onchange = () => {
-      d.panels[inp.dataset.panel] = inp.checked;
-      dispApply(); refreshPreview(); saveShellState();
+      dispApply(); saveShellState();
     };
   });
   $("disp-reset").onclick = () => {
