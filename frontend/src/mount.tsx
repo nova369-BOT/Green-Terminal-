@@ -636,23 +636,28 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
               where the rail will land before releasing. */}
           <div className={`pointer-events-none absolute inset-y-0 left-0 z-50 w-16 transition-all duration-150 ${railDrag.side === 'left' ? 'bg-gradient-to-r from-teal-400/25 to-transparent border-r-2 border-teal-400' : ''}`} />
           <div className={`pointer-events-none absolute inset-y-0 right-0 z-50 w-16 transition-all duration-150 ${railDrag.side === 'right' ? 'bg-gradient-to-l from-teal-400/25 to-transparent border-l-2 border-teal-400' : ''}`} />
-          {/* Floating drag ghost that follows the cursor — makes the move
-              tactile and shows exactly what's being docked and where. */}
+          {/* Floating rail ghost that follows the cursor — a translucent copy of
+              the tool rail so the drag reads as physically moving the panel. */}
           <div
-            className="pointer-events-none fixed z-[70] flex items-center gap-2 rounded-lg border border-teal-400/60 bg-[var(--panel)] px-2.5 py-1.5 shadow-xl shadow-black/50 backdrop-blur-sm"
-            style={{ left: railDrag.x + 16, top: railDrag.y + 16 }}
+            className="pointer-events-none fixed z-[70] flex flex-col items-center gap-1.5 rounded-xl border border-teal-400/60 bg-[var(--panel)] px-1.5 py-2 shadow-2xl shadow-black/60 backdrop-blur-md"
+            style={{ left: railDrag.x + 18, top: railDrag.y - 96, opacity: 0.96 }}
           >
-            <div className="grid grid-cols-3 grid-rows-2 gap-[3px]">
+            {/* grip */}
+            <div className="mb-0.5 grid grid-cols-3 grid-rows-2 gap-[3px]">
               {Array.from({ length: 6 }).map((_, i) => (
                 <span key={i} className="h-[3px] w-[3px] rounded-full bg-teal-400" />
               ))}
             </div>
-            <span className="whitespace-nowrap text-[11px] font-semibold tracking-wide text-foreground/90">
+            {/* faux tool buttons */}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span key={i} className="h-6 w-6 rounded-md border border-teal-400/25 bg-teal-400/10" />
+            ))}
+            <span className="mt-1 flex items-center gap-1 whitespace-nowrap text-[10px] font-semibold tracking-wide text-teal-300">
               Dock {railDrag.side}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railDrag.side === 'left' ? 'scaleX(-1)' : undefined }}>
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
             </span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: railDrag.side === 'left' ? 'scaleX(-1)' : undefined }}>
-              <path d="M5 12h14M13 6l6 6-6 6" />
-            </svg>
           </div>
         </>
       )}
@@ -661,7 +666,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
       {/* The rail wears the SHELL's chrome vars, not the chart palette: it
           must follow the terminal's light/dark class like every other panel. */}
       <div
-        className={`shrink-0 flex flex-col bg-[var(--panel)] border-[var(--edge)] ${railSide === 'right' ? 'border-l' : 'border-r'}`}
+        className={`shrink-0 flex flex-col bg-[var(--panel)] border-[var(--edge)] transition-opacity duration-150 ${railSide === 'right' ? 'border-l' : 'border-r'} ${railDrag ? 'opacity-40' : 'opacity-100'}`}
         style={{ order: railSide === 'right' ? 2 : 0 }}
       >
         <div
