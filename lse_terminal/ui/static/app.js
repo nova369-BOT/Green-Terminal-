@@ -10008,9 +10008,18 @@ const FLYOUT_SECTIONS = {
   "rail-markets": "markets", "rail-backtest": "backtest", "rail-econ": "econ",
   "rail-workspace": "workspace", "rail-research": "research",
 };
+// Smart-hover state: previewing a section on hover vs. pinned open after a click.
+let flyoutPinned = false;        // true once a rail section is clicked → stays open
+let flyoutHoverTimer = null;     // debounce before a hover opens the menu
+let flyoutCloseTimer = null;     // grace period before a leave closes it
+let flyoutSection = null;        // the section currently shown
 function hideFlyout() {
   const fly = $("flyout");
   if (fly) fly.classList.add("hidden");
+  flyoutPinned = false;
+  flyoutSection = null;
+  clearTimeout(flyoutHoverTimer);
+  clearTimeout(flyoutCloseTimer);
 }
 /* Section titles shown as the flyout header, so the menu reads as a real
    navigation panel and not a bare list. */
@@ -10039,7 +10048,7 @@ const FLYOUT_DESCS = {
 /* Command-palette flyout: a search field + a keyboard-navigable list of the
    section's sub-views. Type to filter, Up/Down to move, Enter to open, Esc to
    close. Everything shown is real and clickable; no fake shortcut affordances. */
-function renderFlyout(section, anchorBtn) {
+function renderFlyout(section, anchorBtn, focusSearch = true) {
   const items = SUBRAIL[section];
   const fly = $("flyout");
   if (!items || !items.length || !fly) { hideFlyout(); return; }
@@ -10138,16 +10147,54 @@ function renderFlyout(section, anchorBtn) {
   const r = anchorBtn.getBoundingClientRect();
   const top = Math.max(8, Math.min(r.top, window.innerHeight - fly.offsetHeight - 30));
   fly.style.top = top + "px";
-  setTimeout(() => { try { input.focus(); } catch (_) {} }, 0);
+  if (focusSearch !== false) setTimeout(() => { try { input.focus(); } catch (_) {} }, 0);
 }
+// Open (or switch to) a section's menu after a short hover, unless it's already
+// showing that section. Cancels any pending close so moving rail → menu keeps it up.
+function flyoutHoverOpen(section, btn) {
+  clearTimeout(flyoutCloseTimer);
+  if (flyoutSection === section && !$("flyout").classList.contains("hidden")) return;
+  clearTimeout(flyoutHoverTimer);
+  flyoutHoverTimer = setTimeout(() => {
+    flyoutSection = section;
+    renderFlyout(section, btn, false); // hover preview: don't steal focus
+  }, 90);
+}
+// Close after a grace period — but never while pinned (a section was clicked).
+function flyoutHoverClose() {
+  clearTimeout(flyoutHoverTimer);
+  if (flyoutPinned) return;
+  clearTimeout(flyoutCloseTimer);
+  flyoutCloseTimer = setTimeout(hideFlyout, 260);
+}
+// Hovering a rail section previews its menu; moving to another switches it.
+document.addEventListener("mouseover", (ev) => {
+  const t = ev.target;
+  if (!t || !t.closest) return;
+  const rb = t.closest("#rail .rail-btn");
+  if (rb && FLYOUT_SECTIONS[rb.id]) { flyoutHoverOpen(FLYOUT_SECTIONS[rb.id], rb); return; }
+  if (t.closest("#flyout")) { clearTimeout(flyoutCloseTimer); clearTimeout(flyoutHoverTimer); }
+});
+// Leaving both the rail button and the menu (not just crossing into a child)
+// starts the close timer.
+document.addEventListener("mouseout", (ev) => {
+  const t = ev.target;
+  if (!t || !t.closest) return;
+  if (!t.closest("#rail .rail-btn") && !t.closest("#flyout")) return;
+  const to = ev.relatedTarget;
+  if (to && to.closest && (to.closest("#rail .rail-btn") || to.closest("#flyout"))) return;
+  flyoutHoverClose();
+});
 document.addEventListener("click", (ev) => {
   const t = ev.target;
   const rb = t && t.closest ? t.closest("#rail .rail-btn") : null;
   if (rb && FLYOUT_SECTIONS[rb.id]) {
-    // The button's own handler runs first (opens the default view); the
-    // chooser appears right after, same tick pattern as the ai-click sync.
+    // Click pins the menu open (stays put until an item or outside is clicked);
+    // the button's own handler opens the default view on the same tick.
     const section = FLYOUT_SECTIONS[rb.id];
-    setTimeout(() => renderFlyout(section, rb), 0);
+    flyoutPinned = true;
+    clearTimeout(flyoutCloseTimer);
+    setTimeout(() => { flyoutSection = section; renderFlyout(section, rb); }, 0);
     return;
   }
   if (!t || !t.closest || !t.closest("#flyout")) hideFlyout();
