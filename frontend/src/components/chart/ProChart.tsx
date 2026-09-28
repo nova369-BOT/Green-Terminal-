@@ -111,6 +111,8 @@ const ProChart: React.FC<ProChartProps> = ({
   onRemoveBruePlot,
   onRemoveEngineIndicator,
   onEditEngineIndicator,
+  onToggleEngineHidden,
+  onSetAllEngineHidden,
   onConverterReady,
   onVisibleRangeChange,
   onViewportTimeChange,
@@ -9114,9 +9116,11 @@ const ProChart: React.FC<ProChartProps> = ({
         });
 
         const hudEdit = (item: HudIndicatorItem) => {
+          if (item.kind === 'engine' && item.engineLabel) { onEditEngineIndicator?.(item.engineLabel); return; }
           setSelectedIndicator({ type: item.configKey as IndicatorType, position: { x: 60, y: 72 } });
         };
         const hudDelete = (item: HudIndicatorItem) => {
+          if (item.kind === 'engine' && item.engineLabel) { onRemoveEngineIndicator?.(item.engineLabel); return; }
           if (!onIndicatorsChange) return;
           if (item.key.startsWith('ma-hidden-')) {
             const idx = Number(item.key.slice('ma-hidden-'.length));
@@ -9136,6 +9140,7 @@ const ProChart: React.FC<ProChartProps> = ({
           setHudHiddenKeys((s) => { const n = new Set(s); n.delete(item.configKey); return n; });
         };
         const hudHide = (item: HudIndicatorItem) => {
+          if (item.kind === 'engine' && item.engineLabel) { onToggleEngineHidden?.(item.engineLabel); return; }
           if (!onIndicatorsChange) return;
           // Unhide a stashed MA line.
           if (item.key.startsWith('ma-hidden-')) {
@@ -9173,6 +9178,47 @@ const ProChart: React.FC<ProChartProps> = ({
         };
         const hudAdd = () => { onOpenSettings?.(); };
 
+        // ── Hide / show ALL indicators at once ──────────────────────────────
+        // If anything is visible, one click hides everything (native configs go
+        // enabled:false + tracked; MA lines are stashed; engine labels are
+        // pushed to the shell's hidden set). If everything is already hidden,
+        // the click restores it all. Native changes are batched into ONE
+        // onIndicatorsChange so they cannot clobber each other.
+        const hudAllHidden = hudItems.length > 0 && hudItems.every((i) => i.hidden);
+        const hudToggleAll = () => {
+          if (!hudAllHidden) {
+            let next: any = { ...indicators };
+            const newHiddenKeys = new Set(hudHiddenKeys);
+            const maLinesNow: any[] = (indicators as any).movingAverages?.lines ?? [];
+            let anyEngine = false;
+            for (const it of hudItems) {
+              if (it.hidden) continue;
+              if (it.kind === 'engine') { anyEngine = true; continue; }
+              if (it.configKey === 'movingAverages') continue; // handled below
+              const cfg = next[it.configKey];
+              if (cfg && cfg.enabled) { next = { ...next, [it.configKey]: { ...cfg, enabled: false } }; newHiddenKeys.add(it.configKey); }
+            }
+            if (maLinesNow.length) {
+              setHiddenMaLines((prev) => [...prev, ...maLinesNow]);
+              next = { ...next, movingAverages: { ...(next.movingAverages || {}), lines: [] } };
+            }
+            onIndicatorsChange?.(next);
+            setHudHiddenKeys(newHiddenKeys);
+            if (anyEngine) onSetAllEngineHidden?.(true);
+          } else {
+            let next: any = { ...indicators };
+            for (const k of hudHiddenKeys) { const cfg = next[k]; if (cfg) next = { ...next, [k]: { ...cfg, enabled: true } }; }
+            if (hiddenMaLines.length) {
+              const cur = (next as any).movingAverages || { enabled: true, lines: [] };
+              next = { ...next, movingAverages: { ...cur, enabled: true, lines: [...(cur.lines || []), ...hiddenMaLines] } };
+              setHiddenMaLines([]);
+            }
+            onIndicatorsChange?.(next);
+            setHudHiddenKeys(new Set());
+            onSetAllEngineHidden?.(false);
+          }
+        };
+
         return (
           <OnChartHUD
             symbol={symbol}
@@ -9181,6 +9227,8 @@ const ProChart: React.FC<ProChartProps> = ({
             onHide={hudHide}
             onDelete={hudDelete}
             onAdd={hudAdd}
+            onToggleAll={hudToggleAll}
+            allHidden={hudAllHidden}
           />
         );
       })()}

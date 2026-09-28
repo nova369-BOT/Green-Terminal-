@@ -1206,28 +1206,13 @@ function paramSummary(item, spec) {
 }
 
 function renderActiveIndicators() {
+  // The old chip strip above the chart ("Simple Moving Average ×") is GONE:
+  // active indicators now live only in the on-chart legend (the chart bundle's
+  // OnChartHUD), which lists BOTH the chart's own indicators and these engine
+  // ones with per-row edit / hide / remove. The element is kept in the DOM
+  // (hidden via CSS) only as the anchor fallback for editIndicator().
   const wrap = $("ind-active");
-  wrap.innerHTML = "";
-  for (const item of state.activeIndicators) {
-    const spec = state.indicatorSpecs.find((s) => s.name === item.name);
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.title = "Customise " + (spec ? spec.title : item.name);
-    chip.textContent = (spec ? spec.title : item.name) + paramSummary(item, spec);
-    chip.onclick = () => openIndicatorConfig(item, chip);
-    const x = document.createElement("button");
-    x.textContent = "×";
-    x.title = "Remove";
-    x.onclick = (e) => {
-      e.stopPropagation();
-      state.activeIndicators = state.activeIndicators.filter((i) => i !== item);
-      renderActiveIndicators();
-      loadChart();
-      saveShellState();
-    };
-    chip.appendChild(x);
-    wrap.appendChild(chip);
-  }
+  if (wrap) wrap.innerHTML = "";
 }
 
 /* ---------- indicator browser + parameter editor ---------- */
@@ -1371,6 +1356,37 @@ function renderIndicatorList() {
   specs.sort((a, b) =>
     Number(favs.has(b.name)) - Number(favs.has(a.name)) ||
     a.title.localeCompare(b.title));
+  // Layout toggle (Item 7): "columns" is a dense multi-column list — a coloured
+  // dot · title · star per row, so far more indicators fit on screen at once;
+  // "cards" is the sparkline grid. The choice persists (setupIndicatorPanel).
+  const cols = state.indListView === "columns";
+  list.className = cols ? "indb-list-cols" : "";
+  if (cols) {
+    for (const s of specs) {
+      const isFav = favs.has(s.name);
+      const added = state.activeIndicators.some((i) => i.name === s.name);
+      const row = document.createElement("div");
+      row.className = "indb-crow" + (state.indSelected === s.name ? " selected" : "") + (added ? " added" : "");
+      row.dataset.name = s.name;
+      row.innerHTML =
+        `<span class="indb-crow-dot" title="${added ? "On chart" : (s.overlay ? "Overlay" : "Pane")}"></span>` +
+        `<span class="indb-crow-title">${s.title}</span>` +
+        `<button class="indb-card-star${isFav ? " fav" : ""}" title="${isFav ? "Unfavourite" : "Favourite"}">${isFav ? "&#9733;" : "&#9734;"}</button>`;
+      row.onclick = () => indSelect(s.name);
+      row.querySelector(".indb-card-star").onclick = (e) => {
+        e.stopPropagation();
+        const at = state.favoriteIndicators.indexOf(s.name);
+        if (at >= 0) state.favoriteIndicators.splice(at, 1);
+        else state.favoriteIndicators.push(s.name);
+        renderIndCats();
+        renderIndicatorList();
+        saveShellState();
+      };
+      list.appendChild(row);
+    }
+    if (!list.children.length) list.innerHTML = '<div class="ind-empty">Nothing matches.</div>';
+    return;
+  }
   for (const s of specs) {
     const isFav = favs.has(s.name);
     const added = state.activeIndicators.some((i) => i.name === s.name);
@@ -1453,6 +1469,8 @@ function indApplyDraft(name, addIfMissing) {
 
 function indSelect(name) {
   state.indSelected = name;
+  state.indPvZoom = 1;          // fresh indicator opens fit-to-width
+  state.indPvCache = null;
   const spec = (state.indicatorSpecs || []).find((s) => s.name === name);
   if (spec) indSeedDraft(spec);
   renderIndicatorList();
@@ -1578,7 +1596,17 @@ function renderIndInspector() {
       `<button class="indb-insp-close" title="Close settings">&times;</button>` +
     `</div>` +
     `<div class="indb-insp-body">` +
-      `<div class="indb-preview-wrap"><canvas class="indb-preview-canvas" id="indb-preview"></canvas></div>` +
+      `<div class="indb-preview-wrap">` +
+        `<canvas class="indb-preview-canvas" id="indb-preview"></canvas>` +
+        `<div class="indb-pv-zoom" role="group" aria-label="Preview zoom">` +
+          `<button data-z="out" title="Zoom out" aria-label="Zoom out">&minus;</button>` +
+          `<span id="indb-pv-zlvl">${Math.round((state.indPvZoom || 1) * 100)}%</span>` +
+          `<button data-z="in" title="Zoom in" aria-label="Zoom in">+</button>` +
+          `<button data-z="fit" class="indb-pv-fit" title="Fit all bars" aria-label="Fit all bars">` +
+            `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2H2v4M14 6V2h-4M10 14h4v-4M2 10v4h4"/></svg>` +
+          `</button>` +
+        `</div>` +
+      `</div>` +
       `<div class="indb-preview-lbl">Live preview</div>` +
       `<div class="indb-insp-tabs">` +
         ["inputs", "style", "visibility"].map((t) =>
@@ -1601,6 +1629,28 @@ function renderIndInspector() {
     renderIndInspector();
   };
   indBindTabPane(insp, spec);
+  // Preview zoom controls (Item 7): +/− step by 1.4×, fit resets to 100%,
+  // and the mouse wheel over the preview zooms toward/away from the tail.
+  const zoomBox = insp.querySelector(".indb-pv-zoom");
+  if (zoomBox) {
+    zoomBox.querySelectorAll("[data-z]").forEach((b) => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const a = b.dataset.z;
+        if (a === "in") indPvSetZoom((state.indPvZoom || 1) * 1.4);
+        else if (a === "out") indPvSetZoom((state.indPvZoom || 1) / 1.4);
+        else indPvSetZoom(1);
+      };
+    });
+  }
+  const pvWrap = insp.querySelector(".indb-preview-wrap");
+  if (pvWrap) {
+    pvWrap.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const f = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      indPvSetZoom((state.indPvZoom || 1) * f);
+    }, { passive: false });
+  }
   insp.querySelector(".indb-insp-foot").querySelectorAll("[data-act]").forEach((b) => {
     b.onclick = () => {
       const a = b.dataset.act;
@@ -1932,6 +1982,17 @@ function indPayloadPlots(ind, candles, name) {
 // pane, oscillators get their own sub-pane. Hidden plots are dropped by caller.
 function indDrawPreview(ctx, w, ht, candles, plots, noteName) {
   if (!candles.length) { indPvMsg(ctx, w, ht, "No candles"); return; }
+  // Zoom (Item 7): show only the last N bars, where N shrinks as the user zooms
+  // in, so each candle gets wider and the indicator/script line reads clearly.
+  // Candles AND every plot series are sliced by the same window so index i of a
+  // plot still lines up with index i of the candles.
+  const z = state.indPvZoom || 1;
+  if (z > 1.001 && candles.length > 12) {
+    const show = Math.max(12, Math.min(candles.length, Math.round(candles.length / z)));
+    const start = candles.length - show;
+    candles = candles.slice(start);
+    if (plots) plots = plots.map((p) => ({ ...p, values: (p.values || []).slice(start) }));
+  }
   const vis = plots ? plots.filter((p) => p.visible !== false) : [];
   const subPlots = vis.filter((p) => p.pane === "sub");
   const pricePlots = vis.filter((p) => p.pane === "price");
@@ -2006,9 +2067,38 @@ async function indPreviewRender() {
     else note = spec.name;
   }
   if (plots) indSetCols(spec.name, plots);
+  // Cache the resolved series so the zoom buttons / wheel can re-slice and
+  // repaint instantly without re-fetching from the engine.
+  state.indPvCache = { candles, plots, note };
   indDrawPreview(ctx, w, ht, candles, plots, note);
   // Now that the real plot columns are known, fill in the Style/Visibility tabs.
   indUpdateTabPane();
+}
+
+// Repaint the preview from the cached series at the current zoom (no fetch).
+function indPreviewRedraw() {
+  const cv = document.getElementById("indb-preview");
+  const cache = state.indPvCache;
+  if (!cv || !cache) return;
+  const rect = cv.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width));
+  const ht = Math.max(1, Math.round(rect.height));
+  cv.width = w * dpr;
+  cv.height = ht * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, ht);
+  indDrawPreview(ctx, w, ht, cache.candles, cache.plots, cache.note);
+}
+
+// Set the preview zoom (1 = fit all bars, up to 8× in), update the readout and
+// repaint. Called by the +/−/fit buttons and the mouse wheel.
+function indPvSetZoom(z) {
+  state.indPvZoom = Math.max(1, Math.min(8, z));
+  const lvl = document.getElementById("indb-pv-zlvl");
+  if (lvl) lvl.textContent = Math.round(state.indPvZoom * 100) + "%";
+  indPreviewRedraw();
 }
 
 // The parameter editor: one input per spec param (already typed and bounded
@@ -2099,6 +2189,22 @@ function setupIndicatorPanel() {
   // Deferred so the originating click finishes bubbling first.
   window.addEventListener("lset:open-indicators", () => setTimeout(openIndicatorBrowser, 0));
   $("ind-search").oninput = renderIndicatorList;
+  // Catalog layout toggle (Item 7): Cards ↔ Columns, remembered across sessions.
+  try { state.indListView = localStorage.getItem("gt-ind-view") === "columns" ? "columns" : "cards"; } catch (e) { state.indListView = "cards"; }
+  const syncViewBtns = () => {
+    const cards = $("indb-view-cards"), colsB = $("indb-view-cols");
+    if (cards) cards.classList.toggle("on", state.indListView !== "columns");
+    if (colsB) colsB.classList.toggle("on", state.indListView === "columns");
+  };
+  const setView = (v) => {
+    state.indListView = v;
+    try { localStorage.setItem("gt-ind-view", v); } catch (e) { /* storage off */ }
+    syncViewBtns();
+    renderIndicatorList();
+  };
+  if ($("indb-view-cards")) $("indb-view-cards").onclick = () => setView("cards");
+  if ($("indb-view-cols")) $("indb-view-cols").onclick = () => setView("columns");
+  syncViewBtns();
   $("ind-create").onclick = () => { closeIndPanels(); openEditor(); };
   $("indb-backdrop").onclick = () => closeIndPanels();
   // Esc closes the modal.

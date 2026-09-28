@@ -28,6 +28,10 @@ export interface OnChartHUDProps {
   onHide: (item: HudIndicatorItem) => void;
   onDelete: (item: HudIndicatorItem) => void;
   onAdd: () => void;
+  /** Toggle every indicator's visibility at once. Omit to hide the control. */
+  onToggleAll?: () => void;
+  /** True when every indicator is currently hidden (drives the eye icon). */
+  allHidden?: boolean;
   style?: React.CSSProperties;
 }
 
@@ -110,7 +114,7 @@ const LegendRow: React.FC<{
 export const OnChartHUD: React.FC<OnChartHUDProps> = ({
   symbol, symbolTag, items, accent = '#b08d57',
   text = '#f4f1e8', dim = '#9aa79d',
-  onEdit, onHide, onDelete, onAdd, style,
+  onEdit, onHide, onDelete, onAdd, onToggleAll, allHidden = false, style,
 }) => {
   return (
     <div
@@ -135,6 +139,25 @@ export const OnChartHUD: React.FC<OnChartHUDProps> = ({
           }}>
             {symbolTag}
           </span>
+        )}
+        {/* Hide / show ALL indicators at once. */}
+        {onToggleAll && items.length > 0 && (
+          <button
+            type="button"
+            title={allHidden ? 'Show all indicators' : 'Hide all indicators'}
+            onClick={(e) => { e.stopPropagation(); onToggleAll(); }}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 22, height: 20, marginLeft: 2, padding: 0, cursor: 'pointer',
+              border: `1px solid ${allHidden ? accent : 'transparent'}`, borderRadius: 4,
+              background: allHidden ? `${accent}22` : 'rgba(244,241,232,0.06)',
+              color: allHidden ? accent : 'rgba(244,241,232,0.72)',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = allHidden ? `${accent}33` : 'rgba(244,241,232,0.14)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = allHidden ? `${accent}22` : 'rgba(244,241,232,0.06)'; }}
+          >
+            {allHidden ? <EyeOff size={13} /> : <Eye size={13} />}
+          </button>
         )}
       </div>
 

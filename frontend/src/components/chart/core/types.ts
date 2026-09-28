@@ -120,6 +120,18 @@ export interface ProChartProps {
    * asked the engine for them. Omit and the menu shows no Settings entry.
    */
   onEditEngineIndicator?: (label: string) => void;
+  /**
+   * Toggle the visibility of a single engine-computed indicator (by its label).
+   * Same ownership reason as remove/edit: customIndicators is rebuilt from the
+   * engine payload each render, so the owning side keeps the hidden set and
+   * flips enabled on rebuild. Used by the on-chart HUD's per-row hide.
+   */
+  onToggleEngineHidden?: (label: string) => void;
+  /**
+   * Hide or show ALL engine-computed indicators at once (the HUD's hide-all).
+   * true = hide every engine indicator, false = show them all.
+   */
+  onSetAllEngineHidden?: (hidden: boolean) => void;
   onConverterReady?: (converter: {
     timeToX: (time: number) => number | null;
     xToTime: (x: number) => number | null;

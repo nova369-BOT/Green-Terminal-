@@ -413,14 +413,27 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     handleDrawingsChange([d, ...drawings.filter((x) => x.id !== id)]);
   }, [drawings, handleDrawingsChange]);
 
+  // On-chart HUD hide state for engine indicators. customIndicators is rebuilt
+  // from the engine payload every render, so a hidden engine indicator can't
+  // just be filtered inside ProChart — the owning side (here) must remember the
+  // hidden labels and re-apply enabled:false on each rebuild. The HUD's per-row
+  // eye and its hide-all button drive this set through the callbacks below.
+  const [hiddenEngineLabels, setHiddenEngineLabels] = useState<Set<string>>(new Set());
+
   // Python indicators from the engine ride in as precomputed customIndicators,
   // so they draw alongside the chart's own registry rather than in a separate
-  // widget. Recomputed only when the candles or the payload change.
+  // widget. Recomputed only when the candles or the payload change. Any label
+  // in hiddenEngineLabels is forced enabled:false so it neither draws nor
+  // reads as visible in the HUD (the HUD still lists it, dimmed, to bring back).
   const withEngineIndicators = useMemo(() => {
-    const custom = toCustomIndicators(engineIndicators, candles);
+    let custom = toCustomIndicators(engineIndicators, candles);
     if (!custom.length) return indicators;
+    if (hiddenEngineLabels.size) {
+      custom = custom.map((ci) =>
+        hiddenEngineLabels.has(ci.group || '') ? { ...ci, enabled: false } : ci);
+    }
     return { ...indicators, customIndicators: custom } as IndicatorConfig;
-  }, [indicators, engineIndicators, candles]);
+  }, [indicators, engineIndicators, candles, hiddenEngineLabels]);
 
   // Candle/background/grid colours come from the user's saved chart settings
   // (the Appearance panel edits them); without this the colors prop is static
@@ -679,6 +692,17 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           onEditEngineIndicator={(label) => {
             if (!(window as any).__lseShell?.editIndicator?.(label)) openIndicatorBrowser();
           }}
+          // HUD per-row eye for an engine indicator: flip its label in/out of
+          // the local hidden set (withEngineIndicators re-applies enabled).
+          onToggleEngineHidden={(label) => setHiddenEngineLabels((s) => {
+            const n = new Set(s);
+            if (n.has(label)) n.delete(label); else n.add(label);
+            return n;
+          })}
+          // HUD hide-all: the engine payload is keyed by label, so hiding every
+          // engine indicator is just "every payload key"; showing all clears it.
+          onSetAllEngineHidden={(hidden) => setHiddenEngineLabels(
+            hidden ? new Set(Object.keys(engineIndicators || {})) : new Set())}
           drawings={drawings}
           selectedDrawingId={selectedDrawingId}
           drawingCursorRef={drawingCursorRef}

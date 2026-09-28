@@ -35,6 +35,22 @@ export interface HudIndicatorItem {
   display: 'overlay' | 'subplot';
   /** True when the plot is toggled off (dimmed) but not removed. */
   hidden?: boolean;
+  /** 'engine' = a Python/engine indicator added from the shell's browser
+   *  (carried as a customIndicators entry); 'native' = one of the chart's own
+   *  built-ins. Absent means native. The HUD handlers route by this. */
+  kind?: 'native' | 'engine';
+  /** Engine only: the shell's handle for this indicator (used by the shell's
+   *  removeIndicator / editIndicator callbacks). */
+  engineLabel?: string;
+}
+
+/** Pretty title for an engine label: "sma" → "SMA", "rsi(length=14)" →
+ *  "RSI (length=14)". The base name uppercases; any param tail is kept. */
+function engineTitle(label: string): string {
+  const i = label.indexOf('(');
+  const base = (i >= 0 ? label.slice(0, i) : label).toUpperCase();
+  const tail = i >= 0 ? ' ' + label.slice(i) : '';
+  return base + tail;
 }
 
 // Oscillators with a well-known fixed range → the gauge is meaningful without
@@ -170,6 +186,7 @@ export function deriveHudItems(
         color: line.color || cfg.color || defaultColor,
         gaugePct: gaugeFor('movingAverages', series, value),
         display: 'overlay',
+        kind: 'native',
       });
     }
   }
@@ -198,6 +215,39 @@ export function deriveHudItems(
       color,
       gaugePct: gaugeFor(id, series, value),
       display: getIndicatorDisplay(id) ?? 'overlay',
+      kind: 'native',
+    });
+  }
+
+  // ── Engine (Python) indicators added from the shell's browser ─────────────
+  // These ride in as customIndicators carrying a "local:<label>:<column>"
+  // expression and their series precomputed in `data`. One legend row per
+  // engine indicator (grouped by its label, so a multi-column indicator like
+  // MACD is a single row). A row toggled off (enabled === false, done by the
+  // shell's hide-all / per-row hide) still lists, dimmed, so it can return.
+  const custom: any[] = Array.isArray(indicators.customIndicators) ? indicators.customIndicators : [];
+  const seenEngine = new Set<string>();
+  for (const ci of custom) {
+    const expr = typeof ci?.expression === 'string' ? ci.expression : '';
+    if (!expr.startsWith('local:')) continue; // brue/formula stay on the native path
+    const label: string = ci.group || expr.split(':')[1] || ci.name || '';
+    if (!label || seenEngine.has(label)) continue;
+    seenEngine.add(label);
+    const series: number[] | null = Array.isArray(ci.data) ? ci.data : null;
+    const hidden = ci.enabled === false;
+    const value = hidden ? null : lastFinite(series);
+    items.push({
+      key: `engine__${label}`,
+      configKey: `engine__${label}`,
+      engineLabel: label,
+      kind: 'engine',
+      lineIndex: null,
+      title: engineTitle(label),
+      valueText: formatValue(value),
+      color: ci.color || defaultColor,
+      gaugePct: null,
+      display: ci.display === 'subplot' ? 'subplot' : 'overlay',
+      hidden,
     });
   }
 

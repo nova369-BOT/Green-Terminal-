@@ -218,11 +218,10 @@ nav#timeframes button:disabled { opacity: .35; cursor: default; }
   margin-right: 5px; vertical-align: middle; border-radius: 50%;
   background: currentColor;
 }
-#ind-active {
-  display: flex; gap: 4px; flex-wrap: wrap; padding: 0 10px;
-  background: var(--panel); border-bottom: 1px solid var(--edge);
-}
-#ind-active:not(:empty) { padding: 4px 10px; }
+/* The old active-indicator chip strip above the chart is retired: indicators
+   now live in the on-chart legend (OnChartHUD). The element stays in the DOM
+   as the anchor fallback for editIndicator(), but never takes any space. */
+#ind-active { display: none; }
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--active); border: 1px solid var(--edge); border-radius: 2px;
@@ -2535,11 +2534,39 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
 }
 .indb-chip:hover { color: var(--text); border-color: var(--dim); }
 .indb-chip.on { color: #0a0f0c; background: var(--accent-bar); border-color: var(--accent-bar); }
+
+/* Search row + catalog layout toggle (Item 7) */
+.indb-head-top { display: flex; align-items: center; gap: 8px; }
+.indb-head-top #ind-search { flex: 1; }
+#indb-view { display: inline-flex; flex: none; border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; }
+.indb-view-btn {
+  display: flex; align-items: center; justify-content: center; width: 30px; height: 32px;
+  background: var(--bg); border: none; color: var(--dim); cursor: pointer; padding: 0;
+}
+.indb-view-btn + .indb-view-btn { border-left: 1px solid var(--edge); }
+.indb-view-btn:hover { color: var(--text); }
+.indb-view-btn.on { color: #0a0f0c; background: var(--accent-bar); }
+
 #ind-list {
   flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   gap: 12px; align-content: start;
 }
+/* Columns view: dense multi-column list (dot · title · star) */
+#ind-list.indb-list-cols {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 2px 14px;
+}
+.indb-crow {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 5px 8px; border-radius: 5px; cursor: pointer; border: 1px solid transparent;
+}
+.indb-crow:hover { background: var(--bg2, rgba(255,255,255,.04)); }
+.indb-crow.selected { border-color: var(--accent-bar); box-shadow: 0 0 0 1px var(--accent-bar) inset; }
+.indb-crow-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--edge); }
+.indb-crow.added .indb-crow-dot { background: var(--up); }
+.indb-crow-title { flex: 1; color: var(--text); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.indb-crow .indb-card-star { font-size: 12px; }
 .indb-card {
   position: relative; display: flex; flex-direction: column; gap: 3px;
   padding: 10px 11px 9px; border: 1px solid var(--edge); border-radius: 7px;
@@ -2593,8 +2620,27 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
   border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer;
 }
 .indb-insp-foot .indb-add.remove { color: var(--text); background: transparent; border: 1px solid var(--down); }
-.indb-preview-wrap { border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; background: #050706; }
+.indb-preview-wrap { position: relative; border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; background: #050706; }
 .indb-preview-canvas { display: block; width: 100%; height: 150px; }
+/* Preview zoom control (Item 7): brass pill top-right of the live preview. */
+.indb-pv-zoom {
+  position: absolute; top: 7px; right: 7px; z-index: 2;
+  display: inline-flex; align-items: center; gap: 1px;
+  background: rgba(5,8,10,.72); border: 1px solid color-mix(in srgb, var(--accent-bar) 55%, var(--edge));
+  border-radius: 999px; padding: 2px; backdrop-filter: blur(3px);
+}
+.indb-pv-zoom button {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 20px; padding: 0 4px;
+  background: transparent; border: none; color: var(--text); cursor: pointer;
+  font-size: 14px; line-height: 1; border-radius: 999px;
+}
+.indb-pv-zoom button:hover { background: rgba(244,241,232,.12); }
+.indb-pv-zoom #indb-pv-zlvl {
+  min-width: 40px; text-align: center; color: var(--dim);
+  font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: .02em; padding: 0 2px;
+}
+.indb-pv-zoom .indb-pv-fit { color: var(--accent-bar); }
 .indb-preview-lbl { font-size: 10px; color: var(--dim); text-align: center; padding: 3px 0 5px; letter-spacing: .06em; }
 .indb-insp-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--edge); }
 .indb-insp-tab { color: var(--dim); background: none; border: none; padding: 6px 10px; font-size: 12.5px; cursor: pointer; border-bottom: 2px solid transparent; }
