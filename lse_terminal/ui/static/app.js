@@ -10013,6 +10013,9 @@ let flyoutPinned = false;        // true once a rail section is clicked → stay
 let flyoutHoverTimer = null;     // debounce before a hover opens the menu
 let flyoutCloseTimer = null;     // grace period before a leave closes it
 let flyoutSection = null;        // the section currently shown
+let flyoutSelecting = false;     // an item is being clicked → suppress reopen, then exit
+let flyoutPreviewing = false;    // an item is being hover-previewed → suppress reopen
+let flyoutPreviewTimer = null;   // debounce before a hovered item previews its view
 function hideFlyout() {
   const fly = $("flyout");
   if (fly) fly.classList.add("hidden");
@@ -10020,6 +10023,7 @@ function hideFlyout() {
   flyoutSection = null;
   clearTimeout(flyoutHoverTimer);
   clearTimeout(flyoutCloseTimer);
+  clearTimeout(flyoutPreviewTimer);
 }
 /* Section titles shown as the flyout header, so the menu reads as a real
    navigation panel and not a bare list. */
@@ -10102,7 +10106,25 @@ function renderFlyout(section, anchorBtn, focusSearch = true) {
     b._hay = (it.label + " " + desc).toLowerCase();
     b._soon = !it.go;
     if (it.go) {
-      b.onclick = () => { hideFlyout(); it.go(); };
+      // Click commits the selection and EXITS the menu. it.go() re-clicks the
+      // rail (which would normally reopen the menu); flyoutSelecting suppresses
+      // that so the menu closes and stays closed.
+      b.onclick = () => {
+        flyoutSelecting = true;
+        try { it.go(); } finally { hideFlyout(); flyoutSelecting = false; }
+      };
+      // Hovering a Markets item live-previews its view without pinning the menu,
+      // so gliding down CHART → G-FLOW → OPTIONS switches the page as you go.
+      if (section === "markets") {
+        b.addEventListener("mouseenter", () => {
+          clearTimeout(flyoutPreviewTimer);
+          flyoutPreviewTimer = setTimeout(() => {
+            flyoutPreviewing = true;
+            try { it.go(); } finally { flyoutPreviewing = false; }
+          }, 150);
+        });
+        b.addEventListener("mouseleave", () => clearTimeout(flyoutPreviewTimer));
+      }
       if (desc) b.title = desc;
     } else {
       b.title = "Coming soon";
@@ -10189,6 +10211,9 @@ document.addEventListener("click", (ev) => {
   const t = ev.target;
   const rb = t && t.closest ? t.closest("#rail .rail-btn") : null;
   if (rb && FLYOUT_SECTIONS[rb.id]) {
+    // Ignore the synthetic rail click that item navigation fires — otherwise
+    // choosing / previewing an item would reopen the menu instead of exiting.
+    if (flyoutSelecting || flyoutPreviewing) return;
     // Click pins the menu open (stays put until an item or outside is clicked);
     // the button's own handler opens the default view on the same tick.
     const section = FLYOUT_SECTIONS[rb.id];
