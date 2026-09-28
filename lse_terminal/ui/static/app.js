@@ -925,12 +925,15 @@ async function loadChart() {
   // Level 3 button appears/disappears with the instrument (only the recorded
   // futures universe has order-by-order data)
   if (typeof l3SyncButton === "function") try { l3SyncButton(); } catch (e) { /* rail absent */ }
-  // Seconds tape (1s–45s): the candle API's finest history is 1-minute, so
-  // there are NO historical second bars to fetch. Rather than error, start an
-  // empty series and let onTick() bucket the live trade stream into second
-  // bars going forward. No socket / non-streaming provider → it stays empty
-  // and says so; we never fabricate bars to fill it.
-  if (/^\d+s$/.test(state.timeframe)) {
+  // Seconds / sub-minute timeframes (1s–45s): TRY to load real historical bars
+  // first. Providers that serve a sub-minute native (or one the engine can
+  // aggregate down from) return genuine second bars — those must show their
+  // history just like any other timeframe. Only when the provider truly cannot
+  // serve them (no history) do we fall back to the live-forward "tape": an empty
+  // series that onTick() builds bar-by-bar from the trade stream. We NEVER
+  // fabricate bars to fill it.
+  const tfIsSeconds = /^\d+s$/.test(state.timeframe);
+  const enterSecondsTape = () => {
     state.candleData = [];
     state.engineIndicators = {};
     state.lastBar = null;
@@ -941,9 +944,9 @@ async function loadChart() {
     status(state.ws
       ? `building live ${state.timeframe} bars from trades…`
       : "waiting for live trades…");
-    return;
-  }
-  // Any non-seconds load leaves the seconds tape state behind.
+  };
+  // Any load leaves the previous seconds-tape notice behind until we know
+  // whether this one has history (re-shown below if the fetch yields nothing).
   hideSecondsNotice();
   status(`loading ${state.symbol}…`);
   // 5000 = the engine's per-request cap: open with one full page of history
@@ -951,10 +954,16 @@ async function loadChart() {
   const url = `/api/candles?provider=${encodeURIComponent(state.provider)}` +
     `&symbol=${encodeURIComponent(state.symbol)}&timeframe=${state.timeframe}` +
     `&limit=5000&indicators=${encodeURIComponent(indicatorQuery())}`;
-  const res = await fetch(url);
+  let res;
+  try { res = await fetch(url); }
+  catch (e) { res = null; }
   if (seq !== state.loadSeq) return; // superseded while in flight
-  if (!res.ok) {
-    let detail = res.status;
+  if (!res || !res.ok) {
+    // A provider that cannot serve this seconds resolution (e.g. its finest
+    // native is 1m) errors here: fall back to the live-forward tape rather than
+    // showing a raw error, so the seconds view still works going forward.
+    if (tfIsSeconds) { enterSecondsTape(); return; }
+    let detail = res ? res.status : "network";
     try { detail = (await res.json()).detail || detail; } catch (e) { /* keep status */ }
     if (seq === state.loadSeq) status(`error: ${detail}`);
     return;
@@ -962,9 +971,14 @@ async function loadChart() {
   const data = await res.json();
   if (seq !== state.loadSeq) return; // superseded while parsing
 
+  const rawCandles = data.candles || [];
+  // Seconds with no history returned: the provider has no second bars to give,
+  // so build them forward from live trades instead.
+  if (tfIsSeconds && !rawCandles.length) { enterSecondsTape(); return; }
+
   // Volume is carried on the candle now: the pro engine renders its own volume
   // pane from this field, where the classic view uses a separate series.
-  state.candleData = data.candles.map(([t, o, h, l, c, v]) =>
+  state.candleData = rawCandles.map(([t, o, h, l, c, v]) =>
     ({ time: t, open: o, high: h, low: l, close: c, volume: v }));
   // Python-computed indicators (built-ins and the user's own) ride along and
   // are drawn by the chart as precomputed series. In hosted mode the server
