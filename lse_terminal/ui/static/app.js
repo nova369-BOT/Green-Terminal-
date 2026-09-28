@@ -10036,6 +10036,9 @@ const FLYOUT_DESCS = {
   "sub-mk-news": "Global headline wall & newsroom",
   "sub-mk-screener": "Scan the whole live universe",
 };
+/* Command-palette flyout: a search field + a keyboard-navigable list of the
+   section's sub-views. Type to filter, Up/Down to move, Enter to open, Esc to
+   close. Everything shown is real and clickable; no fake shortcut affordances. */
 function renderFlyout(section, anchorBtn) {
   const items = SUBRAIL[section];
   const fly = $("flyout");
@@ -10043,10 +10046,35 @@ function renderFlyout(section, anchorBtn) {
   const activeEl = document.querySelector("#subrail .subrail-btn.active");
   const active = activeEl ? activeEl.id : null;
   fly.innerHTML = "";
+
+  // Search / command bar with a magnifier and an ESC hint.
+  const bar = document.createElement("div");
+  bar.className = "flyout-search";
+  bar.innerHTML = '<svg class="flyout-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.2-4.2"/></svg>';
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Search or jump to\u2026";
+  input.className = "flyout-input";
+  input.setAttribute("aria-label", "Search " + (FLYOUT_TITLES[section] || "sections"));
+  bar.appendChild(input);
+  const esc = document.createElement("span");
+  esc.className = "flyout-kbd";
+  esc.textContent = "ESC";
+  bar.appendChild(esc);
+  fly.appendChild(bar);
+
+  // Section label.
   const head = document.createElement("div");
   head.className = "flyout-head";
   head.textContent = FLYOUT_TITLES[section] || "";
   fly.appendChild(head);
+
+  // Rows.
+  const list = document.createElement("div");
+  list.className = "flyout-list";
+  fly.appendChild(list);
+
+  const rows = [];
   for (const it of items) {
     const b = document.createElement("button");
     b.type = "button";
@@ -10062,18 +10090,55 @@ function renderFlyout(section, anchorBtn) {
       + '</span>'
       + (it.go ? '<span class="flyout-go">&#8250;</span>'
                : '<span class="flyout-soon-tag">SOON</span>');
+    b._hay = (it.label + " " + desc).toLowerCase();
+    b._soon = !it.go;
     if (it.go) {
       b.onclick = () => { hideFlyout(); it.go(); };
       if (desc) b.title = desc;
     } else {
       b.title = "Coming soon";
     }
-    fly.appendChild(b);
+    list.appendChild(b);
+    rows.push(b);
   }
+
+  // Keyboard selection state.
+  let sel = rows.findIndex(r => r.classList.contains("active"));
+  if (sel < 0) sel = rows.findIndex(r => !r._soon);
+  const paint = () => rows.forEach((r, i) => r.classList.toggle("kbdsel", i === sel));
+  const visible = () => rows.filter(r => r.style.display !== "none");
+  paint();
+
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    rows.forEach(r => { r.style.display = (!q || r._hay.includes(q)) ? "" : "none"; });
+    const vis = visible();
+    sel = vis.length ? rows.indexOf(vis[0]) : -1;
+    paint();
+  });
+  input.addEventListener("keydown", (e) => {
+    const vis = visible();
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (vis.length) { const ci = vis.indexOf(rows[sel]); sel = rows.indexOf(vis[Math.min(vis.length - 1, ci < 0 ? 0 : ci + 1)]); paint(); }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (vis.length) { const ci = vis.indexOf(rows[sel]); sel = rows.indexOf(vis[Math.max(0, ci < 0 ? 0 : ci - 1)]); paint(); }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const r = rows[sel] || vis[0];
+      if (r && !r._soon) r.click();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      hideFlyout();
+    }
+  });
+
   fly.classList.remove("hidden");
   const r = anchorBtn.getBoundingClientRect();
   const top = Math.max(8, Math.min(r.top, window.innerHeight - fly.offsetHeight - 30));
   fly.style.top = top + "px";
+  setTimeout(() => { try { input.focus(); } catch (_) {} }, 0);
 }
 document.addEventListener("click", (ev) => {
   const t = ev.target;

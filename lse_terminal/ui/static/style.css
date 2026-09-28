@@ -2069,15 +2069,15 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
    rail listing the clicked section's sub-views. Same registry as the
    dock; the dock stays for quick access. */
 #flyout {
-  position: fixed; left: 70px; z-index: 44; min-width: 268px; max-width: 306px;
-  display: flex; flex-direction: column; gap: 1px; padding: 8px;
+  position: fixed; left: 70px; z-index: 44; width: 340px; max-width: 88vw;
+  display: flex; flex-direction: column; gap: 0; padding: 8px;
   background: linear-gradient(180deg,
     color-mix(in srgb, var(--panel) 97%, transparent),
-    color-mix(in srgb, var(--bg) 94%, transparent));
-  border: 1px solid var(--edge); border-radius: 11px;
-  box-shadow: 0 20px 52px rgba(0, 0, 0, .62), 0 0 0 1px var(--hairline) inset;
-  backdrop-filter: blur(16px) saturate(1.1);
-  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+    color-mix(in srgb, var(--bg) 95%, transparent));
+  border: 1px solid var(--edge); border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .66), 0 0 0 1px var(--hairline) inset;
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
   animation: flyoutIn .14s cubic-bezier(.2, .7, .3, 1);
 }
 @keyframes flyoutIn {
@@ -2085,10 +2085,31 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
   to   { opacity: 1; transform: none; }
 }
 #flyout.hidden { display: none !important; }
+
+/* Search / command bar */
+.flyout-search {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px 9px; border-bottom: 1px solid var(--edge); margin-bottom: 4px;
+}
+.flyout-search-ico {
+  flex: 0 0 auto; width: 16px; height: 16px; color: var(--dim);
+}
+.flyout-input {
+  flex: 1 1 auto; min-width: 0; background: none; border: none; outline: none;
+  color: var(--text); font-size: 13px; font-weight: 500; letter-spacing: .01em;
+}
+.flyout-input::placeholder { color: var(--dim); opacity: .8; }
+.flyout-kbd {
+  flex: 0 0 auto; font-size: 9px; font-weight: 700; letter-spacing: .1em;
+  color: var(--dim); background: var(--item);
+  border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 5px;
+  padding: 2px 6px; line-height: 1.2;
+}
+.flyout-list { display: flex; flex-direction: column; gap: 1px; }
+
 .flyout-head {
   color: var(--title); font-size: 9.5px; font-weight: 700; letter-spacing: .24em;
-  text-transform: uppercase; padding: 4px 10px 9px; margin-bottom: 5px;
-  border-bottom: 1px solid var(--edge);
+  text-transform: uppercase; padding: 4px 10px 7px;
 }
 .flyout-row {
   display: flex; align-items: center; gap: 11px; width: 100%; position: relative;
@@ -2119,11 +2140,12 @@ html:not(.dark) .air-menu-item.on.sel { background: #c6d1ba; }
   flex: 0 0 auto; font-size: 8px; font-weight: 700; letter-spacing: .12em;
   color: var(--dim); border: 1px solid var(--edge); border-radius: 4px; padding: 2px 5px;
 }
-.flyout-row:hover { background: var(--hover); }
-.flyout-row:hover .flyout-ico {
+.flyout-row:hover, .flyout-row.kbdsel { background: var(--hover); }
+.flyout-row:hover .flyout-ico, .flyout-row.kbdsel .flyout-ico {
   color: var(--up); border-color: color-mix(in srgb, var(--up) 45%, var(--edge));
 }
-.flyout-row:hover .flyout-go { opacity: .7; transform: translateX(2px); }
+.flyout-row:hover .flyout-go, .flyout-row.kbdsel .flyout-go { opacity: .7; transform: translateX(2px); }
+.flyout-row.soon.kbdsel { background: none; }
 .flyout-row.active { background: var(--active); }
 .flyout-row.active::before {
   content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;

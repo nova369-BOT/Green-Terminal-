@@ -1431,11 +1431,45 @@ const ChartDrawingOverlayComponent = ({
   };
 
   // Erase every drawing under the eraser at (x,y). Used for click + swipe erase.
+  // Brush / highlighter strokes are rubbed out PARTIALLY: only the points the
+  // eraser passes over are removed, and the stroke is split into the surviving
+  // runs (like a real eraser). Every other drawing is deleted whole on contact.
   const eraseAtPixel = (x: number, y: number) => {
-    const r = 12;
-    const survivors = drawings.filter((d) => !isErasedBy(d, x, y, r));
-    if (survivors.length !== drawings.length) {
-      onDrawingsChange(survivors);
+    const r = 14;
+    let changed = false;
+    const next: Drawing[] = [];
+    for (const d of drawings) {
+      if (!isErasedBy(d, x, y, r)) { next.push(d); continue; }
+      // Partial erase for brush/highlighter with resolvable chart points.
+      if (isBrushTool(d.type) && d.brushChartPoints && d.brushChartPoints.length > 1) {
+        const runs: ChartPoint[][] = [];
+        let run: ChartPoint[] = [];
+        for (const cp of d.brushChartPoints) {
+          const px = chartToPixel(cp);
+          const hit = px ? Math.hypot(px.x - x, px.y - y) <= r : false;
+          if (hit) { if (run.length > 1) runs.push(run); run = []; }
+          else run.push(cp);
+        }
+        if (run.length > 1) runs.push(run);
+        changed = true;
+        runs.forEach((pts, i) => {
+          next.push({
+            ...d,
+            id: `${d.id}-e${i}-${Math.random().toString(36).slice(2, 7)}`,
+            points: [pts[0]],
+            brushChartPoints: pts,
+            brushPixelOffsets: undefined,
+            brushPixelPoints: undefined,
+            pixelOffsets: undefined,
+          });
+        });
+        continue; // fully-erased strokes leave no surviving runs
+      }
+      // Any other drawing: remove it entirely.
+      changed = true;
+    }
+    if (changed) {
+      onDrawingsChange(next);
       onSelectDrawing?.(null);
     }
   };
