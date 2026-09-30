@@ -4069,6 +4069,18 @@ function setSymbol(symbol) {
   // One pick, both surfaces: on a venue's own source the sidebar row IS the
   // instrument choice, so the ticket takes it too (see tpbFollowChart).
   if (typeof tpbFollowChart === "function") tpbFollowChart(symbol);
+  // Unified watchlist → G-Flow: one watchlist drives everything. When the
+  // G-Flow page is on screen, clicking any watchlist row retargets the live
+  // order-flow engine instantly (crypto with real Hyperliquid depth only; a
+  // symbol without flow leaves the engine on its last coin — no fake depth).
+  const ofPageOpen = $("orderflow") && !$("orderflow").classList.contains("hidden");
+  if (ofPageOpen && typeof ofNormalizeSymbol === "function") {
+    const ofCoin = ofNormalizeSymbol(symbol);
+    if (OF_HL_PRESETS.includes(ofCoin)) {
+      ofState.symbol = ofCoin;
+      if (ofState.ready) loadOrderFlowSymbol(ofCoin);
+    }
+  }
 }
 
 function renderTimeframes() {
