@@ -5980,6 +5980,94 @@ def create_app() -> FastAPI:
         _cat_cache[venue] = {"at": now, "data": data}
         return data
 
+    # ---- The actual symbol rows for the All Symbols browser ----------------
+    _rows_cache: dict[str, object] = {}    # venue -> {"at": ts, "rows": list}
+
+    def _binance_rows():
+        data = _http_json("https://data-api.binance.vision/api/v3/exchangeInfo", timeout=8)
+        syms = data.get("symbols") if isinstance(data, dict) else None
+        if not isinstance(syms, list):
+            raise ValueError("Binance exchangeInfo had no symbols")
+        rows = []
+        for s in syms:
+            if not isinstance(s, dict) or s.get("status") != "TRADING":
+                continue
+            b, q = s.get("baseAsset"), s.get("quoteAsset")
+            if not b or not q:
+                continue
+            rows.append({"symbol": s.get("symbol"), "display": f"{b}/{q}",
+                         "base": b.upper(), "quote": q, "venue": "binance",
+                         "name": f"{b} / {q}"})
+        return rows
+
+    def _hl_rows():
+        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
+        uni = meta.get("universe") if isinstance(meta, dict) else None
+        if not isinstance(uni, list):
+            raise ValueError("Hyperliquid meta had no universe")
+        rows = []
+        for u in uni:
+            if not isinstance(u, dict) or u.get("isDelisted"):
+                continue
+            n = u.get("name")
+            if not n:
+                continue
+            rows.append({"symbol": f"{n.upper()}-PERP", "display": f"{n.upper()}-PERP",
+                         "base": n.upper(), "quote": "USD", "venue": "hl",
+                         "name": f"{n} Perpetual"})
+        return rows
+
+    def _venue_rows(venue):
+        now = time.time()
+        c = _rows_cache.get(venue)
+        if c and now - float(c.get("at") or 0) < 300 and c.get("rows"):
+            return c["rows"]
+        if venue == "binance":
+            rows = _binance_rows()
+        elif venue == "hl":
+            rows = _hl_rows()
+        else:
+            rows = []
+            for fn in (_binance_rows, _hl_rows):
+                try:
+                    rows += fn()
+                except Exception:
+                    pass
+            if not rows:
+                raise ValueError("no venue rows reachable")
+        _rows_cache[venue] = {"at": now, "rows": rows}
+        return rows
+
+    @app.get("/api/allsymbols/list")
+    def allsymbols_list(venue: str = "all", category: str = "",
+                        query: str = "", limit: int = 300):
+        venue = venue if venue in ("all", "binance", "hl") else "all"
+        try:
+            rows = _venue_rows(venue)
+        except Exception:
+            return {"rows": [], "total": None, "reachable": False}
+        # Category filter: keep only rows whose base coin is in that sector
+        # (live CoinGecko membership). Unknown/unreachable category → honest
+        # empty rather than an unfiltered dump pretending to be filtered.
+        cat = (category or "").strip()
+        if cat:
+            try:
+                members = _category_member_syms(cat)
+            except Exception:
+                members = None
+            if not members:
+                return {"rows": [], "total": 0, "reachable": True,
+                        "category_unavailable": True}
+            rows = [r for r in rows if r["base"] in members]
+        q = (query or "").strip().upper()
+        if q:
+            rows = [r for r in rows
+                    if q in r["symbol"].upper() or q in r["name"].upper()]
+        rows.sort(key=lambda r: (r["quote"] != "USDT" and r["quote"] != "USD", r["base"]))
+        total = len(rows)
+        lim = max(1, min(int(limit), 1000))
+        return {"rows": rows[:lim], "total": total, "reachable": True}
+
     @app.get("/api/binance/databank")
     def binance_overview():
         return binance_import.overview()
