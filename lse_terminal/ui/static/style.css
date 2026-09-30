@@ -481,6 +481,62 @@ aside#side.collapsed #wl-search { opacity: 0; pointer-events: none; }
 #wl-tabs button:hover { color: var(--text); }
 #wl-tabs button.active { color: var(--text); border-bottom-color: var(--accent-bar); }
 #wl-newlist.hidden, #wl-settings.hidden { display: none; }
+
+/* ---- All Symbols venue + category filters (Style 4 dropdowns) ---------- */
+#as-filters { position: relative; padding: 8px 8px 6px; border-bottom: 1px solid var(--edge); }
+#as-filters.hidden { display: none; }
+#as-filterbar { display: flex; gap: 6px; }
+.as-fbtn {
+  flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0;
+  background: #0a0f0c; border: 1px solid var(--edge); border-radius: 6px;
+  color: var(--text); padding: 7px 9px; font-size: 12px; cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.as-fbtn:hover { border-color: rgba(45,212,191,.35); }
+.as-fbtn.hidden { display: none; }
+.as-fbtn-k { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.as-fbtn-v { color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-caret { color: var(--dim); font-size: 10px; margin-left: auto; }
+
+.as-panel {
+  position: absolute; left: 8px; right: 8px; top: calc(100% - 4px); z-index: 60;
+  background: #0a0f0c; border: 1px solid #1d2b23; border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(0,0,0,.55); padding: 6px; max-height: 62vh; overflow: auto;
+}
+.as-panel.hidden { display: none; }
+
+.as-vrow {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: 0; border-radius: 6px; color: var(--text);
+  padding: 9px 10px; font-size: 13px; cursor: pointer; text-align: left;
+}
+.as-vrow:hover { background: #143024; }
+.as-vrow.active { background: linear-gradient(90deg,#143024,#0a0f0c); box-shadow: inset 2px 0 0 #b08d57; }
+.as-cnt { color: var(--dim); font-variant-numeric: tabular-nums; }
+.as-dim { color: var(--dim); opacity: .7; }
+
+.as-panel-search { padding: 2px 2px 8px; }
+#as-cat-search {
+  width: 100%; box-sizing: border-box; background: #05080a; border: 1px solid var(--edge);
+  border-radius: 6px; color: var(--text); padding: 7px 9px; font-size: 12px;
+}
+#as-cat-search::placeholder { color: var(--dim); }
+.as-cat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.as-cchip {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  background: #05080a; border: 1px solid var(--edge); border-radius: 999px; color: var(--text);
+  padding: 7px 11px; font-size: 12px; cursor: pointer; text-align: left;
+}
+.as-cchip:hover { border-color: rgba(45,212,191,.35); }
+.as-cchip.active { background: #2dd4bf; color: #05201c; font-weight: 700; border-color: #2dd4bf; }
+.as-cchip .as-cnt { color: var(--dim); }
+.as-cchip.active .as-cnt { color: #05201c; }
+
+.as-crow .as-venuetag {
+  margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: .04em;
+  color: var(--dim); border: 1px solid var(--edge); border-radius: 4px; padding: 1px 5px;
+}
+.as-msg { padding: 14px 12px; color: var(--dim); font-size: 12px; line-height: 1.5; }
 /* Lasso + screenshot moved into the chart's drawing-tool rail (one toolbar,
    no duplicate buttons up top). The elements stay in the DOM so the shell's
    lasso state / key-hold logic keeps working; only the top buttons are hidden. */
