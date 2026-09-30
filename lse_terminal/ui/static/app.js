@@ -13034,7 +13034,15 @@ function showOrderFlowPage() {
   stopOrderFlowHost();
   $("orderflow").classList.remove("hidden");
   bindOrderFlowControls();
+  // Unified symbol: G-Flow follows the main chart automatically — no manual
+  // "Use chart symbol" click. If the charted instrument has real Hyperliquid
+  // depth we retarget the warm engine to it; otherwise the runtime keeps its
+  // last coin (an honest empty state for LSE/FX lands with the docked view).
+  const ofCoin = ofNormalizeSymbol(state.symbol);
+  const ofHasFlow = OF_HL_PRESETS.includes(ofCoin);
+  if (ofHasFlow) ofState.symbol = ofCoin;
   refreshOrderFlowStatus();
+  if (ofHasFlow && ofState.ready) loadOrderFlowSymbol(ofCoin);
   if (!ofState.poll) ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
   // Reuse instrument header for L1 context above the EdgeDepth surface.
   refreshInstrumentBarSoon();
