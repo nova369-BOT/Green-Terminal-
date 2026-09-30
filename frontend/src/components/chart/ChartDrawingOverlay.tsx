@@ -509,46 +509,62 @@ const ChartDrawingOverlayComponent = ({
   const touchHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartPointRef = useRef<PixelPoint | null>(null);
 
-  // Track container size for clipping
-  useEffect(() => {
+  // Locate the actual chart canvas (ProChart's crosshair overlay canvas). It is
+  // the GROUND TRUTH for where candles/grid are painted. The drawing overlay's
+  // own element can end up narrower than the canvas (a wrapper's box, a stale
+  // layout read), which made the clip <div> and the crosshair/line right edge
+  // stop short of the real price axis — the "gap" users reported. Measuring the
+  // canvas instead guarantees the drawing plane spans exactly the painted chart.
+  const findChartCanvas = (): HTMLCanvasElement | null => {
+    let root: HTMLElement | null = containerRef.current?.parentElement ?? null;
+    for (let i = 0; i < 5 && root; i++) {
+      const c = root.querySelector('canvas.cursor-crosshair') as HTMLCanvasElement | null;
+      if (c) return c;
+      root = root.parentElement;
+    }
+    return null;
+  };
+
+  const measureDims = () => {
     if (!containerRef.current) return;
-
-    const updateDims = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setContainerDims({ width: rect.width, height: rect.height });
-      }
-    };
-
-    updateDims();
-
-    const resizeObserver = new ResizeObserver(updateDims);
-    resizeObserver.observe(containerRef.current);
-    // A window resize is a belt-and-suspenders backup for the observer.
-    window.addEventListener('resize', updateDims);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateDims);
-    };
-  }, []);
-
-  // Re-measure the clip box whenever ProChart emits a fresh converter. ProChart
-  // rebuilds its converter from `dimensions`, so a new converter means the chart
-  // area just changed size (e.g. a side panel / watchlist opened or closed).
-  // The ResizeObserver above can lag by a frame in that case, leaving the clip
-  // <div> (overflow:hidden) narrower than the live width the drawings are drawn
-  // against — which chopped lines off partway across the chart. Re-reading the
-  // box here keeps the clip locked to the real chart width. The change-guard
-  // (only setState on a real delta) prevents any render loop.
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
+    const canvas = findChartCanvas();
+    // Prefer the canvas box; fall back to the overlay's own box.
+    const rect = (canvas ?? containerRef.current).getBoundingClientRect();
     setContainerDims((prev) =>
       Math.abs(prev.width - rect.width) > 0.5 || Math.abs(prev.height - rect.height) > 0.5
         ? { width: rect.width, height: rect.height }
         : prev
     );
+  };
+
+  // Track chart size for clipping. Observe BOTH the overlay and the chart canvas
+  // so any resize of the painted area updates the drawing plane immediately.
+  useEffect(() => {
+    if (!containerRef.current) return;
+    measureDims();
+
+    const resizeObserver = new ResizeObserver(() => measureDims());
+    resizeObserver.observe(containerRef.current);
+    const canvas = findChartCanvas();
+    if (canvas) resizeObserver.observe(canvas);
+    // A window resize is a belt-and-suspenders backup for the observer.
+    window.addEventListener('resize', measureDims);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', measureDims);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-measure whenever ProChart emits a fresh converter. ProChart rebuilds its
+  // converter from `dimensions`, so a new converter means the chart just changed
+  // size (e.g. a side panel / watchlist opened, the canvas mounted after us).
+  // The ResizeObserver can lag by a frame in that case; this locks the drawing
+  // plane to the real chart width. The change-guard prevents any render loop.
+  useEffect(() => {
+    measureDims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [converter]);
 
   // iOS Safari fix: Attach non-passive touch event listener to prevent scroll during drawing
@@ -973,7 +989,7 @@ const ChartDrawingOverlayComponent = ({
       // because the finger is too wide, so this lets users drag to the edge.
       let snapX = x;
       if (containerRef.current && dragPointIndex >= 980 && dragPointIndex <= 985) {
-        const chartWidth = containerRef.current.clientWidth - chartBounds.priceAxisWidth;
+        const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
         const SNAP_DISTANCE = 30; // px, snap zone near price axis
         if (x >= chartWidth - SNAP_DISTANCE) {
           snapX = chartWidth;
@@ -1823,7 +1839,7 @@ const ChartDrawingOverlayComponent = ({
         const lineLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
         if (lineLength > 0) {
           const distToLine = Math.abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x) / lineLength;
-          const cw = containerRef.current?.clientWidth || 1000;
+          const cw = (containerDims.width || 1000);
           const ch = containerRef.current?.clientHeight || 600;
           if (distToLine < 12 && x >= 0 && x <= cw && y >= 0 && y <= ch) {
             const dotProduct = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / (lineLength * lineLength);
@@ -2026,7 +2042,7 @@ const ChartDrawingOverlayComponent = ({
         const R = Math.abs(x2 - x1);
         if (R >= 3) {
           const dir = x2 >= x1 ? 1 : -1;
-          const cw = containerRef.current?.clientWidth ?? 2000;
+          const cw = (containerDims.width || 2000);
           const chartRight = cw - chartBounds.priceAxisWidth;
           let hit = false;
           for (let k = 0; k < 200; k++) {
@@ -2205,7 +2221,7 @@ const ChartDrawingOverlayComponent = ({
         const step = x2 - x1;
         let hit = false;
         if (Math.abs(step) >= 2) {
-          const cw = containerRef.current?.clientWidth ?? 2000;
+          const cw = (containerDims.width || 2000);
           const chartRight = cw - chartBounds.priceAxisWidth;
           for (let k = 0; k < 240; k++) {
             const xx = x1 + step * k;
@@ -3680,7 +3696,7 @@ const ChartDrawingOverlayComponent = ({
     if (drawing.type === 'horizontal') {
       if (pixels.length < 1) return null;
       const y = pixels[0].y;
-      const containerWidth = containerRef.current?.clientWidth || 1000;
+      const containerWidth = (containerDims.width || 1000);
       const chartWidth = containerWidth - chartBounds.priceAxisWidth;
 
       return (
@@ -3782,7 +3798,7 @@ const ChartDrawingOverlayComponent = ({
       if (pixels.length < 1) return null;
       const y = pixels[0].y;
       const startX = pixels[0].x;
-      const containerWidth = containerRef.current?.clientWidth || 1000;
+      const containerWidth = (containerDims.width || 1000);
       const chartWidth = containerWidth - chartBounds.priceAxisWidth;
 
       return (
@@ -4298,7 +4314,7 @@ const ChartDrawingOverlayComponent = ({
     if (drawing.type === 'extendedLine') {
       if (pixels.length < 2) return null;
       const [p1, p2] = pixels;
-      const cw = containerRef.current?.clientWidth || 1000;
+      const cw = (containerDims.width || 1000);
       const ch = containerRef.current?.clientHeight || 600;
       const chartW = cw - chartBounds.priceAxisWidth;
       const dx = p2.x - p1.x;
@@ -4387,7 +4403,7 @@ const ChartDrawingOverlayComponent = ({
     if (drawing.type === 'crossline') {
       if (pixels.length < 1) return null;
       const cx = pixels[0].x, cy = pixels[0].y;
-      const cw = containerRef.current?.clientWidth || 1000;
+      const cw = (containerDims.width || 1000);
       const ch = containerRef.current?.clientHeight || 600;
       const chartW = cw - chartBounds.priceAxisWidth;
       return (
@@ -4408,7 +4424,7 @@ const ChartDrawingOverlayComponent = ({
       const [p1, p2] = pixels;
 
       // Extend line forward to chart edge
-      const cw = containerRef.current?.clientWidth || 1000;
+      const cw = (containerDims.width || 1000);
       const ch = containerRef.current?.clientHeight || 600;
       const chartW = cw - chartBounds.priceAxisWidth;
       const dx = p2.x - p1.x;
@@ -4772,7 +4788,7 @@ const ChartDrawingOverlayComponent = ({
       if (R < 3) return null;
       const dir = x2 >= x1 ? 1 : -1;
       const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
-      const cw = containerRef.current?.clientWidth ?? 2000;
+      const cw = (containerDims.width || 2000);
       const chartRight = cw - chartBounds.priceAxisWidth;
       const centers: number[] = [];
       for (let k = 0; k < 200; k++) {
@@ -4839,7 +4855,7 @@ const ChartDrawingOverlayComponent = ({
       else if (drawing.type === 'modifiedSchiff') O = { x: (P0.x + P1.x) / 2, y: (P0.y + P1.y) / 2 };
       const dxr = M.x - O.x, dyr = M.y - O.y;
       const extendRay = (sx: number, sy: number, dx: number, dy: number) => {
-        const cw = containerRef.current?.clientWidth || 1000;
+        const cw = (containerDims.width || 1000);
         const ch = containerRef.current?.clientHeight || 600;
         const chartW = cw - chartBounds.priceAxisWidth;
         if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return { x: sx, y: sy };
@@ -5601,7 +5617,7 @@ const ChartDrawingOverlayComponent = ({
       const O = P0;
       const dirx = M.x - O.x, diry = M.y - O.y;
       const extendRay = (sx: number, sy: number, ddx: number, ddy: number) => {
-        const cw = containerRef.current?.clientWidth || 1000;
+        const cw = (containerDims.width || 1000);
         const ch = containerRef.current?.clientHeight || 600;
         const chartW = cw - chartBounds.priceAxisWidth;
         if (Math.abs(ddx) < 0.001 && Math.abs(ddy) < 0.001) return { x: sx, y: sy };
@@ -5755,7 +5771,7 @@ const ChartDrawingOverlayComponent = ({
       const levels = fibStyles ? fibStyles.map(s => s.value) : (drawing.fibLevels || [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
       const fibRev = !!drawing.reverse;
       const fibLabelMode = drawing.fibLabelMode || 'both';
-      const fibCW = (containerRef.current?.clientWidth || 1200) - (chartBounds?.priceAxisWidth || 0);
+      const fibCW = (containerDims.width || 1200) - (chartBounds?.priceAxisWidth || 0);
       const fibLX = drawing.extendLeft ? 0 : Math.min(p1.x, p2.x);
       const fibRX = drawing.extendRight ? fibCW : Math.max(p1.x, p2.x);
 
@@ -6031,7 +6047,7 @@ const ChartDrawingOverlayComponent = ({
       const step = x2 - x1;
       if (Math.abs(step) < 2) return null;
       const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
-      const cw = containerRef.current?.clientWidth ?? 2000;
+      const cw = (containerDims.width || 2000);
       const ch = containerRef.current?.clientHeight ?? 1000;
       const chartRight = cw - chartBounds.priceAxisWidth;
       const chartBottom = ch - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0);
@@ -6523,7 +6539,7 @@ const ChartDrawingOverlayComponent = ({
 
     if (activeTool === 'trendRay') {
       // Extend preview line forward to chart edges
-      const cw = containerRef.current?.clientWidth || 1000;
+      const cw = (containerDims.width || 1000);
       const ch = containerRef.current?.clientHeight || 600;
       const chartW = cw - chartBounds.priceAxisWidth;
       const dx = endPixel.x - startPixel.x;
