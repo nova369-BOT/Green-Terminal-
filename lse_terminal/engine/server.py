@@ -5812,6 +5812,268 @@ def create_app() -> FastAPI:
     binance_jobs: dict[str, dict] = {}
     binance_jobs_lock = threading.Lock()
 
+    # ---- Unified "All Symbols" browser: live venue catalog counts ----------
+    # Real sources only. Binance = live exchangeInfo (via binance_import);
+    # Hyperliquid = the live perp universe (api.hyperliquid.xyz/info). When a
+    # source is unreachable its count is null and the UI shows an honest
+    # "unavailable" state — never a fabricated number (house rule: no fake data).
+    _venue_cache: dict[str, object] = {"at": 0.0, "data": None}
+
+    def _http_json(url, payload=None, timeout=6):
+        """One bounded HTTP(S) JSON call. Hard timeout so a dead network can
+        never hang the request thread (offline → raises fast, caller reports
+        an honest null count rather than a fabricated one)."""
+        import json as _json, urllib.request as _urlreq
+        headers = {"User-Agent": "GreenTerminal/1.0"}
+        if payload is None:
+            req = _urlreq.Request(url, headers=headers)
+        else:
+            headers["Content-Type"] = "application/json"
+            req = _urlreq.Request(url, data=_json.dumps(payload).encode(),
+                                  headers=headers, method="POST")
+        with _urlreq.urlopen(req, timeout=timeout) as r:
+            return _json.loads(r.read().decode())
+
+    # Raw upstream feeds are cached once and shared by every derived view
+    # (count / base assets / rows), so the big Binance catalog is downloaded a
+    # single time instead of three, and HL meta once. Main speedup #1.
+    _binance_ei = {"at": 0.0, "data": None}
+    _hl_meta_raw = {"at": 0.0, "data": None}
+
+    def _binance_exchange_info():
+        now = time.time()
+        if _binance_ei["data"] and now - float(_binance_ei["at"] or 0) < 300:
+            return _binance_ei["data"]
+        data = _http_json("https://data-api.binance.vision/api/v3/exchangeInfo", timeout=8)
+        if not isinstance(data, dict) or not isinstance(data.get("symbols"), list):
+            raise ValueError("Binance exchangeInfo had no symbols")
+        _binance_ei["at"] = now; _binance_ei["data"] = data
+        return data
+
+    def _hl_meta_get():
+        now = time.time()
+        if _hl_meta_raw["data"] and now - float(_hl_meta_raw["at"] or 0) < 300:
+            return _hl_meta_raw["data"]
+        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
+        if not isinstance(meta, dict) or not isinstance(meta.get("universe"), list):
+            raise ValueError("Hyperliquid meta had no universe")
+        _hl_meta_raw["at"] = now; _hl_meta_raw["data"] = meta
+        return meta
+
+    def _par(fn_list):
+        """Run zero-arg callables concurrently; return [(ok, value), ...] in
+        order. Turns many sequential upstream calls into one round. Speedup #2."""
+        from concurrent.futures import ThreadPoolExecutor
+        out = []
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(fn_list)))) as ex:
+            for fu in [ex.submit(f) for f in fn_list]:
+                try:
+                    out.append((True, fu.result()))
+                except Exception:
+                    out.append((False, None))
+        return out
+
+    def _binance_spot_count():
+        return len([s for s in _binance_exchange_info()["symbols"] if s.get("status") == "TRADING"])
+
+    def _hl_perp_count():
+        return len([u for u in _hl_meta_get()["universe"] if isinstance(u, dict) and not u.get("isDelisted")])
+
+    @app.get("/api/allsymbols/venues")
+    def allsymbols_venues():
+        now = time.time()
+        cached = _venue_cache.get("data")
+        if cached and now - float(_venue_cache.get("at") or 0) < 120:
+            return cached
+        (ok_b, bn), (ok_h, hl) = _par([_binance_spot_count, _hl_perp_count])
+        venues = [{"id": "binance", "label": "Binance", "count": bn if ok_b else None},
+                  {"id": "hl", "label": "Hyperliquid", "count": hl if ok_h else None}]
+        nums = [v["count"] for v in venues if isinstance(v["count"], int)]
+        out = {"total": (sum(nums) if nums else None), "venues": venues,
+               "reachable": bool(nums)}
+        _venue_cache["at"] = now
+        _venue_cache["data"] = out
+        return out
+
+    # ---- Live sector categories for the All Symbols browser ----------------
+    # Curated DISPLAY set (which sectors to surface, matching a clean pro
+    # layout). The ids are REAL CoinGecko category ids; membership and every
+    # count are fetched live from CoinGecko. Counts are the number of the
+    # SELECTED VENUE's own coins that fall in each sector — exact and cheap,
+    # because we intersect against our (small) venue coin set, not all of crypto.
+    _ALLSYM_CATEGORIES = [
+        ("layer-1", "Layer-1"),
+        ("layer-2", "Layer-2"),
+        ("decentralized-finance-defi", "DeFi"),
+        ("meme-token", "Meme"),
+        ("artificial-intelligence", "AI"),
+        ("gaming", "Gaming"),
+        ("non-fungible-tokens-nft", "NFT"),
+        ("metaverse", "Metaverse"),
+        ("infrastructure", "Infrastructure"),
+        ("exchange-based-tokens", "Exchange"),
+        ("stablecoins", "Stablecoins"),
+        ("real-world-assets-rwa", "RWA"),
+        ("depin", "DePIN"),
+        ("oracle", "Oracle"),
+    ]
+    _cat_members: dict[str, object] = {}   # cat_id -> {"at": ts, "syms": set}
+    _cat_cache: dict[str, object] = {}     # venue -> {"at": ts, "data": dict}
+    _venue_coins_cache: dict[str, object] = {}  # venue -> {"at": ts, "syms": set}
+
+    def _binance_base_assets():
+        return {s.get("baseAsset", "").upper() for s in _binance_exchange_info()["symbols"]
+                if s.get("status") == "TRADING" and s.get("baseAsset")}
+
+    def _hl_coin_set():
+        return {u.get("name", "").upper() for u in _hl_meta_get()["universe"]
+                if isinstance(u, dict) and not u.get("isDelisted") and u.get("name")}
+
+    def _venue_coin_set(venue):
+        now = time.time()
+        c = _venue_coins_cache.get(venue)
+        if c and now - float(c.get("at") or 0) < 300 and c.get("syms"):
+            return c["syms"]
+        if venue == "binance":
+            syms = _binance_base_assets()
+        elif venue == "hl":
+            syms = _hl_coin_set()
+        else:
+            syms = set()
+            for ok, val in _par([_binance_base_assets, _hl_coin_set]):
+                if ok and val:
+                    syms |= val
+            if not syms:
+                raise ValueError("no venue coins reachable")
+        _venue_coins_cache[venue] = {"at": now, "syms": syms}
+        return syms
+
+    def _category_member_syms(cat_id):
+        now = time.time()
+        c = _cat_members.get(cat_id)
+        if c and now - float(c.get("at") or 0) < 43200 and c.get("syms") is not None:
+            return c["syms"]
+        # Page 1 (top 250 by market cap) is enough: our venue coins are all
+        # high-cap, so one call per sector both speeds this up and avoids the
+        # CoinGecko rate limit that a two-page burst would hit.
+        rows = _http_json(
+            "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd"
+            f"&category={cat_id}&per_page=250&page=1", timeout=8)
+        syms = set()
+        if isinstance(rows, list):
+            for r in rows:
+                s = (r.get("symbol") or "").upper() if isinstance(r, dict) else ""
+                if s:
+                    syms.add(s)
+        _cat_members[cat_id] = {"at": now, "syms": syms}
+        return syms
+
+    @app.get("/api/allsymbols/categories")
+    def allsymbols_categories(venue: str = "all"):
+        venue = venue if venue in ("all", "binance", "hl") else "all"
+        now = time.time()
+        cached = _cat_cache.get(venue)
+        if cached and now - float(cached.get("at") or 0) < 43200:
+            return cached["data"]
+        # Venue coin set first — if we cannot even reach a venue, report an
+        # honest unreachable state instead of inventing categories/counts.
+        try:
+            base = _venue_coin_set(venue)
+        except Exception:
+            base = None
+        if not base:
+            if cached:
+                return {**cached["data"], "stale": True}
+            return {"total": None, "categories": [], "reachable": False}
+        # Every sector's membership is fetched concurrently — the big latency win.
+        results = _par([(lambda cid=cid: _category_member_syms(cid))
+                        for cid, _ in _ALLSYM_CATEGORIES])
+        cats = []
+        for (cid, name), (ok, members) in zip(_ALLSYM_CATEGORIES, results):
+            cnt = len(base & members) if (ok and members is not None) else None
+            cats.append({"id": cid, "name": name, "count": cnt})
+        data = {"total": len(base), "categories": cats, "reachable": True}
+        _cat_cache[venue] = {"at": now, "data": data}
+        return data
+
+    # ---- The actual symbol rows for the All Symbols browser ----------------
+    _rows_cache: dict[str, object] = {}    # venue -> {"at": ts, "rows": list}
+
+    def _binance_rows():
+        rows = []
+        for s in _binance_exchange_info()["symbols"]:
+            if not isinstance(s, dict) or s.get("status") != "TRADING":
+                continue
+            b, q = s.get("baseAsset"), s.get("quoteAsset")
+            if not b or not q:
+                continue
+            rows.append({"symbol": s.get("symbol"), "display": f"{b}/{q}",
+                         "base": b.upper(), "quote": q, "venue": "binance",
+                         "name": f"{b} / {q}"})
+        return rows
+
+    def _hl_rows():
+        rows = []
+        for u in _hl_meta_get()["universe"]:
+            if not isinstance(u, dict) or u.get("isDelisted"):
+                continue
+            n = u.get("name")
+            if not n:
+                continue
+            rows.append({"symbol": f"{n.upper()}-PERP", "display": f"{n.upper()}-PERP",
+                         "base": n.upper(), "quote": "USD", "venue": "hl",
+                         "name": f"{n} Perpetual"})
+        return rows
+
+    def _venue_rows(venue):
+        now = time.time()
+        c = _rows_cache.get(venue)
+        if c and now - float(c.get("at") or 0) < 300 and c.get("rows"):
+            return c["rows"]
+        if venue == "binance":
+            rows = _binance_rows()
+        elif venue == "hl":
+            rows = _hl_rows()
+        else:
+            rows = []
+            for ok, val in _par([_binance_rows, _hl_rows]):
+                if ok and val:
+                    rows += val
+            if not rows:
+                raise ValueError("no venue rows reachable")
+        _rows_cache[venue] = {"at": now, "rows": rows}
+        return rows
+
+    @app.get("/api/allsymbols/list")
+    def allsymbols_list(venue: str = "all", category: str = "",
+                        query: str = "", limit: int = 300):
+        venue = venue if venue in ("all", "binance", "hl") else "all"
+        try:
+            rows = _venue_rows(venue)
+        except Exception:
+            return {"rows": [], "total": None, "reachable": False}
+        # Category filter: keep only rows whose base coin is in that sector
+        # (live CoinGecko membership). Unknown/unreachable category → honest
+        # empty rather than an unfiltered dump pretending to be filtered.
+        cat = (category or "").strip()
+        if cat:
+            try:
+                members = _category_member_syms(cat)
+            except Exception:
+                members = None
+            if not members:
+                return {"rows": [], "total": 0, "reachable": True,
+                        "category_unavailable": True}
+            rows = [r for r in rows if r["base"] in members]
+        q = (query or "").strip().upper()
+        if q:
+            rows = [r for r in rows
+                    if q in r["symbol"].upper() or q in r["name"].upper()]
+        rows.sort(key=lambda r: (r["quote"] != "USDT" and r["quote"] != "USD", r["base"]))
+        total = len(rows)
+        lim = max(1, min(int(limit), 1000))
+        return {"rows": rows[:lim], "total": total, "reachable": True}
+
     @app.get("/api/binance/databank")
     def binance_overview():
         return binance_import.overview()

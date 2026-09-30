@@ -2598,6 +2598,12 @@ function renderWatchlist() {
   // (symbol OR name), capped, so the lazy category chunking is bypassed and
   // matches appear instantly. Rows use the same wrow builder, so drag, star and
   // live price all keep working on a filtered row.
+  // All Symbols venue/category browser (crypto). Runs before the generic
+  // filter/folder code: it toggles the venue+category bar (shown only on the
+  // ALL SYMBOLS tab) and, when a crypto venue is chosen, renders its own LIVE
+  // list (using the shared search box as its query) and takes over the sidebar.
+  // On "Library" it falls through to the provider catalog below unchanged.
+  if (typeof asRenderAllSymbols === "function" && asRenderAllSymbols(el)) return;
   const wlQuery = (state.wlFilter || "").toLowerCase();
   if (wlQuery) {
     const matches = [];
@@ -2677,6 +2683,231 @@ const WL_CHUNK = 200;
 /* Cap on rows shown while a sidebar filter is active. Keeps a 1-char query
    (which can match thousands) cheap; a "+" on the count signals more exist. */
 const WL_FILTER_MAX = 300;
+
+/* ==== All Symbols: live venue + category browser (Style 4 dropdowns) ======
+   One unified watchlist gains a Venue and Category filter on its ALL SYMBOLS
+   tab. Every option and count is LIVE from /api/allsymbols/* (Binance +
+   Hyperliquid catalogs, CoinGecko sectors). Nothing is fabricated: when a
+   source is unreachable the UI shows an honest dash / message. The starred
+   WATCHLIST tab is untouched. "Library" = the current provider catalog
+   (existing behaviour); a crypto venue swaps the list for that venue's coins. */
+let asVenue = "library";            // library | all | binance | hl
+let asCategory = "";                // CoinGecko category id ("" = All)
+let asCategoryName = "All";
+let asBound = false;
+const asCache = { venues: undefined, cats: {}, list: {} };  // undefined = not fetched
+const asPending = new Set();
+
+function asVenueLabel(v) {
+  return { library: "Library", all: "All venues", binance: "Binance", hl: "Hyperliquid" }[v] || "Library";
+}
+function asSetBarVisible(show) {
+  const f = $("as-filters");
+  if (f) f.classList.toggle("hidden", !show);
+  const catBtn = $("as-cat-btn");
+  if (catBtn) catBtn.classList.toggle("hidden", asVenue === "library");
+  const vl = $("as-venue-lbl"); if (vl) vl.textContent = asVenueLabel(asVenue);
+  const cl = $("as-cat-lbl"); if (cl) cl.textContent = asCategoryName || "All";
+}
+function asClosePanels() {
+  ["as-venue-panel", "as-cat-panel"].forEach((id) => { const p = $(id); if (p) p.classList.add("hidden"); });
+  ["as-venue-btn", "as-cat-btn"].forEach((id) => { const b = $(id); if (b) b.setAttribute("aria-expanded", "false"); });
+}
+function asTogglePanel(which) {
+  const map = { venue: "as-venue-panel", cat: "as-cat-panel" };
+  const open = $(map[which]);
+  const other = $(which === "venue" ? "as-cat-panel" : "as-venue-panel");
+  if (other) other.classList.add("hidden");
+  if (!open) return;
+  const nowHidden = open.classList.toggle("hidden");
+  const btn = $(which === "venue" ? "as-venue-btn" : "as-cat-btn");
+  if (btn) btn.setAttribute("aria-expanded", String(!nowHidden));
+  if (!nowHidden) { if (which === "venue") asRenderVenuePanel(); else asRenderCatPanel(); }
+}
+function asBindOnce() {
+  if (asBound) return;
+  asBound = true;
+  const vb = $("as-venue-btn"), cb = $("as-cat-btn");
+  if (vb) vb.addEventListener("click", (e) => { e.stopPropagation(); asTogglePanel("venue"); });
+  if (cb) cb.addEventListener("click", (e) => { e.stopPropagation(); asTogglePanel("cat"); });
+  const cs = $("as-cat-search");
+  if (cs) cs.addEventListener("input", () => asRenderCatPanel());
+  // Click anywhere outside the filter widget closes the open panel.
+  document.addEventListener("click", (e) => {
+    const f = $("as-filters");
+    if (f && !f.contains(e.target)) asClosePanels();
+  });
+}
+
+async function asFetchVenues() {
+  if (asPending.has("venues")) return;
+  asPending.add("venues");
+  let data = null;
+  try {
+    const j = await fetch("/api/allsymbols/venues").then((r) => r.json());
+    data = (j && j.reachable) ? j : (j || null);
+  } catch (_) { data = null; }
+  asCache.venues = data;
+  asPending.delete("venues");
+  asRenderVenuePanel();
+  asSetBarVisible(state.wlTab === "all");
+}
+function asRenderVenuePanel() {
+  const p = $("as-venue-panel");
+  if (!p) return;
+  const v = asCache.venues;
+  const cell = (x) => (x == null ? '<span class="as-dim">—</span>' : x);
+  const loading = v === undefined;
+  const byId = {};
+  if (v && v.venues) v.venues.forEach((x) => { byId[x.id] = x.count; });
+  const row = (id, label, count) =>
+    `<button type="button" class="as-vrow${asVenue === id ? " active" : ""}" data-v="${id}">` +
+    `<span>${label}</span><span class="as-cnt">${count}</span></button>`;
+  let html = row("library", "Library", "");
+  const tot = loading ? "…" : (v && v.total != null ? v.total : cell(null));
+  html += row("all", "All venues", tot);
+  html += row("binance", "Binance", loading ? "…" : cell(byId.binance));
+  html += row("hl", "Hyperliquid", loading ? "…" : cell(byId.hl));
+  p.innerHTML = html;
+  p.querySelectorAll(".as-vrow").forEach((b) => { b.onclick = () => asPickVenue(b.dataset.v); });
+  if (loading) asFetchVenues();
+}
+function asPickVenue(v) {
+  asVenue = ["library", "all", "binance", "hl"].includes(v) ? v : "library";
+  asCategory = ""; asCategoryName = "All";
+  asClosePanels();
+  asSetBarVisible(state.wlTab === "all");
+  renderWatchlist();
+}
+
+async function asFetchCats(venue) {
+  const key = venue;
+  if (asPending.has("cat:" + key)) return;
+  asPending.add("cat:" + key);
+  let data = null;
+  try {
+    const j = await fetch("/api/allsymbols/categories?venue=" + encodeURIComponent(venue)).then((r) => r.json());
+    data = (j && j.reachable) ? j : (j || null);
+  } catch (_) { data = null; }
+  asCache.cats[key] = data;
+  asPending.delete("cat:" + key);
+  asRenderCatPanel();
+}
+function asRenderCatPanel() {
+  const list = $("as-cat-list");
+  if (!list) return;
+  const venue = asVenue === "library" ? "all" : asVenue;
+  const data = asCache.cats[venue];
+  if (data === undefined) {
+    list.innerHTML = '<div class="as-msg" style="grid-column:1/-1">Loading live categories…</div>';
+    asFetchCats(venue);
+    return;
+  }
+  if (!data || data.reachable === false || !data.categories) {
+    list.innerHTML = '<div class="as-msg" style="grid-column:1/-1">Categories load when the app has internet. No fabricated data is shown.</div>';
+    return;
+  }
+  const q = ($("as-cat-search") && $("as-cat-search").value || "").trim().toLowerCase();
+  const chip = (id, name, count, active) =>
+    `<button type="button" class="as-cchip${active ? " active" : ""}" data-c="${id}" data-n="${name}">` +
+    `<span>${name}</span><span class="as-cnt">${count == null ? "—" : count}</span></button>`;
+  let html = "";
+  if (!q || "all".includes(q)) {
+    html += chip("", "All", data.total, asCategory === "");
+  }
+  for (const c of data.categories) {
+    if (q && !c.name.toLowerCase().includes(q)) continue;
+    html += chip(c.id, c.name, c.count, asCategory === c.id);
+  }
+  list.innerHTML = html || '<div class="as-msg" style="grid-column:1/-1">No categories match.</div>';
+  list.querySelectorAll(".as-cchip").forEach((b) => {
+    b.onclick = () => asPickCategory(b.dataset.c, b.dataset.n);
+  });
+}
+function asPickCategory(id, name) {
+  asCategory = id || "";
+  asCategoryName = name || "All";
+  asClosePanels();
+  asSetBarVisible(state.wlTab === "all");
+  renderWatchlist();
+}
+
+function asOpenSymbol(base) {
+  const coin = String(base || "").toUpperCase();
+  if (!coin) return;
+  ofState.symbol = coin;
+  const inp = $("of-symbol");
+  if (inp) inp.value = coin;
+  // Browse a coin → jump to its live order flow (unified G-Flow auto-loads it).
+  if (typeof showOrderFlowPage === "function") showOrderFlowPage();
+}
+function asMsg(text) {
+  const d = document.createElement("div");
+  d.className = "as-msg";
+  d.textContent = text;
+  return d;
+}
+function asCryptoRow(row) {
+  const d = document.createElement("div");
+  d.className = "wrow as-crow";
+  d.dataset.symbol = row.symbol || "";
+  const init = (row.base || "?").slice(0, 1);
+  d.innerHTML =
+    `<span class="wlogo"><span class="winit">${init}</span></span>` +
+    `<span class="wsym" title="${row.name || row.symbol}">${row.display || row.symbol}` +
+    (row.name ? `<span class="wname">${row.name}</span>` : "") + `</span>` +
+    `<span class="as-venuetag">${row.venue === "hl" ? "HL" : "BIN"}</span>`;
+  d.onclick = () => asOpenSymbol(row.base);
+  return d;
+}
+async function asFetchList(key) {
+  if (asPending.has("list:" + key)) return;
+  asPending.add("list:" + key);
+  const [venue, cat, q] = key.split("|");
+  let data = null;
+  try {
+    const j = await fetch("/api/allsymbols/list?venue=" + encodeURIComponent(venue) +
+      "&category=" + encodeURIComponent(cat) + "&query=" + encodeURIComponent(q) + "&limit=300")
+      .then((r) => r.json());
+    data = (j && j.reachable === false) ? null : (j || null);
+  } catch (_) { data = null; }
+  asCache.list[key] = data;
+  asPending.delete("list:" + key);
+  const cur = asVenue + "|" + asCategory + "|" + (state.wlFilter || "");
+  if (state.wlTab === "all" && asVenue !== "library" && cur === key) renderWatchlist();
+}
+function asRenderCryptoList(el) {
+  el.innerHTML = "";
+  const key = asVenue + "|" + asCategory + "|" + (state.wlFilter || "");
+  const data = asCache.list[key];
+  const head = document.createElement("div");
+  head.className = "wgroup";
+  const cnt = (data && data.rows) ? data.total : "";
+  head.innerHTML = '<span class="wcaret">\u25be</span>' +
+    (asCategoryName && asCategoryName !== "All" ? asCategoryName : "Symbols") +
+    `<span class="wcount">${cnt === "" ? "" : cnt}</span>`;
+  el.appendChild(head);
+  if (data === undefined) { el.appendChild(asMsg("Loading live symbols…")); asFetchList(key); return; }
+  if (data === null) { el.appendChild(asMsg("Live symbols are unavailable right now (the app is offline). They load automatically when internet is available — no placeholder data is shown.")); return; }
+  if (!data.rows || !data.rows.length) {
+    el.appendChild(asMsg(data.category_unavailable ? "This category isn’t available yet." : "No symbols match."));
+    return;
+  }
+  for (const row of data.rows) el.appendChild(asCryptoRow(row));
+}
+function asRenderAllSymbols(el) {
+  const onAll = state.wlTab === "all";
+  asSetBarVisible(onAll);
+  if (!onAll) return false;
+  asBindOnce();
+  // Warm the caches as soon as the tab opens so the dropdowns are instant.
+  if (asCache.venues === undefined) asFetchVenues();
+  const _vk = asVenue === "library" ? "all" : asVenue;
+  if (asCache.cats[_vk] === undefined) asFetchCats(_vk);
+  if (asVenue === "library") return false;   // provider catalog renders below
+  asRenderCryptoList(el);
+  return true;
+}
 
 /* Reveal the next chunk as the sidebar scroll nears the bottom. One listener
    for the whole watchlist (re-armed on each render, since renderWatchlist
@@ -4083,6 +4314,18 @@ function setSymbol(symbol) {
   // One pick, both surfaces: on a venue's own source the sidebar row IS the
   // instrument choice, so the ticket takes it too (see tpbFollowChart).
   if (typeof tpbFollowChart === "function") tpbFollowChart(symbol);
+  // Unified watchlist → G-Flow: one watchlist drives everything. When the
+  // G-Flow page is on screen, clicking any watchlist row retargets the live
+  // order-flow engine instantly (crypto with real Hyperliquid depth only; a
+  // symbol without flow leaves the engine on its last coin — no fake depth).
+  const ofPageOpen = $("orderflow") && !$("orderflow").classList.contains("hidden");
+  if (ofPageOpen && typeof ofNormalizeSymbol === "function") {
+    const ofCoin = ofNormalizeSymbol(symbol);
+    if (OF_HL_PRESETS.includes(ofCoin)) {
+      ofState.symbol = ofCoin;
+      if (ofState.ready) loadOrderFlowSymbol(ofCoin);
+    }
+  }
 }
 
 function renderTimeframes() {
@@ -13048,7 +13291,15 @@ function showOrderFlowPage() {
   stopOrderFlowHost();
   $("orderflow").classList.remove("hidden");
   bindOrderFlowControls();
+  // Unified symbol: G-Flow follows the main chart automatically — no manual
+  // "Use chart symbol" click. If the charted instrument has real Hyperliquid
+  // depth we retarget the warm engine to it; otherwise the runtime keeps its
+  // last coin (an honest empty state for LSE/FX lands with the docked view).
+  const ofCoin = ofNormalizeSymbol(state.symbol);
+  const ofHasFlow = OF_HL_PRESETS.includes(ofCoin);
+  if (ofHasFlow) ofState.symbol = ofCoin;
   refreshOrderFlowStatus();
+  if (ofHasFlow && ofState.ready) loadOrderFlowSymbol(ofCoin);
   if (!ofState.poll) ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
   // Reuse instrument header for L1 context above the EdgeDepth surface.
   refreshInstrumentBarSoon();

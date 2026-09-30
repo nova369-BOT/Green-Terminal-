@@ -305,6 +305,31 @@ def my_ind(df, length=20):
       <button id="wl-newlist" type="button" title="New watchlist" aria-label="New watchlist">+</button>
       <button id="wl-settings" type="button" title="Watchlist settings" aria-label="Watchlist settings">&#9881;</button>
     </div>
+    <!-- All Symbols venue + category filters (Style 4 dropdowns). Shown only on
+         the ALL SYMBOLS tab; every option and count is LIVE from
+         /api/allsymbols/* (Binance + Hyperliquid + CoinGecko sectors). No fake
+         numbers: unreachable sources show an honest dash / message. -->
+    <div id="as-filters" class="hidden">
+      <div id="as-filterbar">
+        <button id="as-venue-btn" class="as-fbtn" type="button" aria-haspopup="true" aria-expanded="false">
+          <span class="as-fbtn-k">Venue</span>
+          <span id="as-venue-lbl" class="as-fbtn-v">Library</span>
+          <span class="as-caret" aria-hidden="true">&#9662;</span>
+        </button>
+        <button id="as-cat-btn" class="as-fbtn hidden" type="button" aria-haspopup="true" aria-expanded="false">
+          <span class="as-fbtn-k">Category</span>
+          <span id="as-cat-lbl" class="as-fbtn-v">All</span>
+          <span class="as-caret" aria-hidden="true">&#9662;</span>
+        </button>
+      </div>
+      <div id="as-venue-panel" class="as-panel hidden" role="menu" aria-label="Choose venue"></div>
+      <div id="as-cat-panel" class="as-panel hidden" role="menu" aria-label="Choose category">
+        <div class="as-panel-search">
+          <input id="as-cat-search" type="text" placeholder="Search categories&hellip;" autocomplete="off" spellcheck="false">
+        </div>
+        <div id="as-cat-list" class="as-cat-grid"></div>
+      </div>
+    </div>
     <div id="watchlist"></div>
   </aside>
   <section id="charts">
@@ -1483,7 +1508,7 @@ def my_ind(df, length=20):
   <span class="ts-cell"><span class="ts-k">TF</span><span id="ts-tf" class="ts-v">—</span></span>
   <!-- BUILD stamp: bump the number on every UI push so a stale
        build/cache is visible at a glance in the status strip. -->
-  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">70-raildrag</span></span>
+  <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">75-allsymbols-fast</span></span>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
 <script src="./app.js"></script>
