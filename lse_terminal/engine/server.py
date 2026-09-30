@@ -5834,19 +5834,50 @@ def create_app() -> FastAPI:
         with _urlreq.urlopen(req, timeout=timeout) as r:
             return _json.loads(r.read().decode())
 
-    def _binance_spot_count():
+    # Raw upstream feeds are cached once and shared by every derived view
+    # (count / base assets / rows), so the big Binance catalog is downloaded a
+    # single time instead of three, and HL meta once. Main speedup #1.
+    _binance_ei = {"at": 0.0, "data": None}
+    _hl_meta_raw = {"at": 0.0, "data": None}
+
+    def _binance_exchange_info():
+        now = time.time()
+        if _binance_ei["data"] and now - float(_binance_ei["at"] or 0) < 300:
+            return _binance_ei["data"]
         data = _http_json("https://data-api.binance.vision/api/v3/exchangeInfo", timeout=8)
-        syms = data.get("symbols") if isinstance(data, dict) else None
-        if not isinstance(syms, list):
+        if not isinstance(data, dict) or not isinstance(data.get("symbols"), list):
             raise ValueError("Binance exchangeInfo had no symbols")
-        return len([s for s in syms if s.get("status") == "TRADING"])
+        _binance_ei["at"] = now; _binance_ei["data"] = data
+        return data
+
+    def _hl_meta_get():
+        now = time.time()
+        if _hl_meta_raw["data"] and now - float(_hl_meta_raw["at"] or 0) < 300:
+            return _hl_meta_raw["data"]
+        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
+        if not isinstance(meta, dict) or not isinstance(meta.get("universe"), list):
+            raise ValueError("Hyperliquid meta had no universe")
+        _hl_meta_raw["at"] = now; _hl_meta_raw["data"] = meta
+        return meta
+
+    def _par(fn_list):
+        """Run zero-arg callables concurrently; return [(ok, value), ...] in
+        order. Turns many sequential upstream calls into one round. Speedup #2."""
+        from concurrent.futures import ThreadPoolExecutor
+        out = []
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(fn_list)))) as ex:
+            for fu in [ex.submit(f) for f in fn_list]:
+                try:
+                    out.append((True, fu.result()))
+                except Exception:
+                    out.append((False, None))
+        return out
+
+    def _binance_spot_count():
+        return len([s for s in _binance_exchange_info()["symbols"] if s.get("status") == "TRADING"])
 
     def _hl_perp_count():
-        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
-        uni = meta.get("universe") if isinstance(meta, dict) else None
-        if not isinstance(uni, list):
-            raise ValueError("Hyperliquid meta had no universe")
-        return len([u for u in uni if isinstance(u, dict) and not u.get("isDelisted")])
+        return len([u for u in _hl_meta_get()["universe"] if isinstance(u, dict) and not u.get("isDelisted")])
 
     @app.get("/api/allsymbols/venues")
     def allsymbols_venues():
@@ -5854,13 +5885,9 @@ def create_app() -> FastAPI:
         cached = _venue_cache.get("data")
         if cached and now - float(_venue_cache.get("at") or 0) < 120:
             return cached
-        venues = []
-        for vid, label, fn in (("binance", "Binance", _binance_spot_count),
-                               ("hl", "Hyperliquid", _hl_perp_count)):
-            try:
-                venues.append({"id": vid, "label": label, "count": int(fn())})
-            except Exception:
-                venues.append({"id": vid, "label": label, "count": None})
+        (ok_b, bn), (ok_h, hl) = _par([_binance_spot_count, _hl_perp_count])
+        venues = [{"id": "binance", "label": "Binance", "count": bn if ok_b else None},
+                  {"id": "hl", "label": "Hyperliquid", "count": hl if ok_h else None}]
         nums = [v["count"] for v in venues if isinstance(v["count"], int)]
         out = {"total": (sum(nums) if nums else None), "venues": venues,
                "reachable": bool(nums)}
@@ -5895,19 +5922,11 @@ def create_app() -> FastAPI:
     _venue_coins_cache: dict[str, object] = {}  # venue -> {"at": ts, "syms": set}
 
     def _binance_base_assets():
-        data = _http_json("https://data-api.binance.vision/api/v3/exchangeInfo", timeout=8)
-        syms = data.get("symbols") if isinstance(data, dict) else None
-        if not isinstance(syms, list):
-            raise ValueError("Binance exchangeInfo had no symbols")
-        return {s.get("baseAsset", "").upper() for s in syms
+        return {s.get("baseAsset", "").upper() for s in _binance_exchange_info()["symbols"]
                 if s.get("status") == "TRADING" and s.get("baseAsset")}
 
     def _hl_coin_set():
-        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
-        uni = meta.get("universe") if isinstance(meta, dict) else None
-        if not isinstance(uni, list):
-            raise ValueError("Hyperliquid meta had no universe")
-        return {u.get("name", "").upper() for u in uni
+        return {u.get("name", "").upper() for u in _hl_meta_get()["universe"]
                 if isinstance(u, dict) and not u.get("isDelisted") and u.get("name")}
 
     def _venue_coin_set(venue):
@@ -5921,11 +5940,9 @@ def create_app() -> FastAPI:
             syms = _hl_coin_set()
         else:
             syms = set()
-            for fn in (_binance_base_assets, _hl_coin_set):
-                try:
-                    syms |= fn()
-                except Exception:
-                    pass
+            for ok, val in _par([_binance_base_assets, _hl_coin_set]):
+                if ok and val:
+                    syms |= val
             if not syms:
                 raise ValueError("no venue coins reachable")
         _venue_coins_cache[venue] = {"at": now, "syms": syms}
@@ -5936,19 +5953,18 @@ def create_app() -> FastAPI:
         c = _cat_members.get(cat_id)
         if c and now - float(c.get("at") or 0) < 43200 and c.get("syms") is not None:
             return c["syms"]
+        # Page 1 (top 250 by market cap) is enough: our venue coins are all
+        # high-cap, so one call per sector both speeds this up and avoids the
+        # CoinGecko rate limit that a two-page burst would hit.
+        rows = _http_json(
+            "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd"
+            f"&category={cat_id}&per_page=250&page=1", timeout=8)
         syms = set()
-        for page in (1, 2):
-            rows = _http_json(
-                "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd"
-                f"&category={cat_id}&per_page=250&page={page}", timeout=8)
-            if not isinstance(rows, list) or not rows:
-                break
+        if isinstance(rows, list):
             for r in rows:
                 s = (r.get("symbol") or "").upper() if isinstance(r, dict) else ""
                 if s:
                     syms.add(s)
-            if len(rows) < 250:
-                break
         _cat_members[cat_id] = {"at": now, "syms": syms}
         return syms
 
@@ -5969,12 +5985,12 @@ def create_app() -> FastAPI:
             if cached:
                 return {**cached["data"], "stale": True}
             return {"total": None, "categories": [], "reachable": False}
+        # Every sector's membership is fetched concurrently — the big latency win.
+        results = _par([(lambda cid=cid: _category_member_syms(cid))
+                        for cid, _ in _ALLSYM_CATEGORIES])
         cats = []
-        for cid, name in _ALLSYM_CATEGORIES:
-            try:
-                cnt = len(base & _category_member_syms(cid))
-            except Exception:
-                cnt = None
+        for (cid, name), (ok, members) in zip(_ALLSYM_CATEGORIES, results):
+            cnt = len(base & members) if (ok and members is not None) else None
             cats.append({"id": cid, "name": name, "count": cnt})
         data = {"total": len(base), "categories": cats, "reachable": True}
         _cat_cache[venue] = {"at": now, "data": data}
@@ -5984,12 +6000,8 @@ def create_app() -> FastAPI:
     _rows_cache: dict[str, object] = {}    # venue -> {"at": ts, "rows": list}
 
     def _binance_rows():
-        data = _http_json("https://data-api.binance.vision/api/v3/exchangeInfo", timeout=8)
-        syms = data.get("symbols") if isinstance(data, dict) else None
-        if not isinstance(syms, list):
-            raise ValueError("Binance exchangeInfo had no symbols")
         rows = []
-        for s in syms:
+        for s in _binance_exchange_info()["symbols"]:
             if not isinstance(s, dict) or s.get("status") != "TRADING":
                 continue
             b, q = s.get("baseAsset"), s.get("quoteAsset")
@@ -6001,12 +6013,8 @@ def create_app() -> FastAPI:
         return rows
 
     def _hl_rows():
-        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
-        uni = meta.get("universe") if isinstance(meta, dict) else None
-        if not isinstance(uni, list):
-            raise ValueError("Hyperliquid meta had no universe")
         rows = []
-        for u in uni:
+        for u in _hl_meta_get()["universe"]:
             if not isinstance(u, dict) or u.get("isDelisted"):
                 continue
             n = u.get("name")
@@ -6028,11 +6036,9 @@ def create_app() -> FastAPI:
             rows = _hl_rows()
         else:
             rows = []
-            for fn in (_binance_rows, _hl_rows):
-                try:
-                    rows += fn()
-                except Exception:
-                    pass
+            for ok, val in _par([_binance_rows, _hl_rows]):
+                if ok and val:
+                    rows += val
             if not rows:
                 raise ValueError("no venue rows reachable")
         _rows_cache[venue] = {"at": now, "rows": rows}

@@ -2886,6 +2886,10 @@ function asRenderAllSymbols(el) {
   asSetBarVisible(onAll);
   if (!onAll) return false;
   asBindOnce();
+  // Warm the caches as soon as the tab opens so the dropdowns are instant.
+  if (asCache.venues === undefined) asFetchVenues();
+  const _vk = asVenue === "library" ? "all" : asVenue;
+  if (asCache.cats[_vk] === undefined) asFetchCats(_vk);
   if (asVenue === "library") return false;   // provider catalog renders below
   asRenderCryptoList(el);
   return true;
