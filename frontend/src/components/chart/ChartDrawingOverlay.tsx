@@ -525,17 +525,49 @@ const ChartDrawingOverlayComponent = ({
     return null;
   };
 
+  // ─── CSS `zoom` (density presets) coordinate reconciliation ────────────────
+  // The shell applies `zoom` to the whole document for the Compact/Dense display
+  // presets (and interface scale). Under CSS zoom, getBoundingClientRect() and
+  // pointer clientX/clientY are in VISUAL pixels, but clientWidth/clientHeight —
+  // and ProChart's ResizeObserver contentRect that the converter is built from —
+  // are in unzoomed LAYOUT pixels. Every drawing is rendered in that layout
+  // space, so the overlay MUST size and hit-test in layout space too. At
+  // "comfortable" (zoom = 1) the two are identical; at other densities they
+  // diverged, which caused the right-side clip gap and made clicks miss.
+  //
+  // layoutSizeOf: the element's box in unzoomed layout px (matches the converter).
+  const layoutSizeOf = (el: HTMLElement | null): { width: number; height: number } => {
+    if (!el) return { width: 0, height: 0 };
+    const rect = el.getBoundingClientRect();
+    return { width: el.clientWidth || rect.width, height: el.clientHeight || rect.height };
+  };
+  // localFromEvent: convert a viewport pointer (clientX/Y, visual px) into
+  // overlay-local coordinates in unzoomed layout px. `rect` is the overlay's
+  // getBoundingClientRect (visual); dividing the visual offset by the zoom ratio
+  // (visual/layout) yields the layout-space point the drawings live in.
+  const localFromEvent = (clientX: number, clientY: number, rect: DOMRect): { x: number; y: number } => {
+    const el = containerRef.current;
+    const cw = el?.clientWidth || rect.width;
+    const ch = el?.clientHeight || rect.height;
+    const zx = cw ? rect.width / cw : 1;
+    const zy = ch ? rect.height / ch : 1;
+    return { x: (clientX - rect.left) / zx, y: (clientY - rect.top) / zy };
+  };
+
   const measureDims = () => {
     if (!containerRef.current) return;
     const canvas = findChartCanvas();
-    // Prefer the canvas box; fall back to the overlay's own box.
-    const rect = (canvas ?? containerRef.current).getBoundingClientRect();
+    // Use the LAYOUT (unzoomed) box so the drawing plane matches ProChart's
+    // converter under any density/scale. Prefer the canvas (ground truth for
+    // where candles paint); fall back to the overlay's own box.
+    const { width, height } = layoutSizeOf((canvas as HTMLElement | null) ?? containerRef.current);
     setContainerDims((prev) =>
-      Math.abs(prev.width - rect.width) > 0.5 || Math.abs(prev.height - rect.height) > 0.5
-        ? { width: rect.width, height: rect.height }
+      Math.abs(prev.width - width) > 0.5 || Math.abs(prev.height - height) > 0.5
+        ? { width, height }
         : prev
     );
   };
+
 
   // Track chart size for clipping. Observe BOTH the overlay and the chart canvas
   // so any resize of the painted area updates the drawing plane immediately.
@@ -649,7 +681,7 @@ const ChartDrawingOverlayComponent = ({
   // Helper: Check if a point is within the chart drawing area (excludes axis and indicator panels)
   const isPointInChartArea = useCallback((x: number, y: number): boolean => {
     if (!containerRef.current) return true;
-    const { width, height } = containerRef.current.getBoundingClientRect();
+    const { width, height } = layoutSizeOf(containerRef.current);
     const chartWidth = width - chartBounds.priceAxisWidth;
     // Exclude indicator panel area at the bottom
     const indicatorHeight = chartBounds.indicatorHeight ?? 0;
@@ -660,7 +692,7 @@ const ChartDrawingOverlayComponent = ({
   // Helper: Clamp a point to the main chart area (excludes indicator panels)
   const clampToChartArea = useCallback((point: PixelPoint): PixelPoint => {
     if (!containerRef.current) return point;
-    const { width, height } = containerRef.current.getBoundingClientRect();
+    const { width, height } = layoutSizeOf(containerRef.current);
     const chartWidth = width - chartBounds.priceAxisWidth;
     // Exclude indicator panel area at the bottom
     const indicatorHeight = chartBounds.indicatorHeight ?? 0;
@@ -1386,8 +1418,7 @@ const ChartDrawingOverlayComponent = ({
       cachedRectRef.current = containerRef.current.getBoundingClientRect();
     }
     const rect = cachedRectRef.current;
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
 
     handlePointerMove(x, y);
   };
@@ -1404,8 +1435,7 @@ const ChartDrawingOverlayComponent = ({
       cachedRectRef.current = containerRef.current.getBoundingClientRect();
     }
     const rect = cachedRectRef.current;
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
+    const { x, y } = localFromEvent(touch.clientX, touch.clientY, rect);
     handlePointerMove(x, y);
   };
 
@@ -2512,11 +2542,10 @@ const ChartDrawingOverlayComponent = ({
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
 
     // Reject clicks in the price axis area; nothing should be drawn on the Y-axis
-    const chartWidth = rect.width - chartBounds.priceAxisWidth;
+    const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
     if (x > chartWidth) return;
 
     // Clear frozen measurement on any click
@@ -2566,8 +2595,7 @@ const ChartDrawingOverlayComponent = ({
     // causing 2-3px coordinate jumps during a single touch gesture.
     cachedRectRef.current = containerRef.current.getBoundingClientRect();
     const rect = cachedRectRef.current;
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
+    const { x, y } = localFromEvent(touch.clientX, touch.clientY, rect);
 
     // Clear frozen measurement on any tap
     if (measureState?.frozen) {
@@ -2929,8 +2957,7 @@ const ChartDrawingOverlayComponent = ({
       const touch = e.changedTouches[0];
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        const x = touch.clientX - rect.left;
-        const y = touch.clientY - rect.top;
+        const { x, y } = localFromEvent(touch.clientX, touch.clientY, rect);
 
         // Only handle tap if within chart area
         if (isPointInChartArea(x, y)) {
@@ -3439,10 +3466,9 @@ const ChartDrawingOverlayComponent = ({
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
     // Reject clicks in the price axis area
-    const chartWidth = rect.width - chartBounds.priceAxisWidth;
+    const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
     if (x > chartWidth) return;
     // handleTap handles new drawing placement (requires active tool).
     // The OHLC pass-through for the top 30px is now handled in handleMouseDown
@@ -6435,8 +6461,7 @@ const ChartDrawingOverlayComponent = ({
               const rect = containerRef.current?.getBoundingClientRect();
               if (rect) {
                 const firstPointPixel = chartToPixel(drawing.points[0]);
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
+                const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
                 startDragging(drawing.id);
                 setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
                 selectOrErase(drawing.id, { x: e.clientX, y: e.clientY });
