@@ -5812,6 +5812,62 @@ def create_app() -> FastAPI:
     binance_jobs: dict[str, dict] = {}
     binance_jobs_lock = threading.Lock()
 
+    # ---- Unified "All Symbols" browser: live venue catalog counts ----------
+    # Real sources only. Binance = live exchangeInfo (via binance_import);
+    # Hyperliquid = the live perp universe (api.hyperliquid.xyz/info). When a
+    # source is unreachable its count is null and the UI shows an honest
+    # "unavailable" state — never a fabricated number (house rule: no fake data).
+    _venue_cache: dict[str, object] = {"at": 0.0, "data": None}
+
+    def _http_json(url, payload=None, timeout=6):
+        """One bounded HTTP(S) JSON call. Hard timeout so a dead network can
+        never hang the request thread (offline → raises fast, caller reports
+        an honest null count rather than a fabricated one)."""
+        import json as _json, urllib.request as _urlreq
+        headers = {"User-Agent": "GreenTerminal/1.0"}
+        if payload is None:
+            req = _urlreq.Request(url, headers=headers)
+        else:
+            headers["Content-Type"] = "application/json"
+            req = _urlreq.Request(url, data=_json.dumps(payload).encode(),
+                                  headers=headers, method="POST")
+        with _urlreq.urlopen(req, timeout=timeout) as r:
+            return _json.loads(r.read().decode())
+
+    def _binance_spot_count():
+        data = _http_json("https://data-api.binance.vision/api/v3/exchangeInfo", timeout=8)
+        syms = data.get("symbols") if isinstance(data, dict) else None
+        if not isinstance(syms, list):
+            raise ValueError("Binance exchangeInfo had no symbols")
+        return len([s for s in syms if s.get("status") == "TRADING"])
+
+    def _hl_perp_count():
+        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
+        uni = meta.get("universe") if isinstance(meta, dict) else None
+        if not isinstance(uni, list):
+            raise ValueError("Hyperliquid meta had no universe")
+        return len([u for u in uni if isinstance(u, dict) and not u.get("isDelisted")])
+
+    @app.get("/api/allsymbols/venues")
+    def allsymbols_venues():
+        now = time.time()
+        cached = _venue_cache.get("data")
+        if cached and now - float(_venue_cache.get("at") or 0) < 120:
+            return cached
+        venues = []
+        for vid, label, fn in (("binance", "Binance", _binance_spot_count),
+                               ("hl", "Hyperliquid", _hl_perp_count)):
+            try:
+                venues.append({"id": vid, "label": label, "count": int(fn())})
+            except Exception:
+                venues.append({"id": vid, "label": label, "count": None})
+        nums = [v["count"] for v in venues if isinstance(v["count"], int)]
+        out = {"total": (sum(nums) if nums else None), "venues": venues,
+               "reachable": bool(nums)}
+        _venue_cache["at"] = now
+        _venue_cache["data"] = out
+        return out
+
     @app.get("/api/binance/databank")
     def binance_overview():
         return binance_import.overview()
