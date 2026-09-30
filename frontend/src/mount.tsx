@@ -849,6 +849,16 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           selectedDrawingId={selectedDrawingId}
           onSelectDrawing={handleSelectDrawing}
           converter={converter}
+          // Geometry MUST match ProChart's canvas or drawings drift: the overlay
+          // otherwise assumes a 70px price axis (its default) while ProChart sizes
+          // the axis from the live symbol/price. That mismatch made horizontal
+          // lines stop short of the real right edge, offset the placement cursor,
+          // and skew the price-axis click guard. Feed the real axis width from
+          // the live converter (same source the Backtesting page uses).
+          chartBounds={{
+            priceAxisWidth: converter?.priceAxisWidth ?? 70,
+            timeAxisHeight: window.innerWidth >= 1024 ? 28 : 24,
+          }}
           scrollSyncRef={scrollSyncRef}
           scrollOffsetRef={scrollOffsetRef}
           drawingCursorRef={drawingCursorRef}
