@@ -524,9 +524,32 @@ const ChartDrawingOverlayComponent = ({
 
     const resizeObserver = new ResizeObserver(updateDims);
     resizeObserver.observe(containerRef.current);
+    // A window resize is a belt-and-suspenders backup for the observer.
+    window.addEventListener('resize', updateDims);
 
-    return () => resizeObserver.disconnect();
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateDims);
+    };
   }, []);
+
+  // Re-measure the clip box whenever ProChart emits a fresh converter. ProChart
+  // rebuilds its converter from `dimensions`, so a new converter means the chart
+  // area just changed size (e.g. a side panel / watchlist opened or closed).
+  // The ResizeObserver above can lag by a frame in that case, leaving the clip
+  // <div> (overflow:hidden) narrower than the live width the drawings are drawn
+  // against — which chopped lines off partway across the chart. Re-reading the
+  // box here keeps the clip locked to the real chart width. The change-guard
+  // (only setState on a real delta) prevents any render loop.
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setContainerDims((prev) =>
+      Math.abs(prev.width - rect.width) > 0.5 || Math.abs(prev.height - rect.height) > 0.5
+        ? { width: rect.width, height: rect.height }
+        : prev
+    );
+  }, [converter]);
 
   // iOS Safari fix: Attach non-passive touch event listener to prevent scroll during drawing
   // React's touch handlers are passive by default, so preventDefault() doesn't work on iOS
