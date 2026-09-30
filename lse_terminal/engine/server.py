@@ -5868,6 +5868,118 @@ def create_app() -> FastAPI:
         _venue_cache["data"] = out
         return out
 
+    # ---- Live sector categories for the All Symbols browser ----------------
+    # Curated DISPLAY set (which sectors to surface, matching a clean pro
+    # layout). The ids are REAL CoinGecko category ids; membership and every
+    # count are fetched live from CoinGecko. Counts are the number of the
+    # SELECTED VENUE's own coins that fall in each sector — exact and cheap,
+    # because we intersect against our (small) venue coin set, not all of crypto.
+    _ALLSYM_CATEGORIES = [
+        ("layer-1", "Layer-1"),
+        ("layer-2", "Layer-2"),
+        ("decentralized-finance-defi", "DeFi"),
+        ("meme-token", "Meme"),
+        ("artificial-intelligence", "AI"),
+        ("gaming", "Gaming"),
+        ("non-fungible-tokens-nft", "NFT"),
+        ("metaverse", "Metaverse"),
+        ("infrastructure", "Infrastructure"),
+        ("exchange-based-tokens", "Exchange"),
+        ("stablecoins", "Stablecoins"),
+        ("real-world-assets-rwa", "RWA"),
+        ("depin", "DePIN"),
+        ("oracle", "Oracle"),
+    ]
+    _cat_members: dict[str, object] = {}   # cat_id -> {"at": ts, "syms": set}
+    _cat_cache: dict[str, object] = {}     # venue -> {"at": ts, "data": dict}
+    _venue_coins_cache: dict[str, object] = {}  # venue -> {"at": ts, "syms": set}
+
+    def _binance_base_assets():
+        data = _http_json("https://data-api.binance.vision/api/v3/exchangeInfo", timeout=8)
+        syms = data.get("symbols") if isinstance(data, dict) else None
+        if not isinstance(syms, list):
+            raise ValueError("Binance exchangeInfo had no symbols")
+        return {s.get("baseAsset", "").upper() for s in syms
+                if s.get("status") == "TRADING" and s.get("baseAsset")}
+
+    def _hl_coin_set():
+        meta = _http_json("https://api.hyperliquid.xyz/info", {"type": "meta"}, timeout=6)
+        uni = meta.get("universe") if isinstance(meta, dict) else None
+        if not isinstance(uni, list):
+            raise ValueError("Hyperliquid meta had no universe")
+        return {u.get("name", "").upper() for u in uni
+                if isinstance(u, dict) and not u.get("isDelisted") and u.get("name")}
+
+    def _venue_coin_set(venue):
+        now = time.time()
+        c = _venue_coins_cache.get(venue)
+        if c and now - float(c.get("at") or 0) < 300 and c.get("syms"):
+            return c["syms"]
+        if venue == "binance":
+            syms = _binance_base_assets()
+        elif venue == "hl":
+            syms = _hl_coin_set()
+        else:
+            syms = set()
+            for fn in (_binance_base_assets, _hl_coin_set):
+                try:
+                    syms |= fn()
+                except Exception:
+                    pass
+            if not syms:
+                raise ValueError("no venue coins reachable")
+        _venue_coins_cache[venue] = {"at": now, "syms": syms}
+        return syms
+
+    def _category_member_syms(cat_id):
+        now = time.time()
+        c = _cat_members.get(cat_id)
+        if c and now - float(c.get("at") or 0) < 43200 and c.get("syms") is not None:
+            return c["syms"]
+        syms = set()
+        for page in (1, 2):
+            rows = _http_json(
+                "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd"
+                f"&category={cat_id}&per_page=250&page={page}", timeout=8)
+            if not isinstance(rows, list) or not rows:
+                break
+            for r in rows:
+                s = (r.get("symbol") or "").upper() if isinstance(r, dict) else ""
+                if s:
+                    syms.add(s)
+            if len(rows) < 250:
+                break
+        _cat_members[cat_id] = {"at": now, "syms": syms}
+        return syms
+
+    @app.get("/api/allsymbols/categories")
+    def allsymbols_categories(venue: str = "all"):
+        venue = venue if venue in ("all", "binance", "hl") else "all"
+        now = time.time()
+        cached = _cat_cache.get(venue)
+        if cached and now - float(cached.get("at") or 0) < 43200:
+            return cached["data"]
+        # Venue coin set first — if we cannot even reach a venue, report an
+        # honest unreachable state instead of inventing categories/counts.
+        try:
+            base = _venue_coin_set(venue)
+        except Exception:
+            base = None
+        if not base:
+            if cached:
+                return {**cached["data"], "stale": True}
+            return {"total": None, "categories": [], "reachable": False}
+        cats = []
+        for cid, name in _ALLSYM_CATEGORIES:
+            try:
+                cnt = len(base & _category_member_syms(cid))
+            except Exception:
+                cnt = None
+            cats.append({"id": cid, "name": name, "count": cnt})
+        data = {"total": len(base), "categories": cats, "reachable": True}
+        _cat_cache[venue] = {"at": now, "data": data}
+        return data
+
     @app.get("/api/binance/databank")
     def binance_overview():
         return binance_import.overview()
