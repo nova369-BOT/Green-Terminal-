@@ -52,6 +52,25 @@ import { renderGenericSubplots, renderPhase2Overlays, renderSubplotSelectionDots
 import { renderOptionsPdfHeatmap, renderOrderBookHeatmap, renderL2DepthOverlay, type HeatmapRenderContext } from "./renderers/heatmapRenderer";
 import { renderPositionLines, renderSelectedPositionSLTP, type PositionRenderContext } from "./renderers/positionRenderer";
 import { renderCrosshair, type CrosshairContext } from "./renderers/crosshairRenderer";
+
+// toLayoutXY: convert a viewport pointer (clientX/clientY, VISUAL px) into the
+// canvas's UNZOOMED layout-px coordinate space. Under CSS `zoom` (Display
+// density presets / interface scale), getBoundingClientRect() and clientX/Y are
+// VISUAL px while the canvas is sized and drawn in layout px; dividing by the
+// zoom ratio keeps the crosshair and hit-tests glued to the real pointer at any
+// density or scale. At zoom = 1 the ratio is 1 and this is a no-op.
+function toLayoutXY(
+  clientX: number,
+  clientY: number,
+  el: HTMLElement,
+  rect: DOMRect,
+): { x: number; y: number } {
+  const cw = el.clientWidth || rect.width;
+  const ch = el.clientHeight || rect.height;
+  const zx = cw ? rect.width / cw : 1;
+  const zy = ch ? rect.height / ch : 1;
+  return { x: (clientX - rect.left) / zx, y: (clientY - rect.top) / zy };
+}
 import { renderSessions, type SessionRenderContext } from "./renderers/sessionRenderer";
 import { useChartNavigation } from "./interaction/useChartNavigation";
 import { getSpreadForSymbol } from "@/lib/spread";
@@ -5541,8 +5560,7 @@ const ProChart: React.FC<ProChartProps> = ({
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = toLayoutXY(e.clientX, e.clientY, canvas, rect);
 
     // On touch devices, only show crosshair if we're in crosshair mode (long-press activated).
     //
@@ -6036,8 +6054,7 @@ const ProChart: React.FC<ProChartProps> = ({
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = toLayoutXY(e.clientX, e.clientY, canvas, rect);
 
     // ─── Economic event marker click-to-pin ───────────────────────────
     // Click on a marker -> pin its tooltip. Click again -> unpin.
@@ -6934,8 +6951,7 @@ const ProChart: React.FC<ProChartProps> = ({
       if (!canvas) return;
 
       const rect = canvas.getBoundingClientRect();
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
+      const { x, y } = toLayoutXY(touch.clientX, touch.clientY, canvas, rect);
 
       // Store initial touch position
       touchStartPosRef.current = { x, y };
@@ -7147,7 +7163,7 @@ const ProChart: React.FC<ProChartProps> = ({
         const canvas = overlayCanvasRef.current;
         if (canvas) {
           const rect = canvas.getBoundingClientRect();
-          const centerX = ((touch1.clientX + touch2.clientX) / 2) - rect.left;
+          const centerX = toLayoutXY((touch1.clientX + touch2.clientX) / 2, (touch1.clientY + touch2.clientY) / 2, canvas, rect).x;
           const candleSpacing = currentCandleWidth * (1 + CANDLE_GAP_RATIO);
           const newCandleSpacing = newCandleWidth * (1 + CANDLE_GAP_RATIO);
 
@@ -7198,8 +7214,7 @@ const ProChart: React.FC<ProChartProps> = ({
       if (!canvas) return;
 
       const rect = canvas.getBoundingClientRect();
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
+      const { x, y } = toLayoutXY(touch.clientX, touch.clientY, canvas, rect);
 
       // Check if moved significantly - cancel long-press timer if scrolling
       if (longPressTimerRef.current && touchStartPosRef.current) {
@@ -7477,8 +7492,7 @@ const ProChart: React.FC<ProChartProps> = ({
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const { x: mouseX, y: mouseY } = toLayoutXY(e.clientX, e.clientY, canvas, rect);
 
     // Update crosshair position to follow cursor during zoom
     crosshairRef.current = { x: mouseX, y: mouseY };
@@ -8619,8 +8633,7 @@ const ProChart: React.FC<ProChartProps> = ({
           const canvas = overlayCanvasRef.current;
           if (!canvas) return;
           const rect = canvas.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top;
+          const { x, y } = toLayoutXY(e.clientX, e.clientY, canvas, rect);
 
           // ── Right-click INSIDE a subplot panel opens that indicator's menu ──
           // Only the ~16px label row used to be wired, so a click anywhere else
