@@ -364,6 +364,21 @@ class StreamHub:
             )
 
         symbol = str(item.get("symbol") or "")
+        # Depth events bypass trade normalization. They are forwarded only as
+        # provider-supplied order-book messages; no quote/trade fallback is
+        # allowed because that would make a DOM look live without L2 data.
+        depth_type = str(item.get("type") or "").upper()
+        if depth_type in {"ORDER_BOOK_SNAPSHOT", "ORDER_BOOK_UPDATE", "DEPTH_RESET"}:
+            depth = dict(item)
+            depth["type"] = depth_type
+            depth["provider"] = provider
+            depth["recv_ms"] = now
+            self.bus.publish(BusEvent(
+                type=EventType(depth_type), payload=depth, symbol=symbol,
+                provider=provider, provider_ts_ms=provider_ts_ms,
+            ))
+            await self.fanout(provider, symbol, depth)
+            return
         # Normalize once (adapter edge)
         trade = normalize_tick(item, source=provider, receive_ms=now)
         quote = normalize_quote(item, source=provider, receive_ms=now)

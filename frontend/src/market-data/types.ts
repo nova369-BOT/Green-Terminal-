@@ -90,6 +90,7 @@ export type ServerMessage =
     }
   | { type: 'status'; state: ConnectionState | string; providers?: ProviderHealth[] }
   | { type: 'pong'; ts_ms: number }
+  | { type: 'ORDER_BOOK_SNAPSHOT' | 'ORDER_BOOK_UPDATE' | 'DEPTH_RESET'; symbol: string; provider: string; recv_ms: number; [k: string]: unknown }
   | { type: 'error'; message: string };
 
 export interface ProviderCapability {
