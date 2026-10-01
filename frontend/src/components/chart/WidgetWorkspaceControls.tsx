@@ -181,31 +181,31 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
           </section>
         ))}
       </div>}
-      {heatmapOpen && <div style={heatmapPanelStyle}>
+      {heatmapOpen && <div style={{ ...heatmapPanelStyle, ...panelLayout(widgets, 'heatmap') }}>
         <div style={tradeHeaderStyle}><b>Heatmap · resting liquidity</b><span>{heatmapFrames.length ? `${heatmapFrames.length} frames` : 'Waiting'}</span></div>
         {heatmapFrames.length ? <div style={heatmapBodyStyle}>{heatmapFrames.slice(-12).map((frame, index) => <div key={`${frame.receivedAt}-${index}`} style={heatmapFrameStyle}><time>{new Date(frame.receivedAt).toLocaleTimeString()}</time><span style={{ color: '#58d797' }}>B {frame.bids.length}</span><span style={{ color: '#e28b91' }}>A {frame.asks.length}</span></div>)}</div> : <div style={emptyTradeStyle}>Waiting for validated depth frames.<br /><small>Only resting Binance L2 liquidity is recorded.</small></div>}
       </div>}
-      {domOpen && <div style={domPanelStyle}>
+      {domOpen && <div style={{ ...domPanelStyle, ...panelLayout(widgets, 'dom') }}>
         <div style={tradeHeaderStyle}><b>DOM · Binance L2</b><span style={{ color: depth.ready ? '#58d797' : '#e1a650' }}>{depth.ready ? 'Live' : 'Syncing'}</span></div>
         {depth.ready ? <div style={domGridStyle}><div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, 8).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div><div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, 8).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div></div> : <div style={emptyTradeStyle}>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></div>}
       </div>}
-      {profileOpen && <div style={statsPanelStyle}>
+      {profileOpen && <div style={{ ...statsPanelStyle, ...panelLayout(widgets, 'volumeProfile') }}>
         <div style={tradeHeaderStyle}><b>Volume Profile · live</b><span>{Object.keys(volumeProfile).length} prices</span></div>
         {Object.entries(volumeProfile).sort((a, b) => b[1] - a[1]).slice(0, 18).map(([price, volume], index) => <div key={price} style={profileRowStyle}><span>{price}</span><i style={profileBarStyle(volume, Object.entries(volumeProfile).sort((a, b) => b[1] - a[1])[0]?.[1] || 1)}>{volume.toFixed(4)}</i>{index === 0 && <strong style={{ color: '#e1b65c' }}>POC</strong>}</div>)}
         {!Object.keys(volumeProfile).length && <div style={emptyTradeStyle}>Waiting for verified trade volume.</div>}
       </div>}
-      {footprintOpen && <div style={statsPanelStyle}>
+      {footprintOpen && <div style={{ ...statsPanelStyle, ...panelLayout(widgets, 'footprint') }}>
         <div style={tradeHeaderStyle}><b>Footprint · live</b><span>Real prints</span></div>
         <div style={footprintHeaderStyle}><span>Price</span><span>Buy × Sell</span><span>Delta</span></div>
         {Object.entries(footprint).sort((a, b) => Number(b[0]) - Number(a[0])).slice(0, 18).map(([price, row]) => <div key={price} style={footprintRowStyle}><span>{price}</span><span>{row.buy} × {row.sell}</span><strong style={{ color: row.buy - row.sell >= 0 ? '#58d797' : '#e28b91' }}>{row.buy - row.sell}</strong></div>)}
         {!Object.keys(footprint).length && <div style={emptyTradeStyle}>Waiting for provider trade prints with aggressor side.</div>}
       </div>}
-      {cvdOpen && <div style={statsPanelStyle}>
+      {cvdOpen && <div style={{ ...statsPanelStyle, ...panelLayout(widgets, 'cvdDelta') }}>
         <div style={tradeHeaderStyle}><b>CVD / Delta · live</b><span style={{ color: cvd.value >= 0 ? '#58d797' : '#e28b91' }}>{formatPrice(cvd.value)}</span></div>
         <div style={cvdBodyStyle}><div><span style={statLabelStyle}>Aggressive buy</span><strong style={statValueStyle}>{formatPrice(cvd.buy)}</strong></div><div><span style={statLabelStyle}>Aggressive sell</span><strong style={statValueStyle}>{formatPrice(cvd.sell)}</strong></div></div>
         {!cvd.sideKnown && <div style={statsFootStyle}>Provider has not supplied aggressor side; delta is not complete.</div>}
       </div>}
-      {statsOpen && <div style={statsPanelStyle}>
+      {statsOpen && <div style={{ ...statsPanelStyle, ...panelLayout(widgets, 'marketStats') }}>
         <div style={tradeHeaderStyle}><b>Market statistics · live</b><span style={{ color: connected ? '#58d797' : '#e1a650' }}>{connected ? 'Connected' : 'Offline'}</span></div>
         <div style={statsGridStyle}>
           <Stat label="Last" value={formatPrice(quote?.price)} />
@@ -215,7 +215,7 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
         </div>
         <div style={statsFootStyle}>{lastTickAgeMs == null ? 'No live tick received.' : `Last tick ${Math.round(lastTickAgeMs / 100) / 10}s ago.`}</div>
       </div>}
-      {tradesOpen && <div style={tradePanelStyle}>
+      {tradesOpen && <div style={{ ...tradePanelStyle, ...panelLayout(widgets, 'trades') }}>
         <div style={tradeHeaderStyle}><b>Trades · live</b><span>{trades.length ? `${trades.length} prints` : 'Waiting'}</span></div>
         {trades.length ? trades.map((trade, index) => <div key={`${trade.tsMs}-${index}`} style={tradeRowStyle}>
           <time>{new Date(trade.tsMs).toLocaleTimeString()}</time><strong>{formatPrice(trade.price)}</strong><span>{trade.size == null ? '—' : trade.size}</span>
@@ -235,6 +235,12 @@ function applyDepth(current: Array<[string, string]>, updates: Array<[string, st
   return [...map.entries()].sort((a, b) => Number(b[0]) - Number(a[0]));
 }
 function barStyle(quantity: string, color: string): React.CSSProperties { return { color, fontStyle: 'normal', textAlign: 'right', minWidth: 50, background: `linear-gradient(90deg, transparent 0%, ${color}33 ${Math.min(100, Number(quantity) || 0)}%)` }; }
+function panelLayout(widgets: WorkspaceWidget[], type: WorkspaceWidgetType): React.CSSProperties {
+  const widget = widgets.find(item => item.type === type && item.visible);
+  if (!widget) return {};
+  return { left: `${widget.x / 12 * 100}%`, right: 'auto', top: `${42 + widget.y / 24 * 100}%`, width: `${widget.width / 12 * 100}%`, height: `${widget.height / 24 * 100}%` };
+}
+
 function formatPrice(value?: number): string {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—';
 }
