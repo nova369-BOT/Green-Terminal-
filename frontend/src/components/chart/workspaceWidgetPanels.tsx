@@ -8,7 +8,7 @@ import { buildVolumeProfile, type ProfilePrint, type VolumeProfileResult } from 
 import { applyPaperOrder, closePaperPosition, loadPaperAccount, paperUnrealized, savePaperAccount, type PaperAccount, type PaperFill } from '@/lib/paperTrading';
 import { drawCvd } from './cvdCanvas';
 import { drawHeatmap } from './heatmapCanvas';
-import { resolveFlowSource, useFlowCatalogVersion } from '@/lib/flowSources';
+import { resolveFlowSource, useAdaptiveFlowSource, useFlowCatalogVersion, noteFlowVenueEvent, type AdaptiveFlow } from '@/lib/flowSources';
 import type { WorkspaceWidget, WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 
 /**
@@ -24,6 +24,13 @@ export interface WidgetPanelProps {
   widget: WorkspaceWidget;
   symbol: string;
   timeframe: string;
+}
+
+/** Banner shown when the Binance venue is measurably down and the panel is
+ * reading the Hyperliquid Perp fallback — never hidden, never silent. */
+function SwapBanner({ flow }: { flow: AdaptiveFlow }): JSX.Element | null {
+  if (!flow.swapped) return null;
+  return <div style={swapBannerStyle}>{flow.swapReason}</div>;
 }
 
 function formatPrice(value?: number): string {
@@ -63,29 +70,32 @@ function EmptyNote({ children }: { children: React.ReactNode }): JSX.Element {
 
 export function TradesPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  const catalogVersion = useFlowCatalogVersion();
   /* Venue resolution, same rule as the DOM: subscribe the resolved venue
    * stream (BTCUSDT) — the raw display symbol (BTC/USD) is not a Binance
    * stream id, so subscribing it only produced reset loops and an empty
-   * tape. Trades also filter on the venue stream id, never the display name. */
-  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
-  const stream = flow.status === 'resolved' ? flow.source.stream : null;
+   * tape. Trades also filter on the venue stream id, never the display
+   * name. Adaptive: Binance down ⇒ Hyperliquid Perp, banner-disclosed. */
+  const flow = useAdaptiveFlowSource(sym);
+  const stream = flow.flow.status === 'resolved' ? flow.flow.source.stream : null;
   const [trades, setTrades] = useState<BusTrade[]>([]);
   useEffect(() => {
-    if (!stream || flow.status !== 'resolved') { setTrades([]); return undefined; }
+    if (!stream || flow.flow.status !== 'resolved') { setTrades([]); return undefined; }
+    const provider = flow.flow.source.provider;
     const bus = getBus();
-    const stop = bus.stream([stream], flow.source.provider);
+    const stop = bus.stream([stream], provider);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream) return;
+      noteFlowVenueEvent(provider, 'data');
       setTrades(previous => [trade, ...previous].slice(0, 24));
     });
     return () => { off(); stop(); };
   }, [stream, flow]);
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left="Time & Sales" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left="Time & Sales" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
   return <div style={bodyStyle}>
     <StatusStrip left={`Time & Sales · ${stream}`} right={trades.length ? `Live · ${trades.length} prints` : 'Waiting'} tone={trades.length ? 'live' : 'wait'} />
+    <SwapBanner flow={flow} />
     {trades.length ? trades.map((trade, index) => <div key={`${trade.tsMs}-${index}`} style={tradeRowStyle}>
       <time>{new Date(trade.tsMs).toLocaleTimeString()}</time>
       <strong style={{ color: trade.side === 'buy' ? '#58d797' : trade.side === 'sell' ? '#e28b91' : '#b8c5cc' }}>{formatPrice(trade.price)}</strong>
@@ -103,21 +113,22 @@ function NotProvided({ label }: { label: string }): JSX.Element {
 
 export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  const catalogVersion = useFlowCatalogVersion();
-  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
-  const resolved = flow.status === 'resolved' ? flow.source : null;
+  const flow = useAdaptiveFlowSource(sym);
+  const resolved = flow.flow.status === 'resolved' ? flow.flow.source : null;
   /* The display symbol alone ("BTC/USD") is not a provider stream and the
    * subscribe carries no provider hint → the hub rejects with "provider
-   * required" and no tick ever arrived. Follow the resolved venue stream. */
+   * required" and no tick ever arrived. Follow the resolved venue stream;
+   * Binance down ⇒ Hyperliquid Perp with an honest banner. */
   const { quote, connected, lastTickAgeMs } = useLiveQuote(resolved?.stream ?? null, resolved?.provider, true);
   /* The normalized tick carries price/bid/ask/source only. Mark, index,
    * funding, open interest and the 24h set are NOT published into this feed
    * today, so they render NOT PROVIDED instead of candle-derived guesses. */
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left={`${sym || 'No symbol'} · expanded`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`${sym || 'No symbol'} · expanded`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
   return <div style={bodyStyle}>
     <StatusStrip left={`${(resolved?.stream ?? sym) || 'No symbol'} · expanded`} right={connected ? (quote ? 'Connected' : 'Connecting') : 'Offline'} tone={quote ? 'live' : connected ? 'wait' : 'muted'} />
+    <SwapBanner flow={flow} />
     <div style={statsCellGridStyle}>
       <Stat label="Last" value={formatPrice(quote?.price)} />
       <Stat label="Bid" value={formatPrice(quote?.bid)} />
@@ -143,26 +154,35 @@ interface DepthBookState { bids: Array<[string, string]>; asks: Array<[string, s
 /** One validated L2 pipeline for every depth consumer (DOM, Orderbook):
  * resolve the venue stream, subscribe, apply sequence-safe updates, and
  * expose the freshness timestamp the UI turns into Live/Stale. */
-function useResolvedDepth(widget: WorkspaceWidget, symbol: string): { flow: ReturnType<typeof resolveFlowSource>; depth: DepthBookState; lastEventAt: number } {
-  const catalogVersion = useFlowCatalogVersion();
-  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol, catalogVersion]);
+function useResolvedDepth(widget: WorkspaceWidget, symbol: string): { flow: AdaptiveFlow; depth: DepthBookState; lastEventAt: number } {
+  const flow = useAdaptiveFlowSource(widget.symbol || symbol);
   const [depth, setDepth] = useState<DepthBookState>({ bids: [], asks: [], ready: false });
   const [lastEventAt, setLastEventAt] = useState(0);
   useEffect(() => {
-    if (flow.status !== 'resolved') return undefined;
-    const stream = flow.source.stream;
+    if (flow.flow.status !== 'resolved') return undefined;
+    const stream = flow.flow.source.stream;
+    const provider = flow.flow.source.provider;
     setDepth({ bids: [], asks: [], ready: false });
     setLastEventAt(0);
     const bus = getBus();
-    const stop = bus.stream([stream], flow.source.provider);
+    const stop = bus.stream([stream], provider);
     const off = bus.subscribeDepth((event: BusDepth) => {
       if (event.symbol !== stream) return;
       setLastEventAt(Date.now());
-      if (event.type === 'DEPTH_RESET') { setDepth({ bids: [], asks: [], ready: false, reset: String(event.reason || 'depth reset') }); return; }
+      if (event.type === 'DEPTH_RESET') {
+        noteFlowVenueEvent(provider, 'reset', String(event.reason || 'depth reset'));
+        setDepth({ bids: [], asks: [], ready: false, reset: String(event.reason || 'depth reset') });
+        return;
+      }
+      noteFlowVenueEvent(provider, 'data');
       const bids = Array.isArray(event.bids || event.b) ? (event.bids || event.b) as Array<[string, string]> : [];
       const asks = Array.isArray(event.asks || event.a) ? (event.asks || event.a) as Array<[string, string]> : [];
       setDepth(previous => event.type === 'ORDER_BOOK_SNAPSHOT'
-        ? { bids: [...bids].sort((a, b) => Number(b[0]) - Number(a[0])), asks: [...asks].sort((a, b) => Number(a[0]) - Number(b[0])), ready: false }
+        /* Snapshot feeds whose frames are entire books (Hyperliquid l2Book,
+         * marked full_book) are live on the FIRST frame — there is no diff
+         * sequence to bridge. Binance diffs stay bridged: snapshot alone
+         * never renders until a sequence-validated update lands. */
+        ? { bids: [...bids].sort((a, b) => Number(b[0]) - Number(a[0])), asks: [...asks].sort((a, b) => Number(a[0]) - Number(b[0])), ready: Boolean(event.full_book) }
         : { bids: applyDepth(previous.bids, bids, 'bid'), asks: applyDepth(previous.asks, asks, 'ask'), ready: true });
     });
     return () => { off(); stop(); };
@@ -203,20 +223,21 @@ export function DomPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const { flow, depth, lastEventAt } = useResolvedDepth(widget, symbol);
   const stale = useStaleness(lastEventAt, DOM_STALE_AFTER_MS);
 
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left="DOM" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span><small>Depth is never substituted from another instrument.</small></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left="DOM" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span><small>Depth is never substituted from another instrument.</small></EmptyNote></div>;
   }
 
   const { mid, spread, imbalance } = bookStats(depth, levels);
   const statusText = depth.ready ? (stale ? 'Stale' : 'Live') : 'Syncing';
 
   return <div style={bodyStyle}>
-    <StatusStrip left={`DOM · ${flow.source.stream}`} right={statusText} tone={depth.ready ? (stale ? 'wait' : 'live') : 'wait'} />
+    <StatusStrip left={`DOM · ${flow.flow.source.stream}`} right={statusText} tone={depth.ready ? (stale ? 'wait' : 'live') : 'wait'} />
+    <SwapBanner flow={flow} />
     <div style={domToolbarStyle}>
       <div style={domSegmentStyle}>
         {([8, 12, 16] as const).map(count => <button key={count} type="button" onClick={() => setLevels(count)} style={{ ...domSegmentButtonStyle, color: levels === count ? '#7bf0b5' : '#71808a', borderColor: levels === count ? '#1e9b68' : '#26343d' }}>{count}</button>)}
       </div>
-      <span style={sourceChipStyle}>{flow.source.label}</span>
+      <span style={sourceChipStyle}>{flow.swapped ? `${flow.flow.source.label} · FALLBACK` : flow.flow.source.label}</span>
     </div>
     {depth.ready ? <>
       <div style={domQuoteRowStyle}>
@@ -239,8 +260,8 @@ export function DomPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
 export function OrderbookPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const { flow, depth, lastEventAt } = useResolvedDepth(widget, symbol);
   const stale = useStaleness(lastEventAt, DOM_STALE_AFTER_MS);
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left="Orderbook" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left="Orderbook" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
   const { mid, spread, imbalance } = bookStats(depth, 6);
   const topBids = depth.bids.slice(0, 6);
@@ -248,7 +269,8 @@ export function OrderbookPanel({ widget, symbol }: WidgetPanelProps): JSX.Elemen
   const bidMax = Math.max(0, ...topBids.map(([, qty]) => Number(qty) || 0));
   const askMax = Math.max(0, ...topAsks.map(([, qty]) => Number(qty) || 0));
   return <div style={bodyStyle}>
-    <StatusStrip left={`Orderbook · ${flow.source.stream}`} right={depth.ready ? (stale ? 'Stale' : 'Live') : 'Syncing'} tone={depth.ready && !stale ? 'live' : 'wait'} />
+    <StatusStrip left={`Orderbook · ${flow.flow.source.stream}`} right={depth.ready ? (stale ? 'Stale' : 'Live') : 'Syncing'} tone={depth.ready && !stale ? 'live' : 'wait'} />
+    <SwapBanner flow={flow} />
     {depth.ready ? <>
       <div style={obGridStyle}>
         <div><strong style={domSideBid}>BIDS</strong>{topBids.map(([price, qty]) => <ObRow key={`b${price}`} price={price} qty={qty} max={bidMax} color="#318f69" />)}</div>
@@ -260,7 +282,7 @@ export function OrderbookPanel({ widget, symbol }: WidgetPanelProps): JSX.Elemen
         <span>Imbalance <b style={{ color: imbalance != null && imbalance >= 0 ? '#58d797' : '#e28b91' }}>{imbalance != null ? `${imbalance >= 0 ? '+' : ''}${imbalance.toFixed(1)}%` : '—'}</b></span>
       </div>
     </> : <EmptyNote>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}</EmptyNote>}
-    <div style={statsFootStyle}>SECONDARY VIEW — same validated L2 book as the DOM · {flow.source.label}</div>
+    <div style={statsFootStyle}>SECONDARY VIEW — same validated L2 book as the DOM · {flow.flow.source.label}</div>
   </div>;
 }
 
@@ -380,21 +402,22 @@ function fmtReplayRange(startMs?: number, endMs?: number): string {
 export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
   const tf = widget.timeframe || timeframe;
-  const catalogVersion = useFlowCatalogVersion();
-  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
-  const stream = flow.status === 'resolved' ? flow.source.stream : null;
+  const flow = useAdaptiveFlowSource(sym);
+  const stream = flow.flow.status === 'resolved' ? flow.flow.source.stream : null;
   const printsRef = useRef<FootprintPrint[]>([]);
   const dirtyRef = useRef(false);
   const [view, setView] = useState<{ periods: FootprintPeriod[]; ignoredNoSide: number }>({ periods: [], ignoredNoSide: 0 });
   useEffect(() => {
-    if (!stream || flow.status !== 'resolved') { setView({ periods: [], ignoredNoSide: 0 }); return undefined; }
+    if (!stream || flow.flow.status !== 'resolved') { setView({ periods: [], ignoredNoSide: 0 }); return undefined; }
     printsRef.current = [];
     dirtyRef.current = false;
     setView({ periods: [], ignoredNoSide: 0 });
+    const provider = flow.flow.source.provider;
     const bus = getBus();
-    const stop = bus.stream([stream], flow.source.provider);
+    const stop = bus.stream([stream], provider);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream || typeof trade.price !== 'number') return;
+      noteFlowVenueEvent(provider, 'data');
       printsRef.current.push({ tsMs: trade.tsMs, price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -408,12 +431,13 @@ export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps):
     }, 400);
     return () => { off(); stop(); clearInterval(flush); };
   }, [stream, flow, tf]);
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left={`Footprint · ${tf} periods`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`Footprint · ${tf} periods`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
   const hasAny = view.periods.some(period => period.cells.length);
   return <div style={bodyStyle}>
     <StatusStrip left={`Footprint · ${tf} periods`} right={hasAny ? 'Real prints' : 'Waiting'} tone={hasAny ? 'live' : 'wait'} />
+    <SwapBanner flow={flow} />
     {hasAny ? <div style={footColumnsStyle}>
       {view.periods.map((period, periodIndex) => <div key={period.startMs} style={{ ...footColumnStyle, borderStyle: periodIndex === view.periods.length - 1 ? 'dashed' : 'solid' }}>
         <div style={footColumnTimeStyle}>{new Date(period.startMs).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</div>
@@ -438,9 +462,8 @@ export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps):
 export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
   const tf = widget.timeframe || timeframe;
-  const catalogVersion = useFlowCatalogVersion();
-  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
-  const stream = flow.status === 'resolved' ? flow.source.stream : null;
+  const flow = useAdaptiveFlowSource(sym);
+  const stream = flow.flow.status === 'resolved' ? flow.flow.source.stream : null;
   const [mode, setMode] = useState<'cvd' | 'delta'>('cvd');
   const printsRef = useRef<CvdPrint[]>([]);
   const dirtyRef = useRef(false);
@@ -448,14 +471,16 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (!stream || flow.status !== 'resolved') { setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 }); return undefined; }
+    if (!stream || flow.flow.status !== 'resolved') { setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 }); return undefined; }
     printsRef.current = [];
     dirtyRef.current = false;
     setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 });
+    const provider = flow.flow.source.provider;
     const bus = getBus();
-    const stop = bus.stream([stream], flow.source.provider);
+    const stop = bus.stream([stream], provider);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream) return;
+      noteFlowVenueEvent(provider, 'data');
       printsRef.current.push({ tsMs: trade.tsMs, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -479,10 +504,11 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
   }, [series, mode]);
   const last = series.cumulative[series.cumulative.length - 1] || 0;
   const reset = () => { printsRef.current = []; dirtyRef.current = false; setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 }); };
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left={`${mode === 'cvd' ? 'Cumulative delta' : 'Period delta'} · ${tf}`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`${mode === 'cvd' ? 'Cumulative delta' : 'Period delta'} · ${tf}`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
   return <div style={bodyStyle}>
+    <SwapBanner flow={flow} />
     <StatusStrip left={`${mode === 'cvd' ? 'Cumulative delta' : 'Period delta'} · ${tf}`} right={formatPrice(last)} tone={last >= 0 ? 'live' : 'wait'} />
     <div style={domToolbarStyle}>
       <div style={domSegmentStyle}>
@@ -501,25 +527,30 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
 /* ----------------------------------- Heatmap ----------------------------------- */
 
 export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
-  const catalogVersion = useFlowCatalogVersion();
-  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol, catalogVersion]);
+  const flow = useAdaptiveFlowSource(widget.symbol || symbol);
   const historyRef = useRef<DepthHeatmapHistory | null>(null);
   const [frames, setFrames] = useState<HeatmapFrame[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (flow.status !== 'resolved') return undefined;
-    const stream = flow.source.stream;
+    if (flow.flow.status !== 'resolved') return undefined;
+    const stream = flow.flow.source.stream;
+    const provider = flow.flow.source.provider;
     const history = new DepthHeatmapHistory(240);
     historyRef.current = history;
     setFrames([]);
     const bus = getBus();
-    const stop = bus.stream([stream], flow.source.provider);
+    const stop = bus.stream([stream], provider);
     const off = bus.subscribeDepth((event: BusDepth) => {
       if (event.symbol !== stream) return;
+      if (event.type === 'DEPTH_RESET') {
+        noteFlowVenueEvent(provider, 'reset', String(event.reason || 'depth reset'));
+        setFrames([]);
+        return;
+      }
+      noteFlowVenueEvent(provider, 'data');
       const frame = history.apply(event);
       if (frame) setFrames(history.snapshot());
-      if (event.type === 'DEPTH_RESET') setFrames([]);
     });
     return () => { off(); stop(); historyRef.current = null; };
   }, [flow]);
@@ -527,20 +558,21 @@ export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element 
   useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
-    if (!wrap || !canvas || flow.status !== 'resolved') return undefined;
+    if (!wrap || !canvas || flow.flow.status !== 'resolved') return undefined;
     const draw = () => drawHeatmap(canvas, { width: wrap.clientWidth, height: wrap.clientHeight, frames, devicePixelRatio: window.devicePixelRatio || 1 });
     const observer = new ResizeObserver(draw);
     observer.observe(wrap);
     draw();
     return () => observer.disconnect();
   }, [frames, flow]);
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left="Resting liquidity history" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span><small>Heatmap is never painted from candles or trade prints.</small></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left="Resting liquidity history" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span><small>Heatmap is never painted from candles or trade prints.</small></EmptyNote></div>;
   }
   return <div style={bodyStyle}>
-    <StatusStrip left={`Liquidity · ${flow.source.stream}`} right={frames.length ? `${frames.length} frames` : 'Waiting'} tone={frames.length ? 'live' : 'wait'} />
+    <StatusStrip left={`Liquidity · ${flow.flow.source.stream}`} right={frames.length ? `${frames.length} frames` : 'Waiting'} tone={frames.length ? 'live' : 'wait'} />
+    <SwapBanner flow={flow} />
     <div ref={wrapRef} style={heatWrapStyle}>
-      {frames.length ? <canvas ref={canvasRef} style={heatCanvasStyle} /> : <EmptyNote>Building liquidity history…<br /><small>Only validated Binance L2 frames — never candle volume or trade prints.</small></EmptyNote>}
+      {frames.length ? <canvas ref={canvasRef} style={heatCanvasStyle} /> : <EmptyNote>Building liquidity history…<br /><small>Only validated L2 frames from {flow.flow.source.product} — never candle volume or trade prints.</small></EmptyNote>}
     </div>
     <div style={statsFootStyle}>Intensity = resting size vs visible max · green bids / red asks · dashed line = best mid</div>
   </div>;
@@ -550,22 +582,23 @@ export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element 
 
 export function VolumeProfilePanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  const catalogVersion = useFlowCatalogVersion();
-  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
-  const stream = flow.status === 'resolved' ? flow.source.stream : null;
+  const flow = useAdaptiveFlowSource(sym);
+  const stream = flow.flow.status === 'resolved' ? flow.flow.source.stream : null;
   const [mode, setMode] = useState<'volume' | 'delta'>('volume');
   const printsRef = useRef<ProfilePrint[]>([]);
   const dirtyRef = useRef(false);
   const [profile, setProfile] = useState<VolumeProfileResult | null>(null);
   useEffect(() => {
-    if (!stream || flow.status !== 'resolved') { setProfile(null); return undefined; }
+    if (!stream || flow.flow.status !== 'resolved') { setProfile(null); return undefined; }
     printsRef.current = [];
     dirtyRef.current = false;
     setProfile(null);
+    const provider = flow.flow.source.provider;
     const bus = getBus();
-    const stop = bus.stream([stream], flow.source.provider);
+    const stop = bus.stream([stream], provider);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream || typeof trade.price !== 'number') return;
+      noteFlowVenueEvent(provider, 'data');
       printsRef.current.push({ price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -577,11 +610,12 @@ export function VolumeProfilePanel({ widget, symbol }: WidgetPanelProps): JSX.El
     }, 600);
     return () => { off(); stop(); clearInterval(flush); };
   }, [stream, flow]);
-  if (flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left={`Session profile · ${sym || '—'}`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  if (flow.flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`Session profile · ${sym || '—'}`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
   return <div style={bodyStyle}>
     <StatusStrip left={`Session profile · ${sym || '—'}`} right={profile ? `POC ${profile.poc != null ? profile.poc.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}` : 'Waiting'} tone={profile ? 'live' : 'wait'} />
+    <SwapBanner flow={flow} />
     <div style={domToolbarStyle}>
       <div style={domSegmentStyle}>
         {(['volume', 'delta'] as const).map(value => <button key={value} type="button" onClick={() => setMode(value)} style={{ ...domSegmentButtonStyle, color: mode === value ? '#7bf0b5' : '#71808a', borderColor: mode === value ? '#1e9b68' : '#26343d' }}>{value === 'volume' ? 'Volume' : 'Delta'}</button>)}
@@ -689,6 +723,7 @@ function barStyle(quantity: string, color: string): React.CSSProperties {
 
 const bodyStyle: React.CSSProperties = { height: '100%', minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' };
 const statusStripStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#d6e0e5', fontSize: 11, padding: '7px 10px', borderBottom: '1px solid #293740', position: 'sticky', top: 0, background: '#10171d', zIndex: 1 };
+const swapBannerStyle: React.CSSProperties = { background: '#2b2416', color: '#e1b65c', fontSize: 10, lineHeight: 1.4, padding: '5px 10px', borderBottom: '1px solid #3d3424' };
 const emptyStyle: React.CSSProperties = { color: '#87949c', fontSize: 11, lineHeight: 1.5, padding: 18, textAlign: 'center', display: 'grid', placeContent: 'center', gap: 4, height: '100%' };
 const tradeRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '5px 10px', borderBottom: '1px solid #1e292f', color: '#b8c5cc', fontSize: 11 };
 const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 };

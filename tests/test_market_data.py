@@ -37,16 +37,17 @@ def test_capabilities_never_fake_depth(client: TestClient):
     """
     body = client.get("/api/market-data/capabilities").json()
     providers = {p["provider"]: p for p in body["providers"]}
-    assert set(providers) >= {"demo", "lse", "userdata", "binance-depth"}
-    assert "L2" in providers["binance-depth"]["formal"]
+    assert set(providers) >= {"demo", "lse", "userdata", "binance-depth", "hyperliquid"}
+    for v in ("binance-depth", "hyperliquid"):
+        assert "L2" in providers[v]["formal"], v
     assert body["depth"]["l2"] is True
     assert body["depth"]["l3"] is False
     # Formal caps: demo streams, userdata is history-only.
     assert "WEBSOCKET" in providers["demo"]["formal"]
     assert "WEBSOCKET" not in providers["userdata"]["formal"]
     for name, p in providers.items():
-        # Only the verified Binance L2 adapter may claim depth capability.
-        assert ("L2" in p["formal"]) == (name == "binance-depth"), name
+        # Only the verified L2 adapters may claim depth capability.
+        assert ("L2" in p["formal"]) == (name in {"binance-depth", "hyperliquid"}), name
         assert "L3_MBO" not in p["formal"]
     # Reserved event types are listed for future consumers.
     assert "ORDER_BOOK_UPDATE" in body["event_types"]
@@ -352,11 +353,12 @@ def test_orderflow_workspace_markers():
                         "volumeProfile", "orderbook", "marketStats", "watchlist",
                         "paperTrading", "replay", "chart"):
         assert f"'{widget_type}'" in widgets, f"missing widget {widget_type}"
-    # The DOM reads the verified Binance L2 stream, via venue resolution
-    # (never by subscribing the display symbol directly).
+    # The DOM reads the verified L2 stream via venue resolution + adaptive
+    # failover (Binance primary, Hyperliquid fallback) — never by
+    # subscribing the display symbol directly.
     panels = (root / "frontend/src/components/chart/workspaceWidgetPanels.tsx").read_text()
-    assert "resolveFlowSource" in panels
-    assert "bus.stream([stream], flow.source.provider)" in panels
+    assert "useAdaptiveFlowSource" in panels
+    assert "resolveFlowSource" in (root / "frontend/src/lib/flowSources.ts").read_text()
     # Vendored authoritative EdgeDepth source still present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()

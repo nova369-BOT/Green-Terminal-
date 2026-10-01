@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 /**
  * Order-flow source resolution.
@@ -40,6 +40,15 @@ const BINANCE_DEPTH_CATALOG: CatalogEntry[] = [
   { base: 'ETH', stream: 'ETHUSDT', product: 'Binance Spot' },
   { base: 'BNB', stream: 'BNBUSDT', product: 'Binance Spot' },
   { base: 'SOL', stream: 'SOLUSDT', product: 'Binance Spot' },
+];
+
+/** Verified Hyperliquid Perp majors (provider: lse_terminal/providers/
+ * hyperliquid_depth.py). The stream id is the bare coin, e.g. 'BTC'. */
+const HYPERLIQUID_PROVIDER = 'hyperliquid';
+const HYPERLIQUID_CATALOG: CatalogEntry[] = [
+  { base: 'BTC', stream: 'BTC', product: 'Hyperliquid Perp' },
+  { base: 'ETH', stream: 'ETH', product: 'Hyperliquid Perp' },
+  { base: 'SOL', stream: 'SOL', product: 'Hyperliquid Perp' },
 ];
 
 /** Live catalogs merge in here at runtime; keyed by venue → stream entries. */
@@ -172,10 +181,110 @@ function resolved(stream: string, venue: 'binance' | 'hyperliquid', product: str
     status: 'resolved',
     source: {
       stream,
-      provider: venue === 'binance' ? BINANCE_DEPTH_PROVIDER : 'hyperliquid',
+      provider: venue === 'binance' ? BINANCE_DEPTH_PROVIDER : HYPERLIQUID_PROVIDER,
       venue,
       product,
       label: `SOURCE · ${venue.toUpperCase()} ${stream}`,
     },
   };
+}
+
+/** Force-resolution for one venue — used by the adaptive failover so the
+ * fallback never depends on the primary venue's catalog having an entry. */
+export function resolveFlowVenue(symbol: string, venue: 'binance' | 'hyperliquid'): FlowResolution {
+  if (!symbol || !symbol.trim()) return { status: 'none', reason: 'No active symbol.' };
+  const { base, quote } = bareBase(symbol);
+  const usdFamily = !quote || quote === 'USD' || quote === 'USDT' || quote === 'USDC';
+  if (!usdFamily) {
+    return { status: 'none', reason: `No ${venue} order-flow source for ${symbol.trim().toUpperCase()} (quote ${quote || '?'}).` };
+  }
+  if (venue === 'hyperliquid') {
+    const entry = HYPERLIQUID_CATALOG.find(item => item.base === base);
+    if (entry) return resolved(entry.stream, 'hyperliquid', entry.product);
+    if (dynamicCatalogs.hyperliquid.has(base)) return resolved(base, 'hyperliquid', 'Hyperliquid Perp');
+    return { status: 'none', reason: `No Hyperliquid order-flow source for ${symbol.trim().toUpperCase()}.` };
+  }
+  const entry = BINANCE_DEPTH_CATALOG.find(item => item.base === base);
+  if (entry) return resolved(entry.stream, 'binance', entry.product);
+  for (const candidate of [`${base}USDT`, `${base}USDC`]) {
+    if (dynamicCatalogs.binance.has(candidate)) return resolved(candidate, 'binance', 'Binance Spot');
+  }
+  return { status: 'none', reason: `No Binance order-flow source for ${symbol.trim().toUpperCase()}.` };
+}
+
+/* ------------------------------------------------------------------ */
+/* Venue health + adaptive failover (user directive: "use any available  */
+/* data be it binance or hyperliquid").                                  */
+/*                                                                      */
+/* Health is measured from REAL bus events only: every widget notes every */
+/* snapshot/update/tick (`data`) and every DEPTH_RESET (`reset`) it      */
+/* sees. A venue is DOWN when its resets keep arriving and no data has   */
+/* landed within DATA_DOWN_MS. Panels then swap to the next venue, the   */
+/* status chip swaps with them, and a banner states the reason. When    */
+/* the primary venue delivers again, resolution snaps back on the next  */
+/* health tick.                                                        */
+/* ------------------------------------------------------------------ */
+
+interface VenueHealth { lastDataMs: number; lastResetMs: number; lastReason: string }
+const venueHealth: Record<string, VenueHealth> = {};
+const healthListeners = new Set<() => void>();
+let healthVersion = 0;
+
+/** Down-window: resets with no data longer than this ⇒ try the next venue. */
+const DATA_DOWN_MS = 15_000;
+/** Reset older than this stops mattering (avoids sticky-down on a quiet book). */
+const RESET_FRESH_MS = 45_000;
+
+export function noteFlowVenueEvent(provider: string, kind: 'data' | 'reset', reason?: string): void {
+  const h = venueHealth[provider] ?? (venueHealth[provider] = { lastDataMs: 0, lastResetMs: 0, lastReason: '' });
+  const now = Date.now();
+  if (kind === 'data') h.lastDataMs = now;
+  else { h.lastResetMs = now; if (reason) h.lastReason = String(reason); }
+  healthVersion += 1;
+  healthListeners.forEach(listener => listener());
+}
+
+export function useFlowVenueHealthVersion(): number {
+  return useSyncExternalStore(
+    (listener) => { healthListeners.add(listener); return () => { healthListeners.delete(listener); }; },
+    () => healthVersion,
+  );
+}
+
+function venueIsDown(provider: string): { down: boolean; reason: string } {
+  const h = venueHealth[provider];
+  if (!h || !h.lastResetMs) return { down: false, reason: '' };
+  const now = Date.now();
+  const hasData = h.lastDataMs > 0 && now - h.lastDataMs <= DATA_DOWN_MS;
+  const freshReset = now - h.lastResetMs < RESET_FRESH_MS;
+  return { down: !hasData && freshReset, reason: h.lastReason };
+}
+
+export interface AdaptiveFlow {
+  flow: FlowResolution;
+  /** True when the primary Binance venue is down and the panel shows the
+   * Hyperliquid Perp fallback — the chip already changed to match. */
+  swapped: boolean;
+  /** Human sentence for the banner; never shown empty when swapped. */
+  swapReason: string;
+}
+
+/** The symbol's flow source with venue failover: Binance Spot primary,
+ * Hyperliquid Perp when Binance is measurably unreachable. */
+export function useAdaptiveFlowSource(symbol: string): AdaptiveFlow {
+  const catalogVersion = useFlowCatalogVersion();
+  const healthV = useFlowVenueHealthVersion();
+  return useMemo(() => {
+    const primary = resolveFlowVenue(symbol, 'binance');
+    if (primary.status !== 'resolved') return { flow: primary, swapped: false, swapReason: '' };
+    const alt = resolveFlowVenue(symbol, 'hyperliquid');
+    if (alt.status !== 'resolved') return { flow: primary, swapped: false, swapReason: '' };
+    const health = venueIsDown(primary.source.provider);
+    if (!health.down) return { flow: primary, swapped: false, swapReason: '' };
+    return {
+      flow: alt,
+      swapped: true,
+      swapReason: `Binance unreachable (${health.reason || 'no data'}) — showing Hyperliquid Perp.`,
+    };
+  }, [symbol, catalogVersion, healthV]);
 }
