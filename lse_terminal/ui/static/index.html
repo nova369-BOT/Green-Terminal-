@@ -580,38 +580,9 @@ def my_ind(df, length=20):
       <pre id="lse-key-err" class="hidden"></pre>
     </div>
   </section>
-  <!-- Phase 4: MARKET → G-FLOW — hosts the REAL order-flow WASM runtime
-       (third_party/edgedepth-terminal → static/edgedepth). The DOM, liquidity
-       heatmap, tape and footprint all execute inside that engine; this section
-       is only GREEN TERMINAL chrome + honest gateway/artifact status. -->
-  <section id="orderflow" class="hidden" aria-label="G-Flow workspace">
-    <div id="of-bar">
-      <span class="of-k">G-FLOW</span>
-      <span class="of-sep"></span>
-      <span class="of-k">SOURCE</span><span id="of-source" class="of-v">GT DATA ENGINE</span>
-      <span class="of-k">GATEWAY</span><span id="of-gw" class="of-v off">OFFLINE</span>
-      <span class="of-k">RUNTIME</span><span id="of-art" class="of-v off">—</span>
-      <span class="of-k">SYMBOL</span>
-      <input id="of-symbol" class="of-sym-input" list="of-symbol-options"
-             value="BTC" placeholder="BTC" autocomplete="off" spellcheck="false"
-             aria-label="Order-flow symbol"
-             title="Type or pick a Hyperliquid perp (e.g. BTC, ETH, SOL) and press Enter">
-      <datalist id="of-symbol-options"></datalist>
-      <button type="button" class="of-link" id="of-symgo" title="Load this symbol">Load</button>
-      <span id="of-sym" class="of-v hidden">—</span>
-      <span class="of-flex"></span>
-      <button type="button" class="of-link" id="of-usechart" title="Load the symbol from your main chart into G-Flow">Use chart symbol</button>
-      <button type="button" class="of-link" id="of-fullscreen" title="Expand G-Flow">Expand</button>
-    </div>
-    <div id="of-banner" class="hidden" role="status">
-      <div id="of-banner-title" class="of-bt">G-FLOW RUNTIME NOT LOADED</div>
-      <div id="of-banner-detail" class="of-bd"></div>
-    </div>
-    <div id="of-stage">
-      <iframe id="of-frame" title="Green Terminal G-Flow engine" allow="cross-origin-isolated"
-              referrerpolicy="no-referrer"></iframe>
-    </div>
-  </section>
+  <!-- G-Flow was retired (was #orderflow, an iframed second UI): its DOM,
+       heatmap, tape and footprint live natively in the chart workspace as
+       widgets on the shared validated L2 transport. One product, one UI. -->
   <!-- Host for the ported manual backtester (mounted on demand). -->
   <section id="manual-backtest" class="hidden"></section>
   <section id="portfolio-backtest" class="hidden" aria-label="Portfolio backtesting">

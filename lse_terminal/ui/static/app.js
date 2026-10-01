@@ -2736,11 +2736,10 @@ function asPickCategory(id, name) {
 function asOpenSymbol(base) {
   const coin = String(base || "").toUpperCase();
   if (!coin) return;
-  ofState.symbol = coin;
-  const inp = $("of-symbol");
-  if (inp) inp.value = coin;
-  // Browse a coin → jump to its live order flow (unified G-Flow auto-loads it).
-  if (typeof showOrderFlowPage === "function") showOrderFlowPage();
+  // One product, one chart surface: an All-Symbols coin opens on the main
+  // chart as its USD pair (G-Flow's separate iframe page was retired; the
+  // charted LSE tables carry the majors, so e.g. BTC → BTC/USD).
+  setSymbol(coin + "/USD");
 }
 function asMsg(text) {
   const d = document.createElement("div");
@@ -3487,7 +3486,7 @@ function renderProfile() {
   const rows = [
     ["ENV", state.hosted ? "Hosted" : "Local engine"],
     ["DATA", state.lseConfigured ? "LSE key set" : "No LSE key"],
-    ["G-FLOW", !gw ? "—" : (gw.reachable ? "LIVE" : "OFFLINE")],
+    ["GATEWAY", !gw ? "—" : (gw.reachable ? "LIVE" : "OFFLINE")],
   ];
   facts.innerHTML = "";
   for (const [k, v] of rows) {
@@ -4215,18 +4214,9 @@ function setSymbol(symbol) {
   // One pick, both surfaces: on a venue's own source the sidebar row IS the
   // instrument choice, so the ticket takes it too (see tpbFollowChart).
   if (typeof tpbFollowChart === "function") tpbFollowChart(symbol);
-  // Unified watchlist → G-Flow: one watchlist drives everything. When the
-  // G-Flow page is on screen, clicking any watchlist row retargets the live
-  // order-flow engine instantly (crypto with real Hyperliquid depth only; a
-  // symbol without flow leaves the engine on its last coin — no fake depth).
-  const ofPageOpen = $("orderflow") && !$("orderflow").classList.contains("hidden");
-  if (ofPageOpen && typeof ofNormalizeSymbol === "function") {
-    const ofCoin = ofNormalizeSymbol(symbol);
-    if (OF_HL_PRESETS.includes(ofCoin)) {
-      ofState.symbol = ofCoin;
-      if (ofState.ready) loadOrderFlowSymbol(ofCoin);
-    }
-  }
+  // Order flow follows through the native workspace: DOM / Orderbook /
+  // Footprint panels resolve the picked symbol against the live flow catalog
+  // automatically (G-Flow's parallel page is gone).
 }
 
 function renderTimeframes() {
@@ -11096,10 +11086,9 @@ async function openBacktest(mode) {
   // vision simulation, whose screen map reported two pages visible at once).
   for (const id of ["optpage", "news", "mydata", "econcal", "dataviz", "nbpage", "mlpage",
                     "pyide", "wsx", "charts", "backtest", "lse-connect",
-                    "research", "guide", "scrpage", "orderflow"]) {
+                    "research", "guide", "scrpage"]) {
     $(id).classList.add("hidden");
   }
-  stopOrderFlowHost();
   closeBacktestPages();
   // Algo Development and ML run on the user's own imported files; flip the
   // source so those modes and the sidebar library inherit it. Manual backtest
@@ -11138,8 +11127,8 @@ const SUBRAIL = {
   markets: [
     { id: "sub-mk-charts", label: "CHART",
       go: () => { $("rail-markets").click(); renderSubrail("markets", "sub-mk-charts"); } },
-    { id: "sub-mk-flow", label: "G-FLOW",
-      go: () => { $("rail-markets").click(); showOrderFlowPage(); } },
+    /* G-FLOW was retired as a second UI: the same surface lives natively in
+       the chart workspace as DOM / Orderbook / Footprint / Heatmap widgets. */
     { id: "sub-mk-options", label: "OPTIONS",
       go: () => { $("rail-markets").click(); showOptionsPage(); } },
     { id: "sub-mk-news", label: "NEWS",
@@ -11296,7 +11285,6 @@ const FLYOUT_TITLES = {
    Keyed by sub-view id; missing keys just render label-only, cleanly. */
 const FLYOUT_ICONS = {
   "sub-mk-charts": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="M7.5 14l3-4 3 3 4-6"/></svg>',
-  "sub-mk-flow": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 10.5h15M4 15h8.5M4 19.5h12.5"/></svg>',
   "sub-mk-options": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
   "sub-mk-news": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 8h3v9a2 2 0 0 1-2 2"/><path d="M7.5 9h6M7.5 12h6M7.5 15h4"/></svg>',
   "sub-mk-screener": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></svg>',
@@ -11305,7 +11293,6 @@ const FLYOUT_ICONS = {
    below; these keep the marquee sections crisp). */
 const FLYOUT_DESCS = {
   "sub-mk-charts": "Live price action & drawing tools",
-  "sub-mk-flow": "Real-time order-flow & market depth",
   "sub-mk-options": "Options chain, greeks & strategies",
   "sub-mk-news": "Global headline wall & newsroom",
   "sub-mk-screener": "Scan the whole live universe",
@@ -12090,10 +12077,9 @@ function openDataViz() {
   // SCREENER -> DATA VISUALISATION left the screener rendered underneath).
   for (const id of ["optpage", "news", "charts", "backtest", "mydata",
                     "econcal", "nbpage", "mlpage", "pyide", "wsx", "lse-connect",
-                    "research", "guide", "scrpage", "orderflow"]) {
+                    "research", "guide", "scrpage"]) {
     $(id).classList.add("hidden");
   }
-  stopOrderFlowHost();
   closeBacktestPages();
   $("dataviz").classList.remove("hidden");
   if (window.LSEDataViz) window.LSEDataViz.mount($("dataviz-root"));
@@ -12110,10 +12096,9 @@ function openNotebooks() {
   renderSubrail("workspace", "sub-ws-notebooks");
   for (const id of ["optpage", "news", "charts", "backtest", "mydata",
                     "econcal", "dataviz", "mlpage", "pyide", "wsx",
-                    "lse-connect", "research", "guide", "scrpage", "orderflow"]) {
+                    "lse-connect", "research", "guide", "scrpage"]) {
     $(id).classList.add("hidden");
   }
-  stopOrderFlowHost();
   closeBacktestPages();
   $("nbpage").classList.remove("hidden");
   if (window.LSENotebooks) window.LSENotebooks.mount($("nb-root"));
@@ -13042,176 +13027,19 @@ function showOptionsPage() {
   $("side").classList.add("hidden");
   $("charts").classList.add("hidden");
   $("lse-connect").classList.add("hidden");
-  if ($("orderflow")) $("orderflow").classList.add("hidden");
-  stopOrderFlowHost();
   $("optpage").classList.remove("hidden");
   optInit();
   optRefresh();
 }
 
-/* ── Phase 4: MARKET → ORDER FLOW — hosts the REAL EdgeDepth runtime ─────
-   Not a lookalike: #of-frame loads /edgedepth/ (official WASM build of
-   edgedepth-terminal). DOM / heatmap / tape / footprint all run inside
-   that engine. This shell only provides GREEN TERMINAL navigation, status
-   (gateway reachability + artifact readiness), and layout. */
-const ofState = { poll: 0, ready: false, symbol: "BTC", bound: false };
-
-// Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
-// The gateway is HL-only for now; these are the deepest, most-traded coins.
-// The input is a free-text datalist, so anything HL lists can still be typed.
-const OF_HL_PRESETS = [
-  "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "AVAX",
-  "LINK", "SUI", "LTC", "ARB", "OP", "APT", "TON", "PEPE",
-  "WIF", "INJ", "TIA", "SEI", "ADA", "NEAR",
-];
-
-// Turn whatever the main chart shows (e.g. "BTCUSD", "eth-usdt", "SOLUSD")
-// into the bare uppercase coin the Hyperliquid gateway expects ("BTC").
-function ofNormalizeSymbol(raw) {
-  let s = String(raw || "").trim().toUpperCase();
-  if (!s) return "";
-  s = s.replace(/[\/:\-_.\s]/g, "");            // strip separators
-  s = s.replace(/(USDT|USDC|PERP|USD|USDTM)$/,""); // strip quote/suffix
-  return s || String(raw || "").trim().toUpperCase();
-}
-
-// Point the warm G-Flow iframe at a new Hyperliquid symbol. Reloading the
-// engine's URL is the supported switch path: the WASM client reads
-// ?exchange= and ?symbol= on boot and resubscribes through the gateway.
-function loadOrderFlowSymbol(sym) {
-  const coin = ofNormalizeSymbol(sym) || "BTC";
-  ofState.symbol = coin;
-  const inp = $("of-symbol");
-  if (inp && inp.value.toUpperCase() !== coin) inp.value = coin;
-  const label = $("of-sym");
-  if (label) label.textContent = coin;
-  const fr = $("of-frame");
-  // Only (re)load when the runtime is ready; refreshOrderFlowStatus boots
-  // the first frame once artifacts are present.
-  if (fr && ofState.ready) {
-    fr.src = "/edgedepth/index.html?exchange=hl&symbol=" + encodeURIComponent(coin);
-  }
-}
-
-// Wire the switcher controls once (idempotent — the page can re-enter).
-function bindOrderFlowControls() {
-  if (ofState.bound) return;
-  const inp = $("of-symbol");
-  const go = $("of-symgo");
-  const useChart = $("of-usechart");
-  const list = $("of-symbol-options");
-  if (list && !list.children.length) {
-    list.innerHTML = OF_HL_PRESETS.map(s => '<option value="' + s + '">').join("");
-  }
-  const submit = () => { if (inp) loadOrderFlowSymbol(inp.value); };
-  if (inp) {
-    inp.addEventListener("change", submit);
-    inp.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); submit(); inp.blur(); }
-    });
-  }
-  if (go) go.addEventListener("click", submit);
-  if (useChart) {
-    useChart.addEventListener("click", () => {
-      if (state.symbol) loadOrderFlowSymbol(state.symbol);
-    });
-  }
-  ofState.bound = true;
-}
-
-function stopOrderFlowHost() {
-  // Only the status poll stops. The iframe STAYS mounted (hidden with its
-  // section): its WebSocket and book stay warm, so coming back to ORDER
-  // FLOW is instant instead of a full WASM reboot. (ofState.ready is
-  // write-only; nothing reads it.)
-  if (ofState.poll) { clearInterval(ofState.poll); ofState.poll = 0; }
-}
-
-async function refreshOrderFlowStatus() {
-  const art = await fetch("/api/edgedepth/artifacts").then(r => r.json()).catch(() => null);
-  const gw = await fetch("/api/edgedepth/status").then(r => r.json()).catch(() => null);
-  const set = (id, val, cls) => {
-    const el = $(id);
-    if (!el) return;
-    el.textContent = val;
-    el.classList.remove("on", "warn", "off");
-    if (cls) el.classList.add(cls);
-  };
-  const ready = !!(art && art.ready);
-  const gwOn = !!(gw && (gw.reachable || gw.state === "CONNECTED"));
-  set("of-source", "GT DATA ENGINE", gwOn ? "on" : "warn");
-  set("of-gw", gwOn ? "LIVE" : ((gw && gw.state) || "OFFLINE"), gwOn ? "on" : "off");
-  set("of-art", ready ? "RUNTIME READY" : "RUNTIME ARTIFACTS MISSING",
-      ready ? "on" : "off");
-  set("of-sym", ofState.symbol || "—");
-  const missing = art && art.present
-    ? Object.entries(art.present).filter(([, ok]) => !ok).map(([k]) => k)
-    : ["index.js", "index.wasm", "index.data"];
-  const banner = $("of-banner");
-  if (banner) {
-    if (!ready) {
-      banner.classList.remove("hidden");
-      $("of-banner-title").textContent = "G-FLOW RUNTIME NOT LOADED";
-      $("of-banner-detail").textContent =
-        "G-Flow hosts the order-flow engine (DOM, heatmap, " +
-        "tape, footprint). Missing: " + missing.join(", ") +
-        ". Green Terminal loads the built runtime when present; no " +
-        "simulated depth is substituted.";
-    } else {
-      banner.classList.add("hidden");
-    }
-  }
-  const fr = $("of-frame");
-  if (fr && ready && !fr.getAttribute("src")) {
-    // Real EdgeDepth client inside Green Terminal (same origin /edgedepth).
-    // Boots the selected Hyperliquid perp (HL-only gateway for now; Binance
-    // is unregistered server-side until it is reachable again).
-    ofState.ready = true;
-    loadOrderFlowSymbol(ofState.symbol);
-  }
-  if (fr && !ready) { fr.removeAttribute("src"); ofState.ready = false; }
-  // One-product chrome: Expand toggles fullscreen on the stage (no second tab).
-  const fsBtn = $("of-fullscreen");
-  if (fsBtn && !fsBtn.dataset.bound) {
-    fsBtn.dataset.bound = "1";
-    fsBtn.addEventListener("click", () => {
-      const stage = $("of-stage");
-      if (!stage) return;
-      if (document.fullscreenElement) document.exitFullscreen();
-      else if (stage.requestFullscreen) stage.requestFullscreen();
-    });
-  }
-}
-
-function showOrderFlowPage() {
-  subrailMark("sub-mk-flow");
-  document.title = "G-Flow · Green Terminal";
-  // Same chrome rules as PRICE & CHART (sidebar stays for symbol sync).
-  // NOTE: setSidebar() lives inside setupRail() and is NOT in scope here —
-  // calling it threw and aborted the page swap (ORDER FLOW highlighted but
-  // the chart stayed put). Toggle the class directly like showOptionsPage.
-  $("side").classList.remove("hidden");
-  $("optpage").classList.add("hidden");
-  $("scrpage").classList.add("hidden");
-  $("news").classList.add("hidden");
-  $("charts").classList.add("hidden");
-  $("lse-connect").classList.add("hidden");
-  stopOrderFlowHost();
-  $("orderflow").classList.remove("hidden");
-  bindOrderFlowControls();
-  // Unified symbol: G-Flow follows the main chart automatically — no manual
-  // "Use chart symbol" click. If the charted instrument has real Hyperliquid
-  // depth we retarget the warm engine to it; otherwise the runtime keeps its
-  // last coin (an honest empty state for LSE/FX lands with the docked view).
-  const ofCoin = ofNormalizeSymbol(state.symbol);
-  const ofHasFlow = OF_HL_PRESETS.includes(ofCoin);
-  if (ofHasFlow) ofState.symbol = ofCoin;
-  refreshOrderFlowStatus();
-  if (ofHasFlow && ofState.ready) loadOrderFlowSymbol(ofCoin);
-  if (!ofState.poll) ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
-  // Reuse instrument header for L1 context above the EdgeDepth surface.
-  refreshInstrumentBarSoon();
-}
+/* ── Phase 4 removed: the G-Flow order-flow PAGE (a second, iframed
+   WASM UI with its own DOM/heatmap/tape/footprint) is retired for
+   good. Green Terminal is one product with one chart surface: DOM,
+   Orderbook, Footprint, Heatmap and Trades live as native workspace
+   widgets fed by the shared validated L2 transport (see the
+   workspace picker and /api/market-data/flow-catalog). The internal
+   EdgeDepth gateway service and /api/edgedepth/status stay — they
+   are engine lifecycle, not a UI. */
 
 /* ---------- MARKETS > NEWS: the globe ---------------------------------
    The same detailed globe as the londonstrategicedge.com homepage hero,
@@ -14056,8 +13884,6 @@ async function newsBuildGlobe() {
 }
 
 function showNewsPage(ctx) {
-  if ($("orderflow")) $("orderflow").classList.add("hidden");
-  stopOrderFlowHost();
   // The same NEWS page is reachable from MARKETS and from ECONOMIC (news and
   // the economic calendar overlap), so mark whichever subrail it was opened
   // from and hide every other section regardless of the entry point.
@@ -15044,15 +14870,6 @@ function setupRail() {
   const setActive = (id) => {
     for (const b of document.querySelectorAll(".rail-btn")) b.classList.remove("active");
     $(id).classList.add("active");
-    // Leaving G-Flow for any rail tab: the #orderflow section keeps its iframe
-    // mounted (warm WS/book), so if it is not hidden it sits ON TOP of the tab
-    // you switched to. Every rail handler routes through setActive, so hiding
-    // it here fixes the whole class in one place. showOrderFlowPage does NOT
-    // call setActive, and the flow-open path clicks rail-markets first then
-    // re-shows flow, so this never hides a G-Flow the user just opened.
-    const ofSection = $("orderflow");
-    if (ofSection) ofSection.classList.add("hidden");
-    stopOrderFlowHost();
     refreshInstrumentBarSoon();
   };
   // The native title follows the active tab:
@@ -15081,7 +14898,6 @@ function setupRail() {
     $("optpage").classList.add("hidden");
     $("scrpage").classList.add("hidden");
     $("news").classList.add("hidden");
-    if ($("orderflow")) $("orderflow").classList.add("hidden");
     $("backtest").classList.add("hidden");
     $("mydata").classList.add("hidden");
     $("econcal").classList.add("hidden");
@@ -15165,7 +14981,6 @@ function setupRail() {
     $("lse-connect").classList.add("hidden");
     $("research").classList.add("hidden");
     $("guide").classList.add("hidden");
-    $("orderflow").classList.add("hidden");
     closeBacktestPages();
     // Host the live connections card inline (openConnScreen moves it back).
     $("pf-api-slot").appendChild($("cs-card"));
@@ -20474,8 +20289,6 @@ const SCR_VIEWS = {
 const SCR_ROW_H = 26;
 
 function showScreenerPage() {
-  if ($("orderflow")) $("orderflow").classList.add("hidden");
-  stopOrderFlowHost();
   subrailMark("sub-mk-screener");
   document.title = "Screener · LSE Terminal";
   // Full-page like OPTIONS/NEWS: the watchlist is chart context, hide it.
