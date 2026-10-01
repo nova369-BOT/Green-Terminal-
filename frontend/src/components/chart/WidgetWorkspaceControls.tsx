@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { getBus, type BusTrade } from '@/market-data/bus';
+import { useCapabilities } from '@/market-data/hooks';
+import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import {
   addWorkspaceWidget,
   DEFAULT_WORKSPACE_WIDGETS,
@@ -23,11 +26,23 @@ const GROUPS: Array<{ label: string; types: WorkspaceWidgetType[] }> = [
  */
 export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol: string; timeframe: string }) {
   const [widgets, setWidgets] = useState<WorkspaceWidget[]>([]);
+  const [trades, setTrades] = useState<BusTrade[]>([]);
+  const { caps } = useCapabilities();
+  const tradesOpen = widgets.some(widget => widget.type === 'trades' && widget.visible);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setWidgets(loadWorkspaceWidgets()), []);
+  useEffect(() => {
+    if (!tradesOpen || !symbol) { setTrades([]); return; }
+    const bus = getBus();
+    const stop = bus.stream([symbol]);
+    const off = bus.subscribeTrade((trade) => {
+      if (trade.symbol === symbol) setTrades(previous => [trade, ...previous].slice(0, 24));
+    });
+    return () => { off(); stop(); };
+  }, [symbol, tradesOpen]);
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) { setOpen(false); setMenu(false); }
@@ -83,10 +98,13 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
               {group.types.map((type) => {
                 const def = WIDGET_DEFS[type];
                 const exists = Boolean(def.single && widgets.some(widget => widget.type === type && widget.visible));
+                const capability = resolveWidgetCapability(type, caps);
+                const unavailable = capability.availability === 'unavailable';
+                const disabled = exists || unavailable;
                 return (
-                  <button type="button" key={type} disabled={exists} onClick={() => add(type)} style={{ ...pickerItem, opacity: exists ? 0.42 : 1 }}>
+                  <button type="button" key={type} disabled={disabled} title={capability.reason} onClick={() => add(type)} style={{ ...pickerItem, opacity: disabled ? 0.42 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
                     <span style={iconStyle}>{iconFor(type)}</span>
-                    <span><b>{def.title}</b><small>{def.description}</small></span>
+                    <span><b>{def.title}</b><small>{def.description}</small><em style={capabilityTextStyle}>{capability.availability === 'unknown' ? 'Capability pending' : capability.availability}</em></span>
                   </button>
                 );
               })}
@@ -94,8 +112,18 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
           </section>
         ))}
       </div>}
+      {tradesOpen && <div style={tradePanelStyle}>
+        <div style={tradeHeaderStyle}><b>Trades · live</b><span>{trades.length ? `${trades.length} prints` : 'Waiting'}</span></div>
+        {trades.length ? trades.map((trade, index) => <div key={`${trade.tsMs}-${index}`} style={tradeRowStyle}>
+          <time>{new Date(trade.tsMs).toLocaleTimeString()}</time><strong>{formatPrice(trade.price)}</strong><span>{trade.size == null ? '—' : trade.size}</span>
+        </div>) : <div style={emptyTradeStyle}>No verified trade prints received yet.<br /><small>The panel will populate only from the selected live provider.</small></div>}
+      </div>}
     </div>
   );
+}
+
+function formatPrice(value?: number): string {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—';
 }
 
 function iconFor(type: WorkspaceWidgetType): string {
@@ -110,6 +138,11 @@ const groupLabel: React.CSSProperties = { color: '#697983', fontSize: 10, textTr
 const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 };
 const pickerItem: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, textAlign: 'left', background: '#161f26', border: '1px solid #26343d', borderRadius: 5, color: '#d8e0e5', padding: '8px 7px', cursor: 'pointer' };
 const iconStyle: React.CSSProperties = { color: '#42d493', fontSize: 17, width: 18, textAlign: 'center' };
+const tradePanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, maxHeight: 'calc(100% - 52px)', overflow: 'auto', pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
+const tradeHeaderStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', color: '#d6e0e5', fontSize: 11, padding: '9px 10px', borderBottom: '1px solid #293740' };
+const tradeRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '5px 10px', borderBottom: '1px solid #1e292f', color: '#b8c5cc', fontSize: 11 };
+const emptyTradeStyle: React.CSSProperties = { color: '#87949c', fontSize: 11, lineHeight: 1.5, padding: 18, textAlign: 'center' };
+const capabilityTextStyle: React.CSSProperties = { display: 'block', color: '#71808a', fontSize: 9, fontStyle: 'normal', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 };
 const menuStyle: React.CSSProperties = { position: 'absolute', right: 0, top: 32, width: 220, background: '#10171d', border: '1px solid #33414b', borderRadius: 6, boxShadow: '0 12px 28px #000b', padding: '9px 0' };
 const menuTitle: React.CSSProperties = { color: '#60717c', fontSize: 10, letterSpacing: '.08em', padding: '0 10px 4px' };
 const menuItem: React.CSSProperties = { width: '100%', textAlign: 'left', border: 0, background: 'transparent', color: '#ccd6dc', cursor: 'pointer', padding: '7px 10px', fontSize: 12 };
