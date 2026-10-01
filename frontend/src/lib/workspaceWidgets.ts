@@ -34,6 +34,8 @@ export interface WorkspaceWidget {
   linkGroup?: string;
   visible: boolean;
   minimized: boolean;
+  maximized?: boolean;
+  restoreRect?: { x: number; y: number; width: number; height: number };
   // Grid coordinates are persisted; the renderer may translate them into
   // CSS grid/flex positions without changing the widget contract.
   x: number;
@@ -121,6 +123,16 @@ export function setWorkspaceWidgetVisibility(widgets: WorkspaceWidget[], id: str
 
 export function setWorkspaceWidgetMinimized(widgets: WorkspaceWidget[], id: string, minimized: boolean): WorkspaceWidget[] {
   const next = widgets.map(widget => widget.id === id ? { ...widget, minimized } : { ...widget });
+  saveWorkspaceWidgets(next);
+  return next;
+}
+
+export function toggleWorkspaceMaximized(widgets: WorkspaceWidget[], id: string): WorkspaceWidget[] {
+  const next = widgets.map(widget => {
+    if (widget.id !== id) return { ...widget };
+    if (widget.maximized && widget.restoreRect) return { ...widget, ...widget.restoreRect, maximized: false, restoreRect: undefined };
+    return { ...widget, maximized: true, restoreRect: { x: widget.x, y: widget.y, width: widget.width, height: widget.height }, x: 0, y: 0, width: 12, height: 24 };
+  });
   saveWorkspaceWidgets(next);
   return next;
 }
