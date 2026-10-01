@@ -7,7 +7,7 @@ export type WorkspacePreset = '1' | '2' | '4' | '16';
 
 /** The actual persisted grid surface. Feed renderers are children/slots; this
  * component owns only geometry, ordering, visibility, and workspace chrome. */
-export default function NativeWidgetWorkspace({ symbol, timeframe, children }: { symbol: string; timeframe: string; children: React.ReactNode }) {
+export default function NativeWidgetWorkspace({ symbol, timeframe, children, renderWidget }: { symbol: string; timeframe: string; children: React.ReactNode; renderWidget?: (widget: WorkspaceWidget) => React.ReactNode }) {
   const [widgets, setWidgets] = useState<WorkspaceWidget[]>([]);
   const [drag, setDrag] = useState<{ id: string; x: number; y: number; rect: WorkspaceWidget } | null>(null);
   const dragRef = useRef<{ id: string; rect: WorkspaceWidget } | null>(null);
@@ -46,7 +46,7 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
       const rect = drag?.id === widget.id ? drag.rect : widget;
       return <section key={widget.id} style={{ gridColumn: `${rect.x + 1} / span ${rect.width}`, gridRow: `${rect.y + 1} / span ${rect.height}`, minWidth: 0, minHeight: 0, overflow: 'hidden', position: 'relative', border: '1px solid #2d3b44', background: '#10171d' }}>
         <header onPointerDown={event => begin(event, widget, false)} style={headerStyle}><b>{widget.title}</b><span>{widget.symbol || symbol || 'AUTO'} · {widget.timeframe || timeframe}</span></header>
-        <div style={{ height: 'calc(100% - 28px)', minHeight: 0, overflow: 'hidden' }}>{widget.id === chart.id ? children : <div style={emptyStyle}>Widget renderer slot<br /><small>Provider data state is controlled by the native widget.</small></div>}</div>
+        <div style={{ height: 'calc(100% - 28px)', minHeight: 0, overflow: 'hidden' }}>{widget.id === chart.id ? children : (renderWidget ? renderWidget(widget) : <div style={emptyStyle}>Widget renderer slot<br /><small>Provider data state is controlled by the native widget.</small></div>)}</div>
         <button type="button" aria-label={`Resize ${widget.title}`} onPointerDown={event => begin(event, widget, true)} style={resizeHandleStyle} />
       </section>;
     })}
