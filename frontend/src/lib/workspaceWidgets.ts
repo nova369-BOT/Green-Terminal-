@@ -113,6 +113,18 @@ export function removeWorkspaceWidget(widgets: WorkspaceWidget[], id: string): W
   const next = widgets.filter(w => w.id !== id); saveWorkspaceWidgets(next); return next;
 }
 
+export function setWorkspaceWidgetVisibility(widgets: WorkspaceWidget[], id: string, visible: boolean): WorkspaceWidget[] {
+  const next = widgets.map(widget => widget.id === id ? { ...widget, visible } : { ...widget });
+  saveWorkspaceWidgets(next);
+  return next;
+}
+
+export function setWorkspaceWidgetMinimized(widgets: WorkspaceWidget[], id: string, minimized: boolean): WorkspaceWidget[] {
+  const next = widgets.map(widget => widget.id === id ? { ...widget, minimized } : { ...widget });
+  saveWorkspaceWidgets(next);
+  return next;
+}
+
 export function reorderWorkspaceWidget(widgets: WorkspaceWidget[], id: string, beforeId: string): WorkspaceWidget[] {
   if (id === beforeId) return widgets;
   const source = widgets.find(widget => widget.id === id);
@@ -126,6 +138,13 @@ export function reorderWorkspaceWidget(widgets: WorkspaceWidget[], id: string, b
 
 export function updateWorkspaceLinkGroup(widgets: WorkspaceWidget[], id: string, group?: string): WorkspaceWidget[] {
   const next = widgets.map(widget => widget.id === id ? { ...widget, linkGroup: group?.trim() || undefined } : { ...widget });
+  saveWorkspaceWidgets(next);
+  return next;
+}
+
+export function toggleWorkspaceLink(widgets: WorkspaceWidget[], id: string, field: 'symbol' | 'timeframe'): WorkspaceWidget[] {
+  const key = field === 'symbol' ? 'symbolLink' : 'timeframeLink';
+  const next = widgets.map(widget => widget.id === id ? { ...widget, [key]: widget[key] === 'linked' ? 'independent' : 'linked' } : { ...widget });
   saveWorkspaceWidgets(next);
   return next;
 }

@@ -13,6 +13,7 @@ import {
   removeWorkspaceWidget,
   reorderWorkspaceWidget,
   saveWorkspaceWidgets,
+  toggleWorkspaceLink,
   WIDGET_DEFS,
   type WorkspaceWidget,
   type WorkspaceWidgetType,
@@ -137,6 +138,8 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
               if (dragged) setWidgets(reorderWorkspaceWidget(widgets, dragged, widget.id));
             }} style={{ ...pillStyle, cursor: 'grab' }} title={`${WIDGET_DEFS[widget.type].description} Source: ${widget.source || 'AUTO'}${widget.productType ? ` · ${widget.productType}` : ''}`}>
               {widget.title}
+              <button type="button" aria-label={`Toggle symbol link for ${widget.title}`} onClick={(event) => { event.stopPropagation(); setWidgets(toggleWorkspaceLink(widgets, widget.id, 'symbol')); }} style={{ ...closeStyle, color: widget.symbolLink === 'linked' ? '#58d797' : '#71808a' }}>S</button>
+              <button type="button" aria-label={`Toggle timeframe link for ${widget.title}`} onClick={(event) => { event.stopPropagation(); setWidgets(toggleWorkspaceLink(widgets, widget.id, 'timeframe')); }} style={{ ...closeStyle, color: widget.timeframeLink === 'linked' ? '#58d797' : '#71808a' }}>T</button>
               {widget.type !== 'chart' && <button type="button" aria-label={`Close ${widget.title}`} onClick={() => remove(widget.id)} style={closeStyle}>×</button>}
             </span>
           ))}
