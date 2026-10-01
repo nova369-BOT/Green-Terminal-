@@ -55,3 +55,21 @@ Direct dependencies; each pulls its own MIT/BSD-style tree.
 - Electron - MIT License (bundles Chromium and Node.js under their own licenses;
   the installer carries the generated Chromium license file)
 - electron-updater - MIT License
+
+## Order-flow footprint algorithm
+
+`lse_terminal/engine/footprint.py` is a derivative work. Its price-row
+segmentation and buy/sell/delta accumulation follow "Order Flow Ticks" by
+srlcarlg, used under the Apache License, Version 2.0:
+
+- srl-python-indicators — https://github.com/srlcarlg/srl-python-indicators
+- srl-ctrader-indicators — https://github.com/srlcarlg/srl-ctrader-indicators
+
+Copyright (c) srlcarlg. Licensed under the Apache License, Version 2.0; a copy
+is available at https://www.apache.org/licenses/LICENSE-2.0
+
+Changes made by Green Terminal: ported from pandas/numpy batch processing to a
+dependency-free incremental form; linear row scan replaced with binary search;
+duplicate price rows de-duplicated; optional exchange-supplied aggressor side
+added so real trade flags bypass tick-rule inference; value-area computation
+added. The plotting layer (plotly/mplfinance) is not used.
