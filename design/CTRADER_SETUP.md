@@ -162,3 +162,62 @@ tick volume at roughly 0.85–0.90 correlation with real volume on majors, and t
 tick rule at roughly 72–80% accuracy on side. That is good enough to trade from
 — every FX footprint product works this way — but it is an **estimate**, and
 Green Terminal labels it as one rather than pretending it is exchange data.
+
+---
+
+## Running under Docker
+
+Everything above works the same, with three Docker-specific points.
+
+### 1. Credentials go in a `.env` file, not the compose file
+
+`docker-compose.yml` is committed to git, so it must never contain a secret.
+It reads the values from a local `.env`, which is gitignored:
+
+```bash
+cp .env.example .env
+# edit .env and paste your Client ID and Secret
+docker compose up --build
+```
+
+`docker compose` picks up `.env` from the project directory automatically.
+
+### 2. Register the Docker redirect URI
+
+Your browser reaches the container on the published port, so add **both** of
+these to the Open API application's redirect URL list:
+
+```
+http://localhost:7787/api/ctrader/callback
+http://127.0.0.1:7787/api/ctrader/callback
+```
+
+`localhost` and `127.0.0.1` are different strings and the match is exact, so
+register both rather than guessing which one you will type.
+
+### 3. Rebuild when dependencies change
+
+The compose file mounts the checkout read-only at `/app`, so ordinary code
+changes need no rebuild — just restart. But `protobuf` was added to
+`pyproject.toml` for cTrader, and installed dependencies live in the image:
+
+```bash
+docker compose up --build        # needed after a dependency change
+docker compose up                # enough for day-to-day code changes
+```
+
+### Tokens survive restarts
+
+`LSE_TERMINAL_CONFIG_DIR=/tmp/lse-terminal` is backed by the named volume
+`gt-config`, and that is where the OAuth tokens are written. So
+`docker compose restart` keeps you connected; you only reconnect if you run
+`docker compose down -v`, which deletes the volume.
+
+### Check it worked
+
+```bash
+curl -s http://127.0.0.1:7787/api/ctrader/status
+```
+
+Expect `"configured": true`. Before you press Connect it will correctly say
+`"connected": false` — that is honest, not an error.
