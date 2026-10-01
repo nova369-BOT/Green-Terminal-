@@ -31,3 +31,13 @@ lse_terminal/ui/static/assets/research/
 .dev-data/
 desktop/build-*.log
 desktop/*.log
+
+# Secrets — never commit. Credentials belong in environment variables
+# (Render dashboard -> Environment) or the 0600 local config file, which
+# lives outside the repository in ~/.config/lse-terminal/.
+.env
+.env.*
+!.env.example
+*.secret
+secrets.json
+ctrader-credentials.json

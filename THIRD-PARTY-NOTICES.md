@@ -73,3 +73,19 @@ dependency-free incremental form; linear row scan replaced with binary search;
 duplicate price rows de-duplicated; optional exchange-supplied aggressor side
 added so real trade flags bypass tick-rule inference; value-area computation
 added. The plotting layer (plotly/mplfinance) is not used.
+
+## cTrader Open API protobuf messages
+
+`lse_terminal/engine/ctrader/messages/*_pb2.py` are vendored verbatim from
+Spotware's OpenApiPy, used under the MIT Licence (full text in that directory
+as `LICENSE.spotware`):
+
+- OpenApiPy — https://github.com/spotware/OpenApiPy
+
+Copyright (c) 2021, Spotware.
+
+Only the generated protobuf message modules are included. The remainder of the
+package is not used: it depends on Twisted, which conflicts with this
+application's asyncio event loop, and pins protobuf 3.20.1. The sole change is
+repointing the internal cross-imports from `ctrader_open_api.messages` to
+`lse_terminal.engine.ctrader.messages`.
