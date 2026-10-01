@@ -131,7 +131,8 @@ export function propagateWorkspaceLink(widgets: WorkspaceWidget[], sourceId: str
   if (!source) return widgets;
   const next = widgets.map(widget => {
     const sameGroup = source.linkGroup && widget.linkGroup === source.linkGroup;
-    if (widget.id === sourceId || sameGroup) return {
+    const followsWorkspace = !source.linkGroup && widget.id !== sourceId;
+    if (widget.id === sourceId || sameGroup || followsWorkspace) return {
       ...widget,
       symbol: widget.symbolLink === 'linked' || widget.id === sourceId ? symbol : widget.symbol,
       timeframe: widget.timeframeLink === 'linked' || widget.id === sourceId ? timeframe : widget.timeframe,

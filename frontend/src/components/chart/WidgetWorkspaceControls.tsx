@@ -8,6 +8,7 @@ import {
   addWorkspaceWidget,
   applyWorkspacePreset,
   DEFAULT_WORKSPACE_WIDGETS,
+  propagateWorkspaceLink,
   loadWorkspaceWidgets,
   removeWorkspaceWidget,
   reorderWorkspaceWidget,
@@ -50,6 +51,13 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setWidgets(loadWorkspaceWidgets()), []);
+  useEffect(() => {
+    if (!symbol) return;
+    setWidgets(previous => {
+      const chart = previous.find(widget => widget.type === 'chart');
+      return chart ? propagateWorkspaceLink(previous, chart.id, symbol, timeframe) : previous;
+    });
+  }, [symbol, timeframe]);
   useEffect(() => {
     if ((!domOpen && !heatmapOpen) || !symbol) { setDepth({ bids: [], asks: [], ready: false }); setHeatmapFrames([]); return; }
     const history = new DepthHeatmapHistory(240);
