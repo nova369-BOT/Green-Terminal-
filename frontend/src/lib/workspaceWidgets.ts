@@ -1,3 +1,5 @@
+import { normalizeWorkspace } from './workspaceLayout';
+
 /** Native Green Terminal workspace widget model.
  *
  * Widgets are not a second application. They are typed panels in the same
@@ -67,7 +69,7 @@ export function loadWorkspaceWidgets(): WorkspaceWidget[] {
     if (!Array.isArray(raw)) return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w }));
     const valid = raw.filter((w): w is WorkspaceWidget => !!w && typeof w.id === 'string' && !!WIDGET_DEFS[w.type as WorkspaceWidgetType]);
     if (!valid.length) return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w }));
-    return valid.map(w => ({
+    return normalizeWorkspace(valid.map(w => ({
       ...w,
       title: WIDGET_DEFS[w.type].title,
       symbol: typeof w.symbol === 'string' ? w.symbol : '',
@@ -80,7 +82,8 @@ export function loadWorkspaceWidgets(): WorkspaceWidget[] {
       y: Number.isFinite(w.y) ? Math.max(0, w.y) : 0,
       width: Number.isFinite(w.width) ? Math.max(2, Math.min(12, w.width)) : 4,
       height: Number.isFinite(w.height) ? Math.max(2, Math.min(24, w.height)) : 4,
-    }));
+    })));
+
   } catch { return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w })); }
 }
 
