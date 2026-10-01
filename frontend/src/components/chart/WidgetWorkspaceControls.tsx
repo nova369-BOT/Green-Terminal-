@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getBus, type BusTrade } from '@/market-data/bus';
+import { useLiveQuote } from '@/market-data/hooks';
 import { useCapabilities } from '@/market-data/hooks';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import {
@@ -29,6 +30,8 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
   const [trades, setTrades] = useState<BusTrade[]>([]);
   const { caps } = useCapabilities();
   const tradesOpen = widgets.some(widget => widget.type === 'trades' && widget.visible);
+  const statsOpen = widgets.some(widget => widget.type === 'marketStats' && widget.visible);
+  const { quote, connected, lastTickAgeMs } = useLiveQuote(symbol || null, undefined, statsOpen);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -112,6 +115,16 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
           </section>
         ))}
       </div>}
+      {statsOpen && <div style={statsPanelStyle}>
+        <div style={tradeHeaderStyle}><b>Market statistics · live</b><span style={{ color: connected ? '#58d797' : '#e1a650' }}>{connected ? 'Connected' : 'Offline'}</span></div>
+        <div style={statsGridStyle}>
+          <Stat label="Last" value={formatPrice(quote?.price)} />
+          <Stat label="Bid" value={formatPrice(quote?.bid)} />
+          <Stat label="Ask" value={formatPrice(quote?.ask)} />
+          <Stat label="Source" value={quote?.source || '—'} />
+        </div>
+        <div style={statsFootStyle}>{lastTickAgeMs == null ? 'No live tick received.' : `Last tick ${Math.round(lastTickAgeMs / 100) / 10}s ago.`}</div>
+      </div>}
       {tradesOpen && <div style={tradePanelStyle}>
         <div style={tradeHeaderStyle}><b>Trades · live</b><span>{trades.length ? `${trades.length} prints` : 'Waiting'}</span></div>
         {trades.length ? trades.map((trade, index) => <div key={`${trade.tsMs}-${index}`} style={tradeRowStyle}>
@@ -120,6 +133,10 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
       </div>}
     </div>
   );
+}
+
+function Stat({ label, value }: { label: string; value: string }): JSX.Element {
+  return <div><div style={statLabelStyle}>{label}</div><strong style={statValueStyle}>{value}</strong></div>;
 }
 
 function formatPrice(value?: number): string {
@@ -138,6 +155,11 @@ const groupLabel: React.CSSProperties = { color: '#697983', fontSize: 10, textTr
 const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 };
 const pickerItem: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, textAlign: 'left', background: '#161f26', border: '1px solid #26343d', borderRadius: 5, color: '#d8e0e5', padding: '8px 7px', cursor: 'pointer' };
 const iconStyle: React.CSSProperties = { color: '#42d493', fontSize: 17, width: 18, textAlign: 'center' };
+const statsPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
+const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 };
+const statLabelStyle: React.CSSProperties = { color: '#71808a', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em' };
+const statValueStyle: React.CSSProperties = { display: 'block', color: '#d8e3e8', fontSize: 13, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis' };
+const statsFootStyle: React.CSSProperties = { borderTop: '1px solid #293740', color: '#71808a', fontSize: 10, padding: '8px 12px' };
 const tradePanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, maxHeight: 'calc(100% - 52px)', overflow: 'auto', pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
 const tradeHeaderStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', color: '#d6e0e5', fontSize: 11, padding: '9px 10px', borderBottom: '1px solid #293740' };
 const tradeRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '5px 10px', borderBottom: '1px solid #1e292f', color: '#b8c5cc', fontSize: 11 };
