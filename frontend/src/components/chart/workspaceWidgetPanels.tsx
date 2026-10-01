@@ -8,6 +8,7 @@ import { buildVolumeProfile, type ProfilePrint, type VolumeProfileResult } from 
 import { applyPaperOrder, closePaperPosition, loadPaperAccount, paperUnrealized, savePaperAccount, type PaperAccount, type PaperFill } from '@/lib/paperTrading';
 import { drawCvd } from './cvdCanvas';
 import { drawHeatmap } from './heatmapCanvas';
+import { buildLadderModel, decimalsForTick, deriveTickFromPrices, formatPrice as fmtLadderPrice, oceanLuminance, oceanRgb, priceKey, resolveCenterKey, TradeAtPriceAccumulator, RESET_PRESETS, type LadderCurrentModel, type LadderRowModel } from '@/lib/domLadder';
 import { resolveFlowSource, useAdaptiveFlowSource, useFlowCatalogVersion, noteFlowVenueEvent, type AdaptiveFlow } from '@/lib/flowSources';
 import type { WorkspaceWidget, WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 
@@ -218,40 +219,288 @@ function bookStats(depth: DepthBookState, levels: number): { mid: number | null;
 
 const DOM_STALE_AFTER_MS = 3000;
 
+/**
+ * DOM (Depth of Market) — G-Flow parity port of ui/dom_widget.cpp.
+ *
+ * Structure (identical to the original):
+ *   BUYS | BIDS | PRICE | ASKS | SELLS | DELTA   (trade columns toggleable)
+ *   ask rows (highest first) → CURRENT row (BRAND chip + session totals)
+ *   → bid rows (best first), all on a tick grid centered at the trade price
+ *   with mid-book boot fallback; scroll via wheel / ↑ / ↓, Home recenters.
+ *
+ * Performance contract (identical to the original row-model cache): the
+ * ladder model is rebuilt only when an input actually changed — book state
+ * object identity, accumulator revision, center tick, scroll, grouping,
+ * units — never per animation frame and never on unrelated renders.
+ *
+ * Honesty contract (identical to the original): the tick grid is derived
+ * from the venue's own quoted precision; there is no invented ladder. Until
+ * the book is ready the pending state is shown. Deltas accumulate only from
+ * observed prints with a side — nothing is inferred from book shape.
+ */
 export function DomPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
-  const [levels, setLevels] = useState<8 | 12 | 16>(8);
   const { flow, depth, lastEventAt } = useResolvedDepth(widget, symbol);
   const stale = useStaleness(lastEventAt, DOM_STALE_AFTER_MS);
+  const resolved = flow.flow.status === 'resolved' ? flow.flow : null;
+  const streamId = resolved ? resolved.source.stream : 'none';
+
+  const [levels, setLevels] = useState<8 | 12 | 16>(12);
+  const [groupMult, setGroupMult] = useState<1 | 10 | 100>(1);
+  const [displayUsd, setDisplayUsd] = useState(false);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [autoCenter, setAutoCenter] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [flowWindow, setFlowWindow] = useState<'manual' | '5m' | '15m' | '1h' | 'session'>('5m');
+  const [accRev, setAccRev] = useState(0);
+  const [lastTradePrice, setLastTradePrice] = useState<number | null>(null);
+
+  const accRef = useRef<TradeAtPriceAccumulator>(new TradeAtPriceAccumulator(1));
+  const ladderRef = useRef<HTMLDivElement | null>(null);
+  const currentRowRef = useRef<HTMLDivElement | null>(null);
+
+  /* Late-bind the instrument (refresh_instrument parity): a venue swap or
+   * symbol change invalidates the old grid AND the old tape — their buckets
+   * were hashed on that instrument's prices. Fresh accumulator, fresh grid. */
+  useEffect(() => {
+    accRef.current = new TradeAtPriceAccumulator(1);
+    accRef.current.setResetMode('periodic', RESET_PRESETS.FIVE_MIN);
+    setScrollOffset(0);
+    setAutoCenter(true);
+    setLastTradePrice(null);
+    setFlowWindow('5m');
+    setAccRev(0);
+  }, [streamId]);
+
+  /* The honest grid: tick = venue-quoted precision of the observed book
+   * prices (never metadata-guessed). Rebuilt maps re-key levels onto the
+   * tick grid exactly the way the C++ row builder looks them up. */
+  const derivedBook = useMemo(() => {
+    if (!depth.ready) return null;
+    const strings: string[] = [];
+    for (const [price] of depth.bids) strings.push(price);
+    for (const [price] of depth.asks) strings.push(price);
+    const tick = strings.length ? deriveTickFromPrices(strings) : 0;
+    if (!(tick > 0)) return null;
+    if (accRef.current.getTick() !== tick) accRef.current.setTickSize(tick);
+    const bids = new Map<number, number>();
+    for (const [price, qty] of depth.bids) {
+      const p = Number(price); const q = Number(qty);
+      if (p > 0 && q > 0) bids.set(priceKey(p, tick), q);
+    }
+    const asks = new Map<number, number>();
+    for (const [price, qty] of depth.asks) {
+      const p = Number(price); const q = Number(qty);
+      if (p > 0 && q > 0) asks.set(priceKey(p, tick), q);
+    }
+    const bestBid = depth.bids.length ? Number(depth.bids[0][0]) : null;
+    const bestAsk = depth.asks.length ? Number(depth.asks[0][0]) : null;
+    return { tick, decimals: decimalsForTick(tick), bids, asks, bestBid, bestAsk };
+  }, [depth]);
+
+  /* Tape → accumulator. Only prints with a venue-side and a size buy/sell
+   * bucket; malformed prints are dropped by addTrade itself. */
+  useEffect(() => {
+    if (!resolved) return undefined;
+    const provider = resolved.source.provider;
+    const bus = getBus();
+    const off = bus.subscribeTrade((trade: BusTrade) => {
+      if (trade.symbol !== resolved.source.stream) return;
+      if (typeof trade.price !== 'number' || typeof trade.size !== 'number') return;
+      if (trade.side !== 'buy' && trade.side !== 'sell') return;
+      setLastTradePrice(trade.price);
+      if (accRef.current.addTrade(trade.price, trade.size, trade.side === 'buy')) {
+        setAccRev(accRef.current.revision());
+      }
+      noteFlowVenueEvent(provider, 'data');
+    });
+    return off;
+  }, [resolved]);
+
+  /* Flow-window watchdog (check_auto_reset parity): periodic/session reset
+   * decisions happen on wall-clock time, not on prints — a dead tape must
+   * still reset its window. */
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const before = accRef.current.revision();
+      accRef.current.checkAutoReset(Date.now());
+      if (accRef.current.revision() !== before) setAccRev(accRef.current.revision());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const applyFlowWindow = (window_: typeof flowWindow): void => {
+    setFlowWindow(window_);
+    const acc = accRef.current;
+    if (window_ === 'manual') acc.setResetMode('manual');
+    else if (window_ === 'session') acc.setResetMode('session');
+    else acc.setResetMode('periodic', window_ === '5m' ? RESET_PRESETS.FIVE_MIN : window_ === '15m' ? RESET_PRESETS.FIFTEEN_MIN : RESET_PRESETS.ONE_HOUR);
+    setAccRev(acc.revision());
+  };
+  const resetFlow = (): void => { accRef.current.reset(); setAccRev(accRef.current.revision()); };
+
+  /* update() centering parity: auto-center follows the last trade (mid-book
+   * boot fallback) quantised to the tick grid; touching scroll disengages. */
+  const centerKey = derivedBook && autoCenter
+    ? resolveCenterKey({ lastPrice: lastTradePrice, bestBid: derivedBook.bestBid, bestAsk: derivedBook.bestAsk, tick: derivedBook.tick })
+    : 0;
+
+  const model = useMemo(() => {
+    if (!derivedBook || centerKey <= 0) return null;
+    return buildLadderModel({
+      bids: { byTick: derivedBook.bids },
+      asks: { byTick: derivedBook.asks },
+      lastPrice: lastTradePrice,
+      centerKey,
+      scrollOffset,
+      groupMult,
+      levelsPerSide: levels,
+      tick: derivedBook.tick,
+      decimals: derivedBook.decimals,
+      displayUsd,
+      showTradeColumns: true,
+      accumulator: accRef.current,
+    });
+    // accRev pins the cache to accumulator revision — same role the C++
+    // cache_acc_rev_ field plays in the rebuild gate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [derivedBook, centerKey, scrollOffset, groupMult, levels, displayUsd, accRev, lastTradePrice]);
+
+  /* Keyboard parity (handle_keyboard_input): ↑/↓ shift the ladder one row,
+   * Home recenters. Wheel parity (handle_mouse_input): wheel moves the
+   * window, never the page. */
+  const shiftWindow = useCallback((delta: number) => {
+    setAutoCenter(false);
+    setScrollOffset(previous => previous + delta);
+  }, []);
+  useEffect(() => {
+    const node = ladderRef.current;
+    if (!node) return undefined;
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      shiftWindow(event.deltaY > 0 ? -1 : 1);
+    };
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, [shiftWindow]);
+  const onKeyDown = (event: React.KeyboardEvent): void => {
+    if (event.key === 'ArrowUp') { event.preventDefault(); shiftWindow(1); }
+    else if (event.key === 'ArrowDown') { event.preventDefault(); shiftWindow(-1); }
+    else if (event.key === 'Home') { event.preventDefault(); setScrollOffset(0); setAutoCenter(true); }
+  };
+
+  /* SetScrollHereY(0.5) parity: while auto-center is on, every re-center
+   * keeps the current-price chip vertically centered in the viewport. */
+  useEffect(() => {
+    if (!autoCenter) return;
+    const scroll = ladderRef.current;
+    const chip = currentRowRef.current;
+    if (!scroll || !chip) return;
+    scroll.scrollTop = Math.max(0, chip.offsetTop - scroll.clientHeight / 2 + chip.offsetHeight / 2);
+  }, [autoCenter, model]);
 
   if (flow.flow.status === 'none') {
     return <div style={bodyStyle}><StatusStrip left="DOM" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span><small>Depth is never substituted from another instrument.</small></EmptyNote></div>;
   }
 
-  const { mid, spread, imbalance } = bookStats(depth, levels);
-  const statusText = depth.ready ? (stale ? 'Stale' : 'Live') : 'Syncing';
+  const flowLabel = flowWindow === 'manual' ? 'Manual' : flowWindow === 'session' ? 'Session' : flowWindow;
 
   return <div style={bodyStyle}>
-    <StatusStrip left={`DOM · ${flow.flow.source.stream}`} right={statusText} tone={depth.ready ? (stale ? 'wait' : 'live') : 'wait'} />
+    <StatusStrip left={`DOM · ${flow.flow.source.stream}`} right={depth.ready ? (stale ? 'Stale' : 'Live') : 'Syncing'} tone={depth.ready && !stale ? 'live' : 'wait'} />
     <SwapBanner flow={flow} />
-    <div style={domToolbarStyle}>
+    <div style={{ ...domToolbarStyle, position: 'relative' }}>
+      <div style={domSegmentStyle}>
+        <button type="button" onClick={() => { setAutoCenter(!autoCenter); if (!autoCenter) setScrollOffset(0); }} style={{ ...domSegmentButtonStyle, color: autoCenter ? '#7bf0b5' : '#71808a', borderColor: autoCenter ? '#1e9b68' : '#26343d' }}>Auto center</button>
+        <button type="button" onClick={() => setSettingsOpen(!settingsOpen)} style={{ ...domSegmentButtonStyle, color: settingsOpen ? '#7bf0b5' : '#b8c5cc', borderColor: settingsOpen ? '#1e9b68' : '#26343d' }}>
+          {displayUsd ? 'USD' : 'Coin'} / {flowLabel} · SETTINGS
+        </button>
+      </div>
       <div style={domSegmentStyle}>
         {([8, 12, 16] as const).map(count => <button key={count} type="button" onClick={() => setLevels(count)} style={{ ...domSegmentButtonStyle, color: levels === count ? '#7bf0b5' : '#71808a', borderColor: levels === count ? '#1e9b68' : '#26343d' }}>{count}</button>)}
       </div>
-      <span style={sourceChipStyle}>{flow.swapped ? `${flow.flow.source.label} · FALLBACK` : flow.flow.source.label}</span>
+      {settingsOpen ? <>
+        <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)} style={domSettingsBackdrop} />
+        <div style={domSettingsPop}>
+          <div style={domSettingsSection}>PRICE GROUPING</div>
+          <div style={domSegmentStyle}>
+            {([1, 10, 100] as const).map(mult => <button key={mult} type="button" onClick={() => { setGroupMult(mult); setScrollOffset(0); setAutoCenter(true); }} style={{ ...domSegmentButtonStyle, color: groupMult === mult ? '#7bf0b5' : '#71808a', borderColor: groupMult === mult ? '#1e9b68' : '#26343d' }}>
+              {derivedBook ? fmtLadderPrice(derivedBook.tick * mult, derivedBook.decimals) : `x${mult}`}
+            </button>)}
+          </div>
+          <div style={domSettingsSection}>DISPLAY UNITS</div>
+          <div style={domSegmentStyle}>
+            <button type="button" onClick={() => setDisplayUsd(false)} style={{ ...domSegmentButtonStyle, color: !displayUsd ? '#7bf0b5' : '#71808a', borderColor: !displayUsd ? '#1e9b68' : '#26343d' }}>Coin</button>
+            <button type="button" onClick={() => setDisplayUsd(true)} style={{ ...domSegmentButtonStyle, color: displayUsd ? '#7bf0b5' : '#71808a', borderColor: displayUsd ? '#1e9b68' : '#26343d' }}>USD</button>
+          </div>
+          <div style={domSettingsSection}>CUMULATIVE FLOW</div>
+          <div style={{ ...domSegmentStyle, flexWrap: 'wrap' }}>
+            {(['manual', '5m', '15m', '1h', 'session'] as const).map(w => <button key={w} type="button" onClick={() => applyFlowWindow(w)} style={{ ...domSegmentButtonStyle, color: flowWindow === w ? '#7bf0b5' : '#71808a', borderColor: flowWindow === w ? '#1e9b68' : '#26343d' }}>
+              {w === 'manual' ? 'Manual' : w === 'session' ? 'Session' : `Every ${w}`}
+            </button>)}
+          </div>
+          <button type="button" onClick={resetFlow} style={{ ...domSegmentButtonStyle, marginTop: 8, color: '#e1a650', borderColor: '#3d3424', width: '100%' }}>Reset accumulated flow</button>
+        </div>
+      </> : null}
     </div>
-    {depth.ready ? <>
-      <div style={domQuoteRowStyle}>
-        <span>Mid <b style={{ color: '#d8e3e8' }}>{mid != null ? mid.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}</b></span>
-        <span>Spread <b style={{ color: '#d8e3e8' }}>{spread != null ? spread.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}</b></span>
-        <span>Imbalance <b style={{ color: imbalance != null && imbalance >= 0 ? '#58d797' : '#e28b91' }}>{imbalance != null ? `${imbalance >= 0 ? '+' : ''}${imbalance.toFixed(1)}%` : '—'}</b></span>
+    {!model ? <EmptyNote>
+      {depth.ready ? 'Waiting for the first print to center the ladder.' : (depth.reset || 'Waiting for a validated snapshot and sequence bridge.')}
+      <br /><small>No stale or synthetic levels are displayed — the grid renders only on the venue&apos;s own quotes.</small>
+    </EmptyNote> : <div ref={ladderRef} tabIndex={0} onKeyDown={onKeyDown} style={domLadderStyle}>
+      <div style={domHeadRowStyle}>
+        <span style={{ ...domHeadCell, textAlign: 'right' }}>BUYS</span>
+        <span style={{ ...domHeadCell, textAlign: 'right' }}>BIDS</span>
+        <span style={{ ...domHeadCell, textAlign: 'center' }}>PRICE</span>
+        <span style={{ ...domHeadCell, textAlign: 'left' }}>ASKS</span>
+        <span style={{ ...domHeadCell, textAlign: 'right' }}>SELLS</span>
+        <span style={{ ...domHeadCell, textAlign: 'right' }}>DELTA</span>
       </div>
-      <div style={domGridStyle}>
-        <div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, levels).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div>
-        <div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, levels).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div>
+      {model.asks.map(row => <LadderLevelRow key={`a${row.price}`} row={row} side="ask" />)}
+      <DomCurrentRow ref={currentRowRef} model={model.current} />
+      {model.bids.map(row => <LadderLevelRow key={`b${row.price}`} row={row} side="bid" />)}
+      <div style={domFootNoteStyle}>
+        {flow.swapped ? `${flow.flow.source.label} · FALLBACK · ` : `${flow.flow.source.label} · `}TAPE-VERIFIED · ↑↓ SCROLL · HOME RECENTERS
       </div>
-    </> : <EmptyNote>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></EmptyNote>}
+    </div>}
   </div>;
 }
+
+/** One ask/bid ladder row — render_level_row port. Grove ramp bar anchored
+ * to the price column, luminance-aware ink, trade columns faint by side. */
+function LadderLevelRow({ row, side }: { row: LadderRowModel; side: 'ask' | 'bid' }): JSX.Element {
+  const isAsk = side === 'ask';
+  const showBook = isAsk ? row.hasSize : row.hasSize;
+  const barT = 0.12 + row.depthFrac * 0.88;
+  const barColor = oceanRgb(barT);
+  const ink = oceanLuminance(barT) > 0.45 ? '#11150f' : '#eef3ef';
+  const barWidth = `${Math.max(2, row.depthFrac * 100)}%`;
+  return <div style={domRowGrid}>
+    <span style={{ ...domCellRight, color: 'rgba(50,200,120,.55)' }}>{row.hasBuy ? row.buyText : ''}</span>
+    <span style={domDepthCell}>
+      {showBook && !isAsk ? <span style={{ ...domDepthBar, right: 0, width: barWidth, background: barColor }}>
+        <span style={{ ...domDepthText, color: ink }}>{row.sizeText}</span>
+      </span> : null}
+    </span>
+    <span style={domPriceCell}>{row.priceText}</span>
+    <span style={domDepthCell}>
+      {showBook && isAsk ? <span style={{ ...domDepthBar, left: 0, width: barWidth, background: barColor }}>
+        <span style={{ ...domDepthText, color: ink, left: 4, right: 'auto' }}>{row.sizeText}</span>
+      </span> : null}
+    </span>
+    <span style={{ ...domCellRight, color: 'rgba(220,90,110,.55)' }}>{row.hasSell ? row.sellText : ''}</span>
+    <span style={{ ...domCellRight, color: row.deltaPos ? '#58d797' : '#e28b91' }}>{row.hasDelta ? row.deltaText : ''}</span>
+  </div>;
+}
+
+/** Current-price row — ELEV fill, BRAND chip, session totals, hairlines. */
+const DomCurrentRow = React.forwardRef<HTMLDivElement, { model: LadderCurrentModel }>(function DomCurrentRow({ model }, ref) {
+  return <div ref={ref} style={domCurrentRowStyle}>
+    <span style={{ ...domCellRight, color: '#58d797' }}>{model.hasBuy ? model.buyText : ''}</span>
+    <span />
+    <span style={{ display: 'flex', justifyContent: 'center' }}><b style={domPriceChipStyle}>{model.priceText}</b></span>
+    <span />
+    <span style={{ ...domCellRight, color: '#e28b91' }}>{model.hasSell ? model.sellText : ''}</span>
+    <span style={{ ...domCellRight, color: model.deltaPos ? '#58d797' : '#e28b91' }}>{model.deltaText}</span>
+  </div>;
+});
 
 /* ---------------------------------- Orderbook ---------------------------------- */
 
@@ -730,7 +979,25 @@ const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColum
 const statsFootStyle: React.CSSProperties = { borderTop: '1px solid #293740', color: '#71808a', fontSize: 10, padding: '8px 12px' };
 const statLabelStyle: React.CSSProperties = { color: '#71808a', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em' };
 const statValueStyle: React.CSSProperties = { display: 'block', color: '#d8e3e8', fontSize: 13, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis' };
+/* DOM ladder chrome, ported from ui/dom_widget.cpp's theme usage:
+ * ELEV #0e1511, TX2 #b9c0b4, TX3 #7d8a80, BRAND #b08d57 + ink #11150f,
+ * hairlines = BD2 #2c3b32. 18px rows = row_h_dense. */
 const domGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 10 };
+const domLadderStyle: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', outline: 'none', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10, lineHeight: '18px' };
+const domRowGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'minmax(30px, .7fr) 1fr minmax(64px, auto) 1fr minmax(30px, .7fr) minmax(34px, .7fr)', alignItems: 'center', minHeight: 18, padding: '0 6px' };
+const domHeadRowStyle: React.CSSProperties = { ...domRowGrid, position: 'sticky', top: 0, background: '#0e1511', zIndex: 1, height: 22, lineHeight: '22px', borderBottom: '1px solid #1c2a22' };
+const domHeadCell: React.CSSProperties = { color: '#7d8a80', fontSize: 8, letterSpacing: '.08em', textTransform: 'uppercase' };
+const domCellRight: React.CSSProperties = { textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+const domDepthCell: React.CSSProperties = { position: 'relative', height: 18, margin: '0 4px' };
+const domDepthBar: React.CSSProperties = { position: 'absolute', top: 1, bottom: 1, borderRadius: 1, minWidth: 2, display: 'flex', alignItems: 'center' };
+const domDepthText: React.CSSProperties = { position: 'absolute', right: 4, fontWeight: 600, textShadow: '0 1px 0 rgba(0,0,0,.45)' };
+const domPriceCell: React.CSSProperties = { color: '#b9c0b4', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' };
+const domCurrentRowStyle: React.CSSProperties = { ...domRowGrid, background: '#0e1511', borderTop: '1px solid #2c3b32', borderBottom: '1px solid #2c3b32', minHeight: 20 };
+const domPriceChipStyle: React.CSSProperties = { background: '#b08d57', color: '#11150f', borderRadius: 2, padding: '0 7px', lineHeight: '16px', fontWeight: 700 };
+const domSettingsBackdrop: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 40, background: 'transparent', border: 'none', cursor: 'default', padding: 0 };
+const domSettingsPop: React.CSSProperties = { position: 'absolute', top: '100%', left: 10, zIndex: 41, minWidth: 210, background: '#10171d', border: '1px solid #2c3b32', borderRadius: 4, padding: '10px 12px', display: 'grid', gap: 6, boxShadow: '0 12px 32px rgba(0,0,0,.55)' };
+const domSettingsSection: React.CSSProperties = { color: '#7d8a80', fontSize: 8, letterSpacing: '.08em', textTransform: 'uppercase', marginTop: 4 };
+const domFootNoteStyle: React.CSSProperties = { position: 'sticky', bottom: 0, color: '#7d8a80', fontSize: 8, letterSpacing: '.05em', padding: '4px 8px', background: '#0e1511', borderTop: '1px solid #1c2a22', textAlign: 'center' };
 const domToolbarStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', borderBottom: '1px solid #1e292f' };
 const domSegmentStyle: React.CSSProperties = { display: 'flex', gap: 3 };
 const domSegmentButtonStyle: React.CSSProperties = { border: '1px solid #26343d', borderRadius: 3, background: 'transparent', cursor: 'pointer', fontSize: 10, padding: '2px 7px' };

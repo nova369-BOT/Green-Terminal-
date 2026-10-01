@@ -359,6 +359,25 @@ def test_orderflow_workspace_markers():
     panels = (root / "frontend/src/components/chart/workspaceWidgetPanels.tsx").read_text()
     assert "useAdaptiveFlowSource" in panels
     assert "resolveFlowSource" in (root / "frontend/src/lib/flowSources.ts").read_text()
+    # The DOM is a G-Flow parity port: tick-grid ladder with BUYS/BIDS/PRICE/
+    # ASKS/SELLS/DELTA columns, grove-ramp depth bars, per-price trade
+    # accumulation with Manual/5m/15m/1h/Session reset windows, grouping
+    # x1/x10/x100, Coin/USD units, auto-center + scroll — driven by the
+    # pure ladder core in lib/domLadder.ts.
+    assert "TradeAtPriceAccumulator" in panels
+    assert "buildLadderModel" in panels
+    for marker in ("BUYS", "SELLS", "DELTA", "Auto center",
+                   "PRICE GROUPING", "CUMULATIVE FLOW",
+                   "Reset accumulated flow", "Coin", "USD",
+                   "SetScrollHereY"):
+        assert marker in panels, f"missing DOM parity marker {marker!r}"
+    ladder = (root / "frontend/src/lib/domLadder.ts").read_text()
+    for marker in ("dom_band_size", "check_auto_reset", "fmt_value",
+                   "fmt_signed", "session", "periodic",
+                   "oceanRgb", "resolveCenterKey"):
+        assert marker in ladder, f"missing domLadder port marker {marker!r}"
+    # The ported ladder core carries a self-checking parity suite.
+    assert (root / "frontend/tests/domLadder.test.mjs").is_file()
     # Vendored authoritative EdgeDepth source still present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
