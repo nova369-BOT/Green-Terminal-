@@ -135,7 +135,7 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
               event.preventDefault();
               const dragged = event.dataTransfer.getData('text/green-terminal-widget');
               if (dragged) setWidgets(reorderWorkspaceWidget(widgets, dragged, widget.id));
-            }} style={{ ...pillStyle, cursor: 'grab' }} title={WIDGET_DEFS[widget.type].description}>
+            }} style={{ ...pillStyle, cursor: 'grab' }} title={`${WIDGET_DEFS[widget.type].description} Source: ${widget.source || 'AUTO'}${widget.productType ? ` · ${widget.productType}` : ''}`}>
               {widget.title}
               {widget.type !== 'chart' && <button type="button" aria-label={`Close ${widget.title}`} onClick={() => remove(widget.id)} style={closeStyle}>×</button>}
             </span>
