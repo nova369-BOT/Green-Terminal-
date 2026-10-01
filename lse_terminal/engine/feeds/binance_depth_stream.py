@@ -76,8 +76,12 @@ class BinanceDepthStream:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                log.warning("binance depth %s reset: %s", self.symbol, exc)
-                yield {"type": "DEPTH_RESET", "symbol": self.symbol, "reason": str(exc)[:240]}
+                # str() can be empty for bare async exceptions (e.g. a bare
+                # ConnectionError from websockets); fall back to the exception
+                # class so the widget never shows a blank reason.
+                reason = (str(exc) or type(exc).__name__)[:240]
+                log.warning("binance depth %s reset: %s", self.symbol, reason)
+                yield {"type": "DEPTH_RESET", "symbol": self.symbol, "reason": reason}
                 await asyncio.sleep(backoff)
                 backoff = min(30.0, backoff * 2)
 

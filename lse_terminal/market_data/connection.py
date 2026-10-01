@@ -41,6 +41,12 @@ class ProviderLink:
     provider: str
     state: str = ConnectionState.DISCONNECTED
     last_msg_ms: int = 0
+    # Liveness is about DATA, never transport noise: DEPTH_RESET loop messages
+    # must not mark a link healthy (user-visible DOM stayed blank while health
+    # claimed CONNECTED). last_msg_ms still tracks transport for transport
+    # debugging; health staleness keys on last_data_ms.
+    last_data_ms: int = 0
+    resets: int = 0
     last_error: str = ""
     reconnects: int = 0
     attempt: int = 0
@@ -207,9 +213,11 @@ class StreamHub:
                     "state": ConnectionState.DISCONNECTED,
                     "configured": configured,
                     "last_msg_age_ms": None,
+                    "last_data_age_ms": None,
                     "last_error": "",
                     "subscriptions": 0,
                     "events": 0,
+                    "resets": 0,
                     "reconnects": 0,
                     "latency_ewma_ms": None,
                     "stale": False,
@@ -217,20 +225,26 @@ class StreamHub:
                 })
                 continue
             age = (now - link.last_msg_ms) if link.last_msg_ms else None
+            data_age = (now - link.last_data_ms) if link.last_data_ms else None
             state = link.state
-            if state == ConnectionState.CONNECTED and age is not None and age > _STALE_AFTER_MS:
+            # Staleness is measured on DATA arrivals, not transport messages:
+            # a reset-only stream is stale no matter how often it chatters.
+            if state == ConnectionState.CONNECTED and (
+                    data_age is None or data_age > _STALE_AFTER_MS):
                 state = ConnectionState.DEGRADED
             rows.append({
                 "provider": name,
                 "state": state,
                 "configured": configured,
                 "last_msg_age_ms": age,
+                "last_data_age_ms": data_age,
                 "last_error": link.last_error,
                 "subscriptions": len(link.symbols),
                 "events": link.events,
+                "resets": link.resets,
                 "reconnects": link.reconnects,
                 "latency_ewma_ms": round(link.latency_ewma_ms, 1) if link.latency_ewma_ms else None,
-                "stale": age is not None and age > _STALE_AFTER_MS,
+                "stale": bool(link.symbols) and (data_age is None or data_age > _STALE_AFTER_MS),
                 "symbols": sorted(link.symbols),
             })
         return rows
@@ -320,7 +334,10 @@ class StreamHub:
         agen = stream_fn(symbols)
         link.opened_ms = now_ms()
         link.attempt = 0
-        self._set_state(link, ConnectionState.CONNECTED)
+        # No eager CONNECTED here: the state flips only when the FIRST real
+        # data item arrives (snapshot/update/tick in _publish_item). A stream
+        # that endlessly emits DEPTH_RESET against an unreachable upstream
+        # stays CONNECTING with the reset reason — never "live".
         try:
             async for item in agen:
                 if link.task is None or link.generation != gen or not link.symbols:
@@ -354,7 +371,18 @@ class StreamHub:
                 provider_ts_ms = None
             else:
                 fv = float(raw_ts)
-                provider_ts_ms = int(fv / 1e6) if fv > 1e16 else (int(fv / 1e3) if fv > 1e12 else int(fv * 1000))
+                # Epoch magnitudes (2026-ish): ns ≈ 1.8e18, µs ≈ 1.8e15,
+                # ms ≈ 1.8e12, s ≈ 1.8e9. The old thresholds treated real ms
+                # stamps (1.8e12 > 1e12) as µs and divided by 1000, yielding a
+                # ~56-year "latency" — lie of the worst kind.
+                if fv > 1e17:
+                    provider_ts_ms = int(fv / 1e6)
+                elif fv > 1e14:
+                    provider_ts_ms = int(fv / 1e3)
+                elif fv > 1e11:
+                    provider_ts_ms = int(fv)
+                else:
+                    provider_ts_ms = int(fv * 1000)
         except Exception:
             provider_ts_ms = None
         if provider_ts_ms and now >= provider_ts_ms >= 0:
@@ -373,6 +401,24 @@ class StreamHub:
             depth["type"] = depth_type
             depth["provider"] = provider
             depth["recv_ms"] = now
+            if depth_type == "DEPTH_RESET":
+                link.resets += 1
+                reason = str(item.get("reason") or "").strip() or "upstream reset"
+                if link.last_data_ms:
+                    # The book WAS valid; a reset degrades it until the next
+                    # snapshot/update revalidates the sequence.
+                    self._set_state(link, ConnectionState.DEGRADED,
+                                    error=f"depth reset: {reason}")
+                else:
+                    # No book has ever been delivered — keep CONNECTING and
+                    # surface the cause. Never fan out a liveness claim.
+                    self._set_state(link, ConnectionState.CONNECTING,
+                                    error=reason)
+            else:
+                link.last_data_ms = now
+                if link.state != ConnectionState.CONNECTED:
+                    link.last_error = ""
+                    self._set_state(link, ConnectionState.CONNECTED)
             self.bus.publish(BusEvent(
                 type=EventType(depth_type), payload=depth, symbol=symbol,
                 provider=provider, provider_ts_ms=provider_ts_ms,
@@ -395,6 +441,13 @@ class StreamHub:
             self._note_error(provider, symbol, drop_reason)
             # still forward a status error to subscribers? drop tick only
             return
+
+        # A validated real tick: this — and only this — proves the stream is
+        # live. Flip CONNECTING/RECONNECTING→CONNECTED on first data.
+        link.last_data_ms = now
+        if link.state != ConnectionState.CONNECTED:
+            link.last_error = ""
+            self._set_state(link, ConnectionState.CONNECTED)
 
         bus_payload = item.copy()
         bus_payload["type"] = "tick"

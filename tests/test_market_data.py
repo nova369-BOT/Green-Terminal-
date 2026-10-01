@@ -29,17 +29,24 @@ def client():
 
 
 def test_capabilities_never_fake_depth(client: TestClient):
+    """Depth flags are DERIVED from registrations, never hardcoded.
+
+    The binance-depth adapter genuinely provides verified L2 (diff-depth
+    stream + REST snapshot bridge), so the aggregate l2 flag is true exactly
+    because a provider formally advertises L2. L3 stays false: no MBO feed.
+    """
     body = client.get("/api/market-data/capabilities").json()
-    assert body["depth"]["l2"] is False
-    assert body["depth"]["l3"] is False
     providers = {p["provider"]: p for p in body["providers"]}
-    assert set(providers) >= {"demo", "lse", "userdata"}
+    assert set(providers) >= {"demo", "lse", "userdata", "binance-depth"}
+    assert "L2" in providers["binance-depth"]["formal"]
+    assert body["depth"]["l2"] is True
+    assert body["depth"]["l3"] is False
     # Formal caps: demo streams, userdata is history-only.
     assert "WEBSOCKET" in providers["demo"]["formal"]
     assert "WEBSOCKET" not in providers["userdata"]["formal"]
-    for p in providers.values():
-        assert p["l2"] is False and p["l3"] is False
-        assert "L2" not in p["formal"]
+    for name, p in providers.items():
+        # Only the verified Binance L2 adapter may claim depth capability.
+        assert ("L2" in p["formal"]) == (name == "binance-depth"), name
         assert "L3_MBO" not in p["formal"]
     # Reserved event types are listed for future consumers.
     assert "ORDER_BOOK_UPDATE" in body["event_types"]
@@ -241,11 +248,15 @@ def test_shell_phase3_ui_markers():
     html = (Path(__file__).resolve().parents[1]
             / "lse_terminal/ui/static/index.html").read_text()
     for needle in (
-        "GREEN TERMINAL", "instrument-bar", "info-rail", "term-status",
+        "GREEN TERMINAL", "instrument-bar", "term-status",
         "ws-controls", "chart-stage", "ib-live", "watchlist",
         "chart-type", "ind-open",
+        # The OVERVIEW/MARKET/SESSION/TECHNICAL info rail was retired; the
+        # native widget workspace rail replaced it (plan item 12).
+        "rail-workspace",
     ):
         assert needle in html, f"missing {needle}"
+    assert "info-rail" not in html, "the retired info rail must not come back"
 
 
 def test_no_demo_auto_open_on_price_chart():
@@ -278,18 +289,19 @@ def test_edgedepth_status_endpoint(client: TestClient):
     assert "candles" not in body and "price" not in body
 
 
-def test_edgedepth_config_js_dynamic(client: TestClient):
-    """Browser WS config is served by GT (points at the managed gateway)."""
+def test_edgedepth_config_js_retired(client: TestClient):
+    """G-Flow retirement (plan item 15): the iframed second UI's config route
+    is gone. The gateway survives as an INTERNAL service only — probed by the
+    supervisor via /api/edgedepth/status, never by the browser."""
     r = client.get("/edgedepth/edgedepth-config.js")
-    assert r.status_code == 200, r.text
-    assert "__EDGEDEPTH_WS_URL__" in r.text
-    assert "ws://" in r.text
-    # One product: no instruction to open a second EdgeDepth app.
+    assert r.status_code == 404
     from pathlib import Path
     html = (Path(__file__).resolve().parents[1]
             / "lse_terminal/ui/static/index.html").read_text()
+    # One product: no second-UI chrome may linger in the shell.
     assert "Open EdgeDepth full" not in html
-    assert 'id="of-fullscreen"' in html
+    assert 'id="of-fullscreen"' not in html
+    assert "edgedepth" not in html
 
 
 def test_shell_waiting_markers():
@@ -303,50 +315,56 @@ def test_shell_waiting_markers():
     assert "ts-edge" in html
 
 
-def test_edgedepth_artifacts_endpoint(client: TestClient):
-    """Real EdgeDepth build outputs are present (CI-built, committed)."""
+def test_edgedepth_artifacts_endpoint_retired(client: TestClient):
+    """G-Flow retirement (plan item 15): the 6.1 MB WASM runtime and its
+    artifacts/config routes were deleted; the status probe route remains."""
     r = client.get("/api/edgedepth/artifacts")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["source"] == "third_party/edgedepth-terminal"
-    assert "present" in body and "ready" in body
-    assert body["present"].get("coi-serviceworker.js") is True
-    # All four runtime artifacts ship with the integration.
-    for key in ("index.html", "index.js", "index.wasm", "index.data"):
-        assert body["present"].get(key) is True, f"missing {key}: {body['present']}"
-    assert body["ready"] is True
-    # Served endpoints must return real bytes (wasm magic).
-    idx = client.get("/edgedepth/index.html")
-    assert idx.status_code == 200
-    assert "edgedepth-config.js" in idx.text
-    wasm = client.get("/edgedepth/index.wasm")
-    assert wasm.status_code == 200
-    assert wasm.content[:4] == b"\x00asm"
+    assert r.status_code == 404
+    r = client.get("/api/edgedepth/config")
+    assert r.status_code == 404
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    # The runtime payload itself must be gone from the shipped static tree.
+    static = root / "lse_terminal/ui/static/edgedepth"
+    assert not (static / "index.wasm").exists()
+    # But the status route still reports the managed internal gateway.
+    status = client.get("/api/edgedepth/status")
+    assert status.status_code == 200
 
 
 def test_orderflow_workspace_markers():
-    """MARKET → G-FLOW section hosts the real order-flow iframe."""
+    """Order flow lives in the NATIVE widget workspace (plan items 8–15).
+
+    The G-Flow iframe/second UI is retired; the shell ships the 12-widget
+    native workspace instead, and the vendored EdgeDepth sources stay in the
+    tree so the internal gateway can be rebuilt truthfully."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     html = (root / "lse_terminal/ui/static/index.html").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
-    assert 'id="orderflow"' in html
-    assert 'id="of-frame"' in html
-    assert "GT DATA ENGINE" in html
-    assert "showOrderFlowPage" in app
-    assert "sub-mk-flow" in app
-    # No lookalike DOM ladder in the shell (real engine lives in the iframe).
-    assert "of-ladder" not in html
-    # Vendored authoritative EdgeDepth source present.
+    # No iframe shell, no G-Flow navigation — one chart surface.
+    assert 'id="orderflow"' not in html
+    assert 'id="of-frame"' not in html
+    assert "showOrderFlowPage" not in app
+    # Native widget workspace is the order-flow host.
+    widgets = (root / "frontend/src/lib/workspaceWidgets.ts").read_text()
+    for widget_type in ("dom", "footprint", "heatmap", "trades", "cvdDelta",
+                        "volumeProfile", "orderbook", "marketStats", "watchlist",
+                        "paperTrading", "replay", "chart"):
+        assert f"'{widget_type}'" in widgets, f"missing widget {widget_type}"
+    # The DOM reads the verified Binance L2 stream, via venue resolution
+    # (never by subscribing the display symbol directly).
+    panels = (root / "frontend/src/components/chart/workspaceWidgetPanels.tsx").read_text()
+    assert "resolveFlowSource" in panels
+    assert "bus.stream([stream], flow.source.provider)" in panels
+    # Vendored authoritative EdgeDepth source still present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
-    assert (root / "third_party/edgedepth-terminal/src/core/heatmap_manager.cpp").is_file()
-    assert (root / "third_party/edgedepth-terminal/protos/messages.proto").is_file()
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
 
 
 def test_gateway_serves_hyperliquid_only():
-    """Gateway registry is HL-only for now (Binance unregistered); Order Flow
-    boots hl/BTC, reachable where Binance is blocked."""
+    """Gateway registry remains HL-only (Binance is served by the verified
+    Python provider, not the gateway). Its HL sources stay intact."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     main = (root / "third_party/edgedepth-gateway/cmd/edgedepth-gateway/main.go").read_text()
@@ -356,5 +374,3 @@ def test_gateway_serves_hyperliquid_only():
     for name in ("adapter.go", "feed.go", "rest.go", "stream.go", "ticker.go"):
         assert (hl / name).is_file(), f"missing hyperliquid/{name}"
     assert '"hl"' in (hl / "adapter.go").read_text()
-    app = (root / "lse_terminal/ui/static/app.js").read_text()
-    assert "/edgedepth/index.html?exchange=hl&symbol=BTC" in app

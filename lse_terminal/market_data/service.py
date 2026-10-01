@@ -48,13 +48,19 @@ class MarketDataService:
 
     def capabilities_payload(self) -> dict:
         providers = [ad.get_capabilities().to_dict() for _, ad in sorted(self.adapters.items())]
+        formal = {cap for p in providers for cap in p.get("formal", [])}
         return {
             "providers": providers,
             "event_types": [e.value for e in EventType],
             "depth": {
-                "l2": False,
-                "l3": False,
-                "note": "no L2/L3 source wired; flags stay false until a verified feed exists",
+                # Derived from the registered provider capabilities — the
+                # binance-depth adapter formally advertises L2 and IS wired,
+                # so a hardcoded False would contradict the provider rows in
+                # the very same payload.
+                "l2": "L2" in formal,
+                "l3": "L3" in formal,
+                "note": "aggregate of registered provider FORMAL_CAPABILITIES"
+                        if formal else "no providers registered",
             },
             "models": ["NormalizedQuote", "NormalizedTrade", "NormalizedCandle", "MarketStatus"],
         }
@@ -69,8 +75,9 @@ class MarketDataService:
             else:
                 by_name[h["provider"]].update({
                     k: v for k, v in h.items()
-                    if k in ("state", "last_msg_age_ms", "last_error", "subscriptions",
-                             "events", "reconnects", "latency_ewma_ms", "stale", "symbols")
+                    if k in ("state", "last_msg_age_ms", "last_data_age_ms", "last_error",
+                             "subscriptions", "events", "resets", "reconnects",
+                             "latency_ewma_ms", "stale", "symbols")
                     and v is not None
                 })
         return {

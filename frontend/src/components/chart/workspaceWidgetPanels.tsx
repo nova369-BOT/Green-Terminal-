@@ -36,10 +36,18 @@ function Stat({ label, value }: { label: string; value: string }): JSX.Element {
   return <div style={statsCellStyle}><div style={statLabelStyle}>{label}</div><strong style={statValueStyle}>{value}</strong></div>;
 }
 
-function applyDepth(current: Array<[string, string]>, updates: Array<[string, string]>): Array<[string, string]> {
+/** Binance semantics: a level with absolute quantity 0 means REMOVE. The
+ * venue emits fixed-precision strings ("0.00000000"), so compare numerically —
+ * the old `quantity === '0'` never matched and dead levels accumulated.
+ * Bids sort best-first DESC; asks sort best-first ASC (the old single DESC
+ * sort put the highest ask on top and inverted the book / spread / mid). */
+function applyDepth(current: Array<[string, string]>, updates: Array<[string, string]>, side: 'bid' | 'ask'): Array<[string, string]> {
   const map = new Map(current);
-  for (const [price, quantity] of updates) quantity === '0' ? map.delete(price) : map.set(price, quantity);
-  return [...map.entries()].sort((a, b) => Number(b[0]) - Number(a[0]));
+  for (const [price, quantity] of updates) Number(quantity) === 0 ? map.delete(price) : map.set(price, quantity);
+  const rows = [...map.entries()];
+  return side === 'bid'
+    ? rows.sort((a, b) => Number(b[0]) - Number(a[0]))
+    : rows.sort((a, b) => Number(a[0]) - Number(b[0]));
 }
 
 function StatusStrip({ left, right, tone }: { left: string; right: string; tone: 'live' | 'wait' | 'muted' }): JSX.Element {
@@ -55,19 +63,29 @@ function EmptyNote({ children }: { children: React.ReactNode }): JSX.Element {
 
 export function TradesPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
+  const catalogVersion = useFlowCatalogVersion();
+  /* Venue resolution, same rule as the DOM: subscribe the resolved venue
+   * stream (BTCUSDT) — the raw display symbol (BTC/USD) is not a Binance
+   * stream id, so subscribing it only produced reset loops and an empty
+   * tape. Trades also filter on the venue stream id, never the display name. */
+  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
+  const stream = flow.status === 'resolved' ? flow.source.stream : null;
   const [trades, setTrades] = useState<BusTrade[]>([]);
   useEffect(() => {
-    if (!sym) return undefined;
+    if (!stream || flow.status !== 'resolved') { setTrades([]); return undefined; }
     const bus = getBus();
-    const stop = bus.stream([sym]);
+    const stop = bus.stream([stream], flow.source.provider);
     const off = bus.subscribeTrade((trade) => {
-      if (trade.symbol !== sym) return;
+      if (trade.symbol !== stream) return;
       setTrades(previous => [trade, ...previous].slice(0, 24));
     });
     return () => { off(); stop(); };
-  }, [sym]);
+  }, [stream, flow]);
+  if (flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left="Time & Sales" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  }
   return <div style={bodyStyle}>
-    <StatusStrip left="Time & Sales" right={trades.length ? `Live · ${trades.length} prints` : 'Waiting'} tone={trades.length ? 'live' : 'wait'} />
+    <StatusStrip left={`Time & Sales · ${stream}`} right={trades.length ? `Live · ${trades.length} prints` : 'Waiting'} tone={trades.length ? 'live' : 'wait'} />
     {trades.length ? trades.map((trade, index) => <div key={`${trade.tsMs}-${index}`} style={tradeRowStyle}>
       <time>{new Date(trade.tsMs).toLocaleTimeString()}</time>
       <strong style={{ color: trade.side === 'buy' ? '#58d797' : trade.side === 'sell' ? '#e28b91' : '#b8c5cc' }}>{formatPrice(trade.price)}</strong>
@@ -85,12 +103,21 @@ function NotProvided({ label }: { label: string }): JSX.Element {
 
 export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  const { quote, connected, lastTickAgeMs } = useLiveQuote(sym || null, undefined, true);
+  const catalogVersion = useFlowCatalogVersion();
+  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
+  const resolved = flow.status === 'resolved' ? flow.source : null;
+  /* The display symbol alone ("BTC/USD") is not a provider stream and the
+   * subscribe carries no provider hint → the hub rejects with "provider
+   * required" and no tick ever arrived. Follow the resolved venue stream. */
+  const { quote, connected, lastTickAgeMs } = useLiveQuote(resolved?.stream ?? null, resolved?.provider, true);
   /* The normalized tick carries price/bid/ask/source only. Mark, index,
    * funding, open interest and the 24h set are NOT published into this feed
    * today, so they render NOT PROVIDED instead of candle-derived guesses. */
+  if (flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`${sym || 'No symbol'} · expanded`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  }
   return <div style={bodyStyle}>
-    <StatusStrip left={`${sym || 'No symbol'} · expanded`} right={connected ? 'Connected' : 'Offline'} tone={connected ? 'live' : 'wait'} />
+    <StatusStrip left={`${(resolved?.stream ?? sym) || 'No symbol'} · expanded`} right={connected ? (quote ? 'Connected' : 'Connecting') : 'Offline'} tone={quote ? 'live' : connected ? 'wait' : 'muted'} />
     <div style={statsCellGridStyle}>
       <Stat label="Last" value={formatPrice(quote?.price)} />
       <Stat label="Bid" value={formatPrice(quote?.bid)} />
@@ -135,8 +162,8 @@ function useResolvedDepth(widget: WorkspaceWidget, symbol: string): { flow: Retu
       const bids = Array.isArray(event.bids || event.b) ? (event.bids || event.b) as Array<[string, string]> : [];
       const asks = Array.isArray(event.asks || event.a) ? (event.asks || event.a) as Array<[string, string]> : [];
       setDepth(previous => event.type === 'ORDER_BOOK_SNAPSHOT'
-        ? { bids, asks, ready: false }
-        : { bids: applyDepth(previous.bids, bids), asks: applyDepth(previous.asks, asks), ready: true });
+        ? { bids: [...bids].sort((a, b) => Number(b[0]) - Number(a[0])), asks: [...asks].sort((a, b) => Number(a[0]) - Number(b[0])), ready: false }
+        : { bids: applyDepth(previous.bids, bids, 'bid'), asks: applyDepth(previous.asks, asks, 'ask'), ready: true });
     });
     return () => { off(); stop(); };
   }, [flow]);
@@ -353,18 +380,21 @@ function fmtReplayRange(startMs?: number, endMs?: number): string {
 export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
   const tf = widget.timeframe || timeframe;
+  const catalogVersion = useFlowCatalogVersion();
+  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
+  const stream = flow.status === 'resolved' ? flow.source.stream : null;
   const printsRef = useRef<FootprintPrint[]>([]);
   const dirtyRef = useRef(false);
   const [view, setView] = useState<{ periods: FootprintPeriod[]; ignoredNoSide: number }>({ periods: [], ignoredNoSide: 0 });
   useEffect(() => {
-    if (!sym) return undefined;
+    if (!stream || flow.status !== 'resolved') { setView({ periods: [], ignoredNoSide: 0 }); return undefined; }
     printsRef.current = [];
     dirtyRef.current = false;
     setView({ periods: [], ignoredNoSide: 0 });
     const bus = getBus();
-    const stop = bus.stream([sym]);
+    const stop = bus.stream([stream], flow.source.provider);
     const off = bus.subscribeTrade((trade) => {
-      if (trade.symbol !== sym || typeof trade.price !== 'number') return;
+      if (trade.symbol !== stream || typeof trade.price !== 'number') return;
       printsRef.current.push({ tsMs: trade.tsMs, price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -377,7 +407,10 @@ export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps):
       setView(bucketPrints(printsRef.current, timeframeToMs(tf), Date.now(), FOOTPRINT_PERIODS));
     }, 400);
     return () => { off(); stop(); clearInterval(flush); };
-  }, [sym, tf]);
+  }, [stream, flow, tf]);
+  if (flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`Footprint · ${tf} periods`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  }
   const hasAny = view.periods.some(period => period.cells.length);
   return <div style={bodyStyle}>
     <StatusStrip left={`Footprint · ${tf} periods`} right={hasAny ? 'Real prints' : 'Waiting'} tone={hasAny ? 'live' : 'wait'} />
@@ -405,6 +438,9 @@ export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps):
 export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
   const tf = widget.timeframe || timeframe;
+  const catalogVersion = useFlowCatalogVersion();
+  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
+  const stream = flow.status === 'resolved' ? flow.source.stream : null;
   const [mode, setMode] = useState<'cvd' | 'delta'>('cvd');
   const printsRef = useRef<CvdPrint[]>([]);
   const dirtyRef = useRef(false);
@@ -412,14 +448,14 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    if (!sym) return undefined;
+    if (!stream || flow.status !== 'resolved') { setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 }); return undefined; }
     printsRef.current = [];
     dirtyRef.current = false;
     setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 });
     const bus = getBus();
-    const stop = bus.stream([sym]);
+    const stop = bus.stream([stream], flow.source.provider);
     const off = bus.subscribeTrade((trade) => {
-      if (trade.symbol !== sym) return;
+      if (trade.symbol !== stream) return;
       printsRef.current.push({ tsMs: trade.tsMs, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -430,7 +466,7 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
       setSeries(buildCvdSeries(printsRef.current, timeframeToMs(tf), Date.now(), 60));
     }, 400);
     return () => { off(); stop(); clearInterval(flush); };
-  }, [sym, tf]);
+  }, [stream, flow, tf]);
   useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
@@ -443,6 +479,9 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
   }, [series, mode]);
   const last = series.cumulative[series.cumulative.length - 1] || 0;
   const reset = () => { printsRef.current = []; dirtyRef.current = false; setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 }); };
+  if (flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`${mode === 'cvd' ? 'Cumulative delta' : 'Period delta'} · ${tf}`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  }
   return <div style={bodyStyle}>
     <StatusStrip left={`${mode === 'cvd' ? 'Cumulative delta' : 'Period delta'} · ${tf}`} right={formatPrice(last)} tone={last >= 0 ? 'live' : 'wait'} />
     <div style={domToolbarStyle}>
@@ -511,19 +550,22 @@ export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element 
 
 export function VolumeProfilePanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
+  const catalogVersion = useFlowCatalogVersion();
+  const flow = useMemo(() => resolveFlowSource(sym), [sym, catalogVersion]);
+  const stream = flow.status === 'resolved' ? flow.source.stream : null;
   const [mode, setMode] = useState<'volume' | 'delta'>('volume');
   const printsRef = useRef<ProfilePrint[]>([]);
   const dirtyRef = useRef(false);
   const [profile, setProfile] = useState<VolumeProfileResult | null>(null);
   useEffect(() => {
-    if (!sym) return undefined;
+    if (!stream || flow.status !== 'resolved') { setProfile(null); return undefined; }
     printsRef.current = [];
     dirtyRef.current = false;
     setProfile(null);
     const bus = getBus();
-    const stop = bus.stream([sym]);
+    const stop = bus.stream([stream], flow.source.provider);
     const off = bus.subscribeTrade((trade) => {
-      if (trade.symbol !== sym || typeof trade.price !== 'number') return;
+      if (trade.symbol !== stream || typeof trade.price !== 'number') return;
       printsRef.current.push({ price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -534,7 +576,10 @@ export function VolumeProfilePanel({ widget, symbol }: WidgetPanelProps): JSX.El
       setProfile(buildVolumeProfile(printsRef.current, 24));
     }, 600);
     return () => { off(); stop(); clearInterval(flush); };
-  }, [sym]);
+  }, [stream, flow]);
+  if (flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left={`Session profile · ${sym || '—'}`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span></EmptyNote></div>;
+  }
   return <div style={bodyStyle}>
     <StatusStrip left={`Session profile · ${sym || '—'}`} right={profile ? `POC ${profile.poc != null ? profile.poc.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}` : 'Waiting'} tone={profile ? 'live' : 'wait'} />
     <div style={domToolbarStyle}>
