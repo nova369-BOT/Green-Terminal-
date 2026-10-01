@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getBus, type BusDepth, type BusTrade } from '@/market-data/bus';
 import { useCapabilities, useLiveQuote } from '@/market-data/hooks';
 import { DepthHeatmapHistory, type HeatmapFrame } from '@/lib/depthHeatmap';
+import { bucketPrints, FOOTPRINT_PERIODS, formatCompact, isBuyImbalance, isSellImbalance, MAX_RETAINED_PRINTS, timeframeToMs, type FootprintPeriod, type FootprintPrint } from '@/lib/footprintAggregator';
+import { drawHeatmap } from './heatmapCanvas';
 import { resolveFlowSource } from '@/lib/flowSources';
 import type { WorkspaceWidget, WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 
@@ -165,31 +167,53 @@ export function DomPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
 
 /* ---------------------------------- Footprint ---------------------------------- */
 
-export function FootprintPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
+export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  const [footprint, setFootprint] = useState<Record<string, { buy: number; sell: number }>>({});
+  const tf = widget.timeframe || timeframe;
+  const printsRef = useRef<FootprintPrint[]>([]);
+  const dirtyRef = useRef(false);
+  const [view, setView] = useState<{ periods: FootprintPeriod[]; ignoredNoSide: number }>({ periods: [], ignoredNoSide: 0 });
   useEffect(() => {
     if (!sym) return undefined;
-    setFootprint({});
+    printsRef.current = [];
+    dirtyRef.current = false;
+    setView({ periods: [], ignoredNoSide: 0 });
     const bus = getBus();
     const stop = bus.stream([sym]);
     const off = bus.subscribeTrade((trade) => {
-      if (trade.symbol !== sym || !trade.side || typeof trade.price !== 'number') return;
-      setFootprint(previous => {
-        const key = String(trade.price);
-        const row = previous[key] || { buy: 0, sell: 0 };
-        const size = typeof trade.size === 'number' ? trade.size : 0;
-        return { ...previous, [key]: trade.side === 'buy' ? { ...row, buy: row.buy + size } : { ...row, sell: row.sell + size } };
-      });
+      if (trade.symbol !== sym || typeof trade.price !== 'number') return;
+      printsRef.current.push({ tsMs: trade.tsMs, price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
+      if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
+      dirtyRef.current = true;
     });
-    return () => { off(); stop(); };
-  }, [sym]);
-  const rows = Object.entries(footprint).sort((a, b) => Number(b[0]) - Number(a[0])).slice(0, 18);
+    /* Aggregation runs on a timer, not per print: a 500-trade/s burst never
+     * schedules 500 renders. */
+    const flush = setInterval(() => {
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      setView(bucketPrints(printsRef.current, timeframeToMs(tf), Date.now(), FOOTPRINT_PERIODS));
+    }, 400);
+    return () => { off(); stop(); clearInterval(flush); };
+  }, [sym, tf]);
+  const hasAny = view.periods.some(period => period.cells.length);
   return <div style={bodyStyle}>
-    <StatusStrip left="Footprint · live prints" right={rows.length ? 'Real prints' : 'Waiting'} tone={rows.length ? 'live' : 'wait'} />
-    <div style={footprintHeaderStyle}><span>Price</span><span>Buy × Sell</span><span>Delta</span></div>
-    {rows.map(([price, row]) => <div key={price} style={footprintRowStyle}><span>{price}</span><span>{row.buy} × {row.sell}</span><strong style={{ color: row.buy - row.sell >= 0 ? '#58d797' : '#e28b91' }}>{row.buy - row.sell}</strong></div>)}
-    {!rows.length && <EmptyNote>Waiting for provider trade prints with aggressor side.<br /><small>Buy/sell is never inferred from candle direction.</small></EmptyNote>}
+    <StatusStrip left={`Footprint · ${tf} periods`} right={hasAny ? 'Real prints' : 'Waiting'} tone={hasAny ? 'live' : 'wait'} />
+    {hasAny ? <div style={footColumnsStyle}>
+      {view.periods.map((period, periodIndex) => <div key={period.startMs} style={{ ...footColumnStyle, borderStyle: periodIndex === view.periods.length - 1 ? 'dashed' : 'solid' }}>
+        <div style={footColumnTimeStyle}>{new Date(period.startMs).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</div>
+        {period.cells.map((cell, index) => {
+          const buyImb = isBuyImbalance(period.cells, index);
+          const sellImb = isSellImbalance(period.cells, index);
+          return <div key={cell.price} style={{ ...footCellStyle, background: buyImb ? '#318f6940' : sellImb ? '#b55e6340' : cell.price === period.poc ? '#e1b65c1f' : 'transparent' }}>
+            <span style={{ color: '#8fa8b3' }}>{cell.price}</span>
+            <span><b style={{ color: '#58d797', fontWeight: 600 }}>{formatCompact(cell.buy)}</b><span style={{ color: '#5f6e77' }}> × </span><b style={{ color: '#e28b91', fontWeight: 600 }}>{formatCompact(cell.sell)}</b></span>
+          </div>;
+        })}
+        {!period.cells.length && <div style={footEmptyCell}>—</div>}
+        <div style={{ ...footDeltaStyle, color: period.delta >= 0 ? '#58d797' : '#e28b91' }}>Δ {formatCompact(period.delta)}</div>
+      </div>)}
+    </div> : <EmptyNote>Waiting for provider trade prints with aggressor side.<br /><small>Buy/sell is never inferred from candle direction.</small></EmptyNote>}
+    {hasAny && <div style={statsFootStyle}>Live prints since panel opened{view.ignoredNoSide ? ` · ${view.ignoredNoSide} prints lacked side data` : ''} · POC highlighted · 3:1 imbalances shaded</div>}
   </div>;
 }
 
@@ -231,6 +255,8 @@ export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element 
   const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol]);
   const historyRef = useRef<DepthHeatmapHistory | null>(null);
   const [frames, setFrames] = useState<HeatmapFrame[]>([]);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (flow.status !== 'resolved') return undefined;
     const stream = flow.source.stream;
@@ -247,17 +273,26 @@ export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element 
     });
     return () => { off(); stop(); historyRef.current = null; };
   }, [flow]);
+  /* Redraw on new frames AND on panel resize (widget drag-resize included). */
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const canvas = canvasRef.current;
+    if (!wrap || !canvas || flow.status !== 'resolved') return undefined;
+    const draw = () => drawHeatmap(canvas, { width: wrap.clientWidth, height: wrap.clientHeight, frames, devicePixelRatio: window.devicePixelRatio || 1 });
+    const observer = new ResizeObserver(draw);
+    observer.observe(wrap);
+    draw();
+    return () => observer.disconnect();
+  }, [frames, flow]);
   if (flow.status === 'none') {
     return <div style={bodyStyle}><StatusStrip left="Resting liquidity history" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span><small>Heatmap is never painted from candles or trade prints.</small></EmptyNote></div>;
   }
-  const recent = frames.slice(-12);
   return <div style={bodyStyle}>
-    <StatusStrip left={`Resting liquidity · ${flow.source.stream}`} right={frames.length ? `${frames.length} frames` : 'Waiting'} tone={frames.length ? 'live' : 'wait'} />
-    {recent.length ? <div style={{ padding: '4px 10px 10px' }}>{recent.map((frame, index) => <div key={`${frame.receivedAt}-${index}`} style={heatmapFrameStyle}>
-      <time>{new Date(frame.receivedAt).toLocaleTimeString()}</time>
-      <span style={{ color: '#58d797' }}>B {frame.bids.length}</span>
-      <span style={{ color: '#e28b91' }}>A {frame.asks.length}</span>
-    </div>)}</div> : <EmptyNote>Waiting for validated depth frames.<br /><small>Only resting Binance L2 liquidity is recorded — never candle volume.</small></EmptyNote>}
+    <StatusStrip left={`Liquidity · ${flow.source.stream}`} right={frames.length ? `${frames.length} frames` : 'Waiting'} tone={frames.length ? 'live' : 'wait'} />
+    <div ref={wrapRef} style={heatWrapStyle}>
+      {frames.length ? <canvas ref={canvasRef} style={heatCanvasStyle} /> : <EmptyNote>Building liquidity history…<br /><small>Only validated Binance L2 frames — never candle volume or trade prints.</small></EmptyNote>}
+    </div>
+    <div style={statsFootStyle}>Intensity = resting size vs visible max · green bids / red asks · dashed line = best mid</div>
   </div>;
 }
 
@@ -341,7 +376,12 @@ const domQuoteRowStyle: React.CSSProperties = { display: 'flex', justifyContent:
 const domRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 6, color: '#b8c5cc', fontSize: 10, padding: '3px 0', borderBottom: '1px solid #1e292f' };
 const domSideBid: React.CSSProperties = { color: '#58d797', fontSize: 9 };
 const domSideAsk: React.CSSProperties = { color: '#e28b91', fontSize: 9 };
-const footprintHeaderStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.4fr .6fr', color: '#71808a', fontSize: 9, padding: '8px 10px 4px', textTransform: 'uppercase' };
-const footprintRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.4fr .6fr', color: '#c0cbd0', fontSize: 10, padding: '4px 10px', borderTop: '1px solid #1e292f' };
-const heatmapFrameStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr .5fr .5fr', gap: 8, color: '#aab8bf', fontSize: 10, padding: '5px 0', borderTop: '1px solid #1e292f' };
+const footColumnsStyle: React.CSSProperties = { display: 'flex', alignItems: 'stretch', gap: 6, padding: '8px 10px', overflowX: 'auto', flex: 1, minHeight: 0 };
+const footColumnStyle: React.CSSProperties = { flex: '0 0 108px', display: 'flex', flexDirection: 'column', border: '1px solid #26343d', borderRadius: 4, overflow: 'hidden', background: '#0e151b' };
+const footColumnTimeStyle: React.CSSProperties = { textAlign: 'center', color: '#71808a', fontSize: 9, padding: '4px 2px', borderBottom: '1px solid #1e292f', background: '#121b21' };
+const footCellStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 4, padding: '3px 6px', fontSize: 9, borderBottom: '1px solid #1a2329' };
+const footEmptyCell: React.CSSProperties = { color: '#4d5c64', textAlign: 'center', padding: '10px 0', fontSize: 9 };
+const footDeltaStyle: React.CSSProperties = { marginTop: 'auto', textAlign: 'center', fontSize: 10, fontWeight: 700, padding: '4px 2px', borderTop: '1px solid #1e292f', background: '#121b21' };
+const heatWrapStyle: React.CSSProperties = { flex: 1, minHeight: 0, position: 'relative' };
+const heatCanvasStyle: React.CSSProperties = { position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' };
 const profileRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.5fr .5fr', gap: 7, color: '#c0cbd0', fontSize: 10, padding: '4px 10px', borderTop: '1px solid #1e292f' };

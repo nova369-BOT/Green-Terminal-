@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
+import { applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, setWorkspaceWidgetSymbol, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 import { moveWidget, WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import { useCapabilities } from '@/market-data/hooks';
@@ -131,6 +131,13 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
             onCommitRect={(rect) => commitRect(widget.id, rect)}
             onToggleLink={(field) => update(previous => toggleWorkspaceLink(previous, widget.id, field))}
             onCycleLinkGroup={() => update(previous => cycleWorkspaceLinkGroup(previous, widget.id))}
+            onSymbolCommit={(value) => update(previous => {
+              const changed = setWorkspaceWidgetSymbol(previous, widget.id, value);
+              if (changed === previous) return previous;
+              // A group member's own symbol drives its whole group; an
+              // ungrouped panel stays local (only the chart drives the floor).
+              return widget.linkGroup ? propagateWorkspaceLink(changed, widget.id, value.trim().toUpperCase(), widget.timeframe || timeframe) : changed;
+            })}
             onMinimize={() => update(previous => setWorkspaceWidgetMinimized(previous, widget.id, !widget.minimized))}
             onMaximize={() => update(previous => toggleWorkspaceMaximized(previous, widget.id))}
             onClose={() => update(previous => removeWorkspaceWidget(previous, widget.id))}

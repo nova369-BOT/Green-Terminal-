@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
 import { dragRect, resizeRect } from '@/lib/workspaceInteractions';
 import { LINK_GROUP_COLORS, type WorkspaceWidget } from '@/lib/workspaceWidgets';
@@ -21,6 +21,7 @@ export default function WorkspacePanelFrame({
   onCommitRect,
   onToggleLink,
   onCycleLinkGroup,
+  onSymbolCommit,
   onMinimize,
   onMaximize,
   onClose,
@@ -38,6 +39,8 @@ export default function WorkspacePanelFrame({
   onCommitRect: (rect: WidgetRect) => void;
   onToggleLink: (field: 'symbol' | 'timeframe') => void;
   onCycleLinkGroup: () => void;
+  /** Double-click the header symbol to set a panel-specific symbol. */
+  onSymbolCommit: (value: string) => void;
   onMinimize: () => void;
   onMaximize: () => void;
   onClose: () => void;
@@ -79,6 +82,12 @@ export default function WorkspacePanelFrame({
 
   const effSymbol = widget.symbol || symbol;
   const effTimeframe = widget.timeframe || timeframe;
+  const [editingSymbol, setEditingSymbol] = useState(false);
+  const [symbolDraft, setSymbolDraft] = useState('');
+  const commitSymbol = () => {
+    setEditingSymbol(false);
+    if (symbolDraft.trim()) onSymbolCommit(symbolDraft);
+  };
   const sectionStyle: React.CSSProperties = {
     gridColumn: `${widget.x + 1} / span ${widget.width}`,
     gridRow: widget.minimized ? `${widget.y + 1} / span 1` : `${widget.y + 1} / span ${widget.height}`,
@@ -102,7 +111,20 @@ export default function WorkspacePanelFrame({
       style={headerStyle}
     >
       <strong style={titleStyle}>{widget.title}</strong>
-      <span style={metaStyle}>{effSymbol || 'AUTO'} · {effTimeframe}</span>
+      {editingSymbol ? <input
+        autoFocus
+        value={symbolDraft}
+        onChange={(event) => setSymbolDraft(event.target.value.toUpperCase())}
+        onBlur={commitSymbol}
+        onKeyDown={(event) => { if (event.key === 'Enter') commitSymbol(); if (event.key === 'Escape') setEditingSymbol(false); }}
+        onPointerDown={(event) => event.stopPropagation()}
+        aria-label={`Set ${widget.title} symbol`}
+        style={symbolInputStyle}
+      /> : <span
+        style={metaStyle}
+        title={`${effSymbol || 'AUTO'} · ${effTimeframe} — double-click to set this panel's own symbol`}
+        onDoubleClick={(event) => { event.stopPropagation(); setSymbolDraft(effSymbol); setEditingSymbol(true); }}
+      >{effSymbol || 'AUTO'} · {effTimeframe}</span>}
       <div style={controlsStyle} onPointerDown={(event) => event.stopPropagation()}>
         <button type="button" aria-label={`Link group for ${widget.title}: ${widget.linkGroup || 'none'}`} title={widget.linkGroup ? `Link group ${widget.linkGroup} — synced with other ${widget.linkGroup} panels. Click to cycle.` : 'No link group — follows the chart. Click to join a group.'} onClick={onCycleLinkGroup} style={{ ...controlStyle, color: widget.linkGroup ? LINK_GROUP_COLORS[widget.linkGroup] || '#84949d' : '#5f6e77', fontSize: 13 }}>{widget.linkGroup ? '●' : '○'}</button>
         <button type="button" aria-label={`Toggle symbol link for ${widget.title}`} title={widget.symbolLink === 'linked' ? 'Symbol linked to workspace — click to unlink' : 'Symbol independent — click to link'} onClick={() => onToggleLink('symbol')} style={{ ...controlStyle, color: widget.symbolLink === 'linked' ? '#58d797' : '#5f6e77' }}>S</button>
@@ -136,7 +158,8 @@ const headerStyle: React.CSSProperties = {
   touchAction: 'none',
 };
 const titleStyle: React.CSSProperties = { color: '#dbe4e9', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' };
-const metaStyle: React.CSSProperties = { color: '#778891', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.05em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 };
+const metaStyle: React.CSSProperties = { color: '#778891', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.05em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 };
+const symbolInputStyle: React.CSSProperties = { flex: 1, minWidth: 40, maxWidth: 140, background: '#0d141a', border: '1px solid #1e9b68', borderRadius: 3, color: '#d8e3e8', fontSize: 10, padding: '2px 5px', textTransform: 'uppercase' };
 const controlsStyle: React.CSSProperties = { display: 'flex', gap: 1, flex: '0 0 auto' };
 const controlStyle: React.CSSProperties = { border: 0, background: 'transparent', color: '#84949d', cursor: 'pointer', padding: '2px 4px', fontSize: 11, lineHeight: 1 };
 const bodyStyle: React.CSSProperties = { flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' };

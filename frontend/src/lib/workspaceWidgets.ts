@@ -246,13 +246,24 @@ export function toggleWorkspaceLink(widgets: WorkspaceWidget[], id: string, fiel
   return widgets.map(widget => widget.id === id ? { ...widget, [key]: widget[key] === 'linked' ? 'independent' : 'linked' } : widget);
 }
 
+/** Editing a panel's own symbol makes it independent by definition — a panel
+ * with a hand-set symbol must not be swept along by the next chart change.
+ * The caller propagates the new symbol through the widget's link group. */
+export function setWorkspaceWidgetSymbol(widgets: WorkspaceWidget[], id: string, symbol: string): WorkspaceWidget[] {
+  const clean = symbol.trim().toUpperCase();
+  if (!clean) return widgets;
+  return widgets.map(widget => widget.id === id && widget.symbol !== clean ? { ...widget, symbol: clean, symbolLink: 'independent' } : widget);
+}
+
 export function propagateWorkspaceLink(widgets: WorkspaceWidget[], sourceId: string, symbol: string, timeframe: string): WorkspaceWidget[] {
   const source = widgets.find(widget => widget.id === sourceId);
   if (!source) return widgets;
   let changed = widgets;
   const next = widgets.map(widget => {
     const sameGroup = source.linkGroup && widget.linkGroup === source.linkGroup;
-    const followsWorkspace = !source.linkGroup && widget.id !== sourceId;
+    // Ungrouped sources (the chart) drive only ungrouped panels — grouped
+    // panels answered to their group's own symbol, which is the whole point.
+    const followsWorkspace = !source.linkGroup && widget.id !== sourceId && !widget.linkGroup;
     if (!(widget.id === sourceId || sameGroup || followsWorkspace)) return widget;
     const symbolNext = widget.symbolLink === 'linked' || widget.id === sourceId ? symbol : widget.symbol;
     const timeframeNext = widget.timeframeLink === 'linked' || widget.id === sourceId ? timeframe : widget.timeframe;
