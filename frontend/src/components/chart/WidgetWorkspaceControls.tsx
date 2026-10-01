@@ -3,6 +3,7 @@ import { getBus, type BusDepth, type BusTrade } from '@/market-data/bus';
 import { useLiveQuote } from '@/market-data/hooks';
 import { useCapabilities } from '@/market-data/hooks';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
+import { DepthHeatmapHistory, type HeatmapFrame } from '@/lib/depthHeatmap';
 import {
   addWorkspaceWidget,
   DEFAULT_WORKSPACE_WIDGETS,
@@ -31,12 +32,14 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
   const [footprint, setFootprint] = useState<Record<string, { buy: number; sell: number }>>({});
   const [cvd, setCvd] = useState({ value: 0, buy: 0, sell: 0, sideKnown: true });
   const [depth, setDepth] = useState<{ bids: Array<[string, string]>; asks: Array<[string, string]>; ready: boolean; reset?: string }>({ bids: [], asks: [], ready: false });
+  const [heatmapFrames, setHeatmapFrames] = useState<HeatmapFrame[]>([]);
   const { caps } = useCapabilities();
   const tradesOpen = widgets.some(widget => widget.type === 'trades' && widget.visible);
   const statsOpen = widgets.some(widget => widget.type === 'marketStats' && widget.visible);
   const domOpen = widgets.some(widget => widget.type === 'dom' && widget.visible);
   const cvdOpen = widgets.some(widget => widget.type === 'cvdDelta' && widget.visible);
   const footprintOpen = widgets.some(widget => widget.type === 'footprint' && widget.visible);
+  const heatmapOpen = widgets.some(widget => widget.type === 'heatmap' && widget.visible);
   const { quote, connected, lastTickAgeMs } = useLiveQuote(symbol || null, undefined, statsOpen);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -44,18 +47,21 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
 
   useEffect(() => setWidgets(loadWorkspaceWidgets()), []);
   useEffect(() => {
-    if (!domOpen || !symbol) { setDepth({ bids: [], asks: [], ready: false }); return; }
+    if ((!domOpen && !heatmapOpen) || !symbol) { setDepth({ bids: [], asks: [], ready: false }); setHeatmapFrames([]); return; }
+    const history = new DepthHeatmapHistory(240);
     const bus = getBus();
     const stop = bus.stream([symbol], 'binance-depth');
     const off = bus.subscribeDepth((event: BusDepth) => {
       if (event.symbol !== symbol) return;
+      const frame = history.apply(event);
+      if (frame && heatmapOpen) setHeatmapFrames(history.snapshot());
       if (event.type === 'DEPTH_RESET') { setDepth({ bids: [], asks: [], ready: false, reset: String(event.reason || 'depth reset') }); return; }
       const bids = Array.isArray(event.bids || event.b) ? (event.bids || event.b) as Array<[string, string]> : [];
       const asks = Array.isArray(event.asks || event.a) ? (event.asks || event.a) as Array<[string, string]> : [];
       setDepth(previous => event.type === 'ORDER_BOOK_SNAPSHOT' ? { bids, asks, ready: false } : { bids: applyDepth(previous.bids, bids), asks: applyDepth(previous.asks, asks), ready: true });
     });
     return () => { off(); stop(); };
-  }, [symbol, domOpen]);
+  }, [symbol, domOpen, heatmapOpen]);
   useEffect(() => {
     if ((!tradesOpen && !cvdOpen && !footprintOpen) || !symbol) { setTrades([]); setCvd({ value: 0, buy: 0, sell: 0, sideKnown: true }); setFootprint({}); return; }
     const bus = getBus();
@@ -148,6 +154,10 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
           </section>
         ))}
       </div>}
+      {heatmapOpen && <div style={heatmapPanelStyle}>
+        <div style={tradeHeaderStyle}><b>Heatmap · resting liquidity</b><span>{heatmapFrames.length ? `${heatmapFrames.length} frames` : 'Waiting'}</span></div>
+        {heatmapFrames.length ? <div style={heatmapBodyStyle}>{heatmapFrames.slice(-12).map((frame, index) => <div key={`${frame.receivedAt}-${index}`} style={heatmapFrameStyle}><time>{new Date(frame.receivedAt).toLocaleTimeString()}</time><span style={{ color: '#58d797' }}>B {frame.bids.length}</span><span style={{ color: '#e28b91' }}>A {frame.asks.length}</span></div>)}</div> : <div style={emptyTradeStyle}>Waiting for validated depth frames.<br /><small>Only resting Binance L2 liquidity is recorded.</small></div>}
+      </div>}
       {domOpen && <div style={domPanelStyle}>
         <div style={tradeHeaderStyle}><b>DOM · Binance L2</b><span style={{ color: depth.ready ? '#58d797' : '#e1a650' }}>{depth.ready ? 'Live' : 'Syncing'}</span></div>
         {depth.ready ? <div style={domGridStyle}><div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, 8).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div><div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, 8).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div></div> : <div style={emptyTradeStyle}>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></div>}
@@ -209,6 +219,9 @@ const groupLabel: React.CSSProperties = { color: '#697983', fontSize: 10, textTr
 const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 };
 const pickerItem: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, textAlign: 'left', background: '#161f26', border: '1px solid #26343d', borderRadius: 5, color: '#d8e0e5', padding: '8px 7px', cursor: 'pointer' };
 const iconStyle: React.CSSProperties = { color: '#42d493', fontSize: 17, width: 18, textAlign: 'center' };
+const heatmapPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 300, maxHeight: 'calc(100% - 52px)', overflow: 'auto', pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
+const heatmapBodyStyle: React.CSSProperties = { padding: '4px 10px 10px' };
+const heatmapFrameStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr .5fr .5fr', gap: 8, color: '#aab8bf', fontSize: 10, padding: '5px 0', borderTop: '1px solid #1e292f' };
 const domPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 360, maxHeight: 'calc(100% - 52px)', overflow: 'auto', pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
 const domGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 10 };
 const domRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 6, color: '#b8c5cc', fontSize: 10, padding: '3px 0', borderBottom: '1px solid #1e292f' };
