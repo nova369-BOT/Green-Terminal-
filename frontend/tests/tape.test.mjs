@@ -94,6 +94,64 @@ test('statistics: 60s window buy/sell volumes, pressure, prints/sec', () => {
   assert.equal(empty.buyPressure, 0.5);   // neutral on silence
 });
 
+test('session(): open/high/low since attach, VWAP, CVD, printed counts', () => {
+  const tape = new TradeTape();
+  tape.add(1000, 100, 2, true);
+  tape.add(2000, 102, 1, true);
+  tape.add(3000, 99, 3, false);
+  const s = tape.session();
+  assert.equal(s.open, 100);
+  assert.equal(s.high, 102);
+  assert.equal(s.low, 99);
+  assert.equal(s.lastPrice, 99);
+  assert.equal(s.volume, 6);
+  assert.equal(s.volumeBuy, 3);
+  assert.equal(s.volumeSell, 3);
+  assert.equal(s.cvd, 0);
+  // VWAP = (100·2 + 102·1 + 99·3) / 6
+  const expected = (100 * 2 + 102 + 99 * 3) / 6;
+  nearly(s.vwap, expected);
+  assert.equal(s.prints, 3);
+  const fresh = new TradeTape().session();
+  assert.equal(fresh.vwap, null);
+  assert.equal(fresh.high, null);
+  assert.equal(fresh.open, null);
+});
+
+test('indicators(): returns nulls until the window is FULL — no partials', () => {
+  const tape = new TradeTape();
+  assert.equal(tape.indicators(20).sma, null);
+  assert.equal(tape.indicators(20).rsi, null);
+  for (let i = 1; i <= 20; i += 1) tape.add(i * 1000, 100 + i, 1, true);
+  const ind = tape.indicators(20);
+  // Prices 101..120: SMA = (101+120)/2 = 110.5
+  nearly(ind.sma, 110.5);
+  assert.ok(ind.ema != null && ind.ema > 109 && ind.ema < 112);
+  // Monotone up: RSI = 100 (no down moves → avgLoss 0)
+  assert.equal(ind.rsi, 100);
+  assert.equal(ind.window, 20);
+});
+
+test('indicators(): RSI flat market = 50, alternating = balanced', () => {
+  const flat = new TradeTape();
+  for (let i = 1; i <= 20; i += 1) flat.add(i * 1000, 100, 1, true);
+  assert.equal(flat.indicators(20).rsi, 50);
+  const alt = new TradeTape();
+  for (let i = 1; i <= 20; i += 1) alt.add(i * 1000, i % 2 === 0 ? 101 : 100, 1, true);
+  const rsi = alt.indicators(20).rsi;
+  assert.ok(rsi > 45 && rsi < 55, `expected balanced RSI, got ${rsi}`);
+});
+
+test('clear() also flushes session aggregates', () => {
+  const tape = new TradeTape();
+  tape.add(1000, 100, 2, true);
+  tape.clear();
+  const s = tape.session();
+  assert.equal(s.open, null);
+  assert.equal(s.volume, 0);
+  assert.equal(s.vwap, null);
+});
+
 test('revision bumps per accepted print and on clear', () => {
   const tape = new TradeTape();
   const r0 = tape.revision();

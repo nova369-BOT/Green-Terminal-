@@ -66,6 +66,9 @@ export interface SessionStats {
    * explicitly session-observed, never labelled as a venue 24h set. */
   startMs: number;
   lastPrice: number | null;
+  /** First print of the session — the "prev close" anchor the sidebar's
+   * change cells measure against. Null until the first print. */
+  open: number | null;
   high: number | null;
   low: number | null;
   volumeBuy: number;
@@ -75,6 +78,19 @@ export interface SessionStats {
   cvd: number;
   vwap: number | null;
   prints: number;
+}
+
+/** Windowed tick-sequence indicators over the newest prints (max 64 — the
+ * tape ring). Honest by construction: every value comes from observed
+ * prints; callers must label the window basis ("TAPE 20" etc.), never
+ * imply a candle-timeframe computation. */
+export interface TapeIndicators {
+  sma: number | null;
+  ema: number | null;
+  /** Wilder RSI; null until n+1 prints exist so gains/losses are defined. */
+  rsi: number | null;
+  /** Prints available for the window — lets the caller show its basis. */
+  window: number;
 }
 
 export class TradeTape {
@@ -88,6 +104,7 @@ export class TradeTape {
    * statistics panel derives from verifiable prints only. All start at 0 /
    * null: nothing is seeded. */
   private sessionStart = 0;
+  private sessionOpen: number | null = null;
   private lastPrice: number | null = null;
   private sessionHigh: number | null = null;
   private sessionLow: number | null = null;
@@ -116,7 +133,7 @@ export class TradeTape {
     const big = this.qtyEma > 0 && qty > this.qtyEma * BIG_PRINT_FACTOR;
     this.qtyEma = this.qtyEma <= 0 ? qty : this.qtyEma * (1 - EMA_ALPHA) + qty * EMA_ALPHA;
 
-    if (this.sessionStart === 0) this.sessionStart = tsMs;
+    if (this.sessionStart === 0) { this.sessionStart = tsMs; this.sessionOpen = price; }
     this.lastPrice = price;
     this.sessionHigh = this.sessionHigh == null ? price : Math.max(this.sessionHigh, price);
     this.sessionLow = this.sessionLow == null ? price : Math.min(this.sessionLow, price);
@@ -160,6 +177,7 @@ export class TradeTape {
     this.count = 0;
     this.qtyEma = 0;
     this.sessionStart = 0;
+    this.sessionOpen = null;
     this.lastPrice = null;
     this.sessionHigh = null;
     this.sessionLow = null;
@@ -177,6 +195,7 @@ export class TradeTape {
     return {
       startMs: this.sessionStart,
       lastPrice: this.lastPrice,
+      open: this.sessionOpen,
       high: this.sessionHigh,
       low: this.sessionLow,
       volumeBuy: this.sessionVolBuy,
@@ -186,6 +205,51 @@ export class TradeTape {
       vwap: this.sessionVwapDen > 0 ? this.sessionVwapNum / this.sessionVwapDen : null,
       prints: this.count,
     };
+  }
+
+  /** Windowed tick indicators over the newest `window` retained prints —
+   * SMA/EMA over the window and Wilder RSI(14-style). All accept a window
+   * argument so callers control the base period. Returns nulls when the
+   * tape can't fill the window instead of silently computing partial. */
+  indicators(windowSize: number): TapeIndicators {
+    const w = Math.max(2, Math.floor(windowSize));
+    const prices: number[] = [];
+    const n = Math.min(this.count, MAX_TRADES);
+    /* Newest first in the ring; collect the window then restore oldest→
+     * newest so indicator math runs in chronological order. */
+    for (let i = 0; i < Math.min(w, n); i += 1) {
+      const print = this.ring[(this.count - 1 - i) % MAX_TRADES];
+      if (print) prices.unshift(print.price);
+    }
+    if (prices.length < w) {
+      return { sma: null, ema: null, rsi: null, window: prices.length };
+    }
+    const sma = prices.reduce((a, b) => a + b, 0) / w;
+    const k = 2 / (w + 1);
+    let ema = prices[0];
+    for (let i = 1; i < prices.length; i += 1) ema = prices[i] * k + ema * (1 - k);
+    /* Wilder RSI: seed with the mean of the first 14 deltas, then smooth. */
+    const rsiPeriod = Math.min(14, w - 1);
+    let gainSum = 0;
+    let lossSum = 0;
+    for (let i = 1; i <= rsiPeriod; i += 1) {
+      const delta = prices[i] - prices[i - 1];
+      if (delta > 0) gainSum += delta; else lossSum -= delta;
+    }
+    let avgGain = gainSum / rsiPeriod;
+    let avgLoss = lossSum / rsiPeriod;
+    for (let i = rsiPeriod + 1; i < prices.length; i += 1) {
+      const delta = prices[i] - prices[i - 1];
+      avgGain = (avgGain * (rsiPeriod - 1) + Math.max(0, delta)) / rsiPeriod;
+      avgLoss = (avgLoss * (rsiPeriod - 1) + Math.max(0, -delta)) / rsiPeriod;
+    }
+    let rsi: number;
+    if (avgLoss === 0) rsi = avgGain === 0 ? 50 : 100;
+    else {
+      const rs = avgGain / avgLoss;
+      rsi = 100 - 100 / (1 + rs);
+    }
+    return { sma, ema, rsi, window: prices.length };
   }
 
   /** calculate_statistics() parity: buy/sell volumes against the wall clock

@@ -201,6 +201,10 @@ export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Elem
     return off;
   }, [resolved]);
   const session = useMemo(() => tapeRef.current.session(), [tapeRev]);
+  /* TECHNICAL rows: window over the newest 20 retained prints. Honestly
+   * labelled TAPE-basis — they are tick-sequence indicators, NOT a candle
+   * timeframe computation (the chart panel runs those on real bars). */
+  const tech = useMemo(() => tapeRef.current.indicators(20), [tapeRev]);
 
   const bid = depth.ready && depth.bids.length ? Number(depth.bids[0][0]) : null;
   const ask = depth.ready && depth.asks.length ? Number(depth.asks[0][0]) : null;
@@ -228,6 +232,7 @@ export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Elem
     </div>
     <div style={statsSectionStyle}>SESSION <small>Tape-verified aggregates since attach</small></div>
     <div style={statsCellGridStyle}>
+      <Stat label="Open" value={fmtD(session.open)} />
       <Stat label="High" value={fmtD(session.high)} />
       <Stat label="Low" value={fmtD(session.low)} />
       <Stat label="Volume" value={sessionLive ? fmtVol(session.volume) : '—'} />
@@ -235,7 +240,18 @@ export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Elem
       <Stat label="Buy vol" value={sessionLive ? fmtVol(session.volumeBuy) : '—'} />
       <Stat label="Sell vol" value={sessionLive ? fmtVol(session.volumeSell) : '—'} />
       <div style={statsCellStyle}><div style={statLabelStyle}>CVD</div><strong style={{ ...statValueStyle, color: session.cvd >= 0 ? '#58d797' : '#e28b91' }}>{sessionLive ? `${session.cvd >= 0 ? '+' : ''}${fmtVol(session.cvd)}` : '—'}</strong></div>
+      <div style={statsCellStyle}><div style={statLabelStyle}>Change</div><strong style={{ ...statValueStyle, color: session.open != null && session.lastPrice != null && session.lastPrice >= session.open ? '#58d797' : '#e28b91' }}>
+        {session.open != null && session.lastPrice != null && session.open > 0
+          ? `${((session.lastPrice - session.open) / session.open * 100).toFixed(2)}%`
+          : '—'}</strong></div>
       <Stat label="Prints" value={sessionLive ? String(session.prints) : '—'} />
+    </div>
+    <div style={statsSectionStyle}>TECHNICAL <small>Tick sequence, newest {tech.window || 20} prints basis</small></div>
+    <div style={statsCellGridStyle}>
+      <Stat label={`SMA ${tech.window || 20}`} value={tech.sma != null ? fmtD(tech.sma) : '—'} />
+      <Stat label={`EMA ${tech.window || 20}`} value={tech.ema != null ? fmtD(tech.ema) : '—'} />
+      <div style={statsCellStyle}><div style={statLabelStyle}>RSI 14</div><strong style={{ ...statValueStyle, color: tech.rsi == null ? undefined : tech.rsi >= 70 ? '#e28b91' : tech.rsi <= 30 ? '#58d797' : undefined }}>{tech.rsi != null ? tech.rsi.toFixed(1) : '—'}</strong></div>
+      <Stat label="VWAP" value={fmtD(session.vwap)} />
     </div>
     <div style={statsSectionStyle}>VENUE-DEPENDENT</div>
     <div style={statsCellGridStyle}>
