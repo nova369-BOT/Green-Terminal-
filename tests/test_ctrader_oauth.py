@@ -171,3 +171,51 @@ def test_access_token_refreshes_when_expired():
     assert stored["access_token"] == "NEW"
     # the old refresh token must be kept when the response omits a new one
     assert stored["refresh_token"] == "RT"
+
+
+def test_sandbox_token_from_env_is_used_and_labelled():
+    """Playground path: develop before the app is approved."""
+    _isolate(); _configure()
+    os.environ["CTRADER_ACCESS_TOKEN"] = "playground-token-43-chars"
+    os.environ["CTRADER_ACCOUNT_ID"] = "123456"
+    try:
+        t = oauth.load_tokens()
+        assert t["access_token"] == "playground-token-43-chars"
+        assert t["source"] == "sandbox"
+        assert oauth.tokens_valid(t) is True, "no expiry means usable, not expired"
+
+        s = oauth.status()
+        assert s["connected"] is True
+        assert s["token_source"] == "sandbox"
+        assert s["account_id"] == 123456
+        assert "Playground" in s["detail"], "the UI must say this is a dev token"
+        assert "playground-token-43-chars" not in json.dumps(s)
+    finally:
+        os.environ.pop("CTRADER_ACCESS_TOKEN", None)
+        os.environ.pop("CTRADER_ACCOUNT_ID", None)
+
+
+def test_sandbox_token_overrides_stored_oauth_tokens():
+    _isolate(); _configure()
+    oauth.save_tokens({"access_token": "STORED", "refresh_token": "R",
+                       "expires_at": int(time.time()) + 999})
+    assert oauth.load_tokens()["access_token"] == "STORED"
+    os.environ["CTRADER_ACCESS_TOKEN"] = "ENVTOKEN"
+    try:
+        assert oauth.load_tokens()["access_token"] == "ENVTOKEN"
+        assert oauth.status()["token_source"] == "sandbox"
+    finally:
+        os.environ.pop("CTRADER_ACCESS_TOKEN", None)
+    # removing it falls straight back to the stored per-user token
+    assert oauth.load_tokens()["access_token"] == "STORED"
+    assert oauth.status()["token_source"] == "oauth"
+
+
+def test_account_id_defaults_to_zero_meaning_discover():
+    _isolate(); _configure()
+    assert oauth.account_id() == 0
+    os.environ["CTRADER_ACCOUNT_ID"] = "not-a-number"
+    try:
+        assert oauth.account_id() == 0, "garbage must not crash the status route"
+    finally:
+        os.environ.pop("CTRADER_ACCOUNT_ID", None)

@@ -221,7 +221,48 @@ def refresh(refresh_token: str) -> dict:
 # are never logged, never returned by the status route, and never committed.
 
 def load_tokens() -> dict:
+    """Stored tokens, or a Sandbox/Playground token supplied by environment.
+
+    While a new application sits at "Submitted", Spotware's Playground issues
+    a working access token for the operator's OWN cTID so development can
+    start before approval. Setting CTRADER_ACCESS_TOKEN makes Green Terminal
+    use it directly and skip the consent flow.
+
+    This is a DEVELOPMENT path: a Playground token authorises only your own
+    accounts, so it cannot serve other users. Once the app is Active, remove
+    the variable and the normal per-user Connect flow takes over - no code
+    change. ``status()['token_source']`` always says which one is in effect.
+    """
+    env_token = (os.environ.get("CTRADER_ACCESS_TOKEN") or "").strip()
+    if env_token:
+        return {
+            "access_token": env_token,
+            "refresh_token": (os.environ.get("CTRADER_REFRESH_TOKEN") or "").strip(),
+            "token_type": "bearer",
+            # Playground tokens carry no expiry here; 0 means "do not expire
+            # locally" and we let the server be the judge.
+            "expires_in": 0,
+            "expires_at": 0,
+            "env": environment(),
+            "obtained_at": 0,
+            "source": "sandbox",
+        }
     return (_config.load().get(_CONFIG_KEY) or {}).get("tokens") or {}
+
+
+def account_id() -> int:
+    """ctidTraderAccountId to authorise, when pinned by the operator.
+
+    The Playground's "Trading Accounts" panel shows this number. 0 means
+    "discover it" - ask the server for the account list after authenticating.
+    """
+    cfg = _config.load().get(_CONFIG_KEY) or {}
+    raw = os.environ.get("CTRADER_ACCOUNT_ID") or cfg.get("account_id") or 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
 
 
 def save_tokens(tokens: dict) -> None:
@@ -273,19 +314,32 @@ def status() -> dict:
     configured = is_configured()
     t = load_tokens()
     cfg = _config.load().get(_CONFIG_KEY) or {}
+    source = t.get("source") or ("oauth" if t else "none")
+
+    if source == "sandbox":
+        detail = ("Using a Sandbox/Playground token (development). This "
+                  "authorises your own accounts only. Remove "
+                  "CTRADER_ACCESS_TOKEN once the app is Active to enable "
+                  "per-user Connect.")
+    elif not configured:
+        detail = "Set CTRADER_CLIENT_ID and CTRADER_CLIENT_SECRET to enable cTrader."
+    else:
+        detail = ""
+
     return {
         "configured": configured,
         "connected": bool(t) and tokens_valid(t),
         "has_tokens": bool(t),
         "expired": bool(t) and not tokens_valid(t),
+        # Which credential is actually in use: 'oauth' (per-user consent),
+        # 'sandbox' (operator's Playground token), or 'none'.
+        "token_source": source,
+        "account_id": account_id(),
         "env": environment(),
         "host": host_for_env(),
         "port": PROTOBUF_PORT,
         "scope": cfg.get("scope") or DEFAULT_SCOPE,
         "accounts": cfg.get("accounts") or [],
         "expires_at": int(t.get("expires_at") or 0) if t else 0,
-        "detail": (
-            "" if configured else
-            "Set CTRADER_CLIENT_ID and CTRADER_CLIENT_SECRET to enable cTrader."
-        ),
+        "detail": detail,
     }

@@ -221,3 +221,39 @@ curl -s http://127.0.0.1:7787/api/ctrader/status
 
 Expect `"configured": true`. Before you press Connect it will correctly say
 `"connected": false` — that is honest, not an error.
+
+---
+
+## Shortcut: start building before approval (Sandbox / Playground)
+
+A newly submitted application sits at **"Submitted"** until Spotware reviews it
+(usually 24–48 hours). You do not have to wait to start.
+
+The portal's **Sandbox / Playground** issues a working access token for your
+own cTID, which is exactly what it is for — cTrader's documentation describes
+it as a way to "develop and test your app before distributing it among its
+target audience".
+
+1. On the Applications page, click **Sandbox** next to Green Terminall.
+2. Choose the scope (**accounts** — read-only is enough for charts).
+3. Click **Get token**.
+4. Copy the **access token**, and the **account id** from the Trading Accounts
+   panel.
+5. Add them alongside your other variables:
+
+   ```
+   CTRADER_ACCESS_TOKEN=<the token>
+   CTRADER_ACCOUNT_ID=<the account number>
+   ```
+
+Green Terminal detects these and uses them directly, skipping the consent
+flow. `/api/ctrader/status` will report `"token_source": "sandbox"` and say
+plainly that a development token is in use — it never pretends this is a
+normal user connection.
+
+**Limits of this path, honestly:** a Playground token authorises *your own*
+accounts only, so it cannot serve other users. It is for development.
+
+**When the app turns Active:** delete `CTRADER_ACCESS_TOKEN` and
+`CTRADER_ACCOUNT_ID`. The per-user Connect button takes over automatically —
+no code change, and `token_source` flips back to `oauth`.
