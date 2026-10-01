@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { applyChartSplit, applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, setWorkspaceWidgetSymbol, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidget, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
+import { initLiveFlowCatalog } from '@/lib/flowSources';
 import { moveWidget, WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import { useCapabilities } from '@/market-data/hooks';
@@ -35,6 +36,11 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [ghost, setGhost] = useState<{ id: string; rect: WidgetRect } | null>(null);
+
+  /* Live venue catalogs: the flow resolver's dynamic tables are filled from
+   * the engine's live upstream pulls (plan item 13). Panels re-resolve when
+   * the catalog lands — depth widgets pick up every streamable symbol. */
+  useEffect(() => initLiveFlowCatalog(), []);
 
   /* Multi-chart: the FIRST visible chart widget is the primary pane — it
    * renders the full native engine ({children}) and drives the floor. Every

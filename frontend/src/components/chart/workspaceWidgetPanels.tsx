@@ -8,7 +8,7 @@ import { buildVolumeProfile, type ProfilePrint, type VolumeProfileResult } from 
 import { applyPaperOrder, closePaperPosition, loadPaperAccount, paperUnrealized, savePaperAccount, type PaperAccount, type PaperFill } from '@/lib/paperTrading';
 import { drawCvd } from './cvdCanvas';
 import { drawHeatmap } from './heatmapCanvas';
-import { resolveFlowSource } from '@/lib/flowSources';
+import { resolveFlowSource, useFlowCatalogVersion } from '@/lib/flowSources';
 import type { WorkspaceWidget, WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 
 /**
@@ -117,7 +117,8 @@ interface DepthBookState { bids: Array<[string, string]>; asks: Array<[string, s
  * resolve the venue stream, subscribe, apply sequence-safe updates, and
  * expose the freshness timestamp the UI turns into Live/Stale. */
 function useResolvedDepth(widget: WorkspaceWidget, symbol: string): { flow: ReturnType<typeof resolveFlowSource>; depth: DepthBookState; lastEventAt: number } {
-  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol]);
+  const catalogVersion = useFlowCatalogVersion();
+  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol, catalogVersion]);
   const [depth, setDepth] = useState<DepthBookState>({ bids: [], asks: [], ready: false });
   const [lastEventAt, setLastEventAt] = useState(0);
   useEffect(() => {
@@ -461,7 +462,8 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
 /* ----------------------------------- Heatmap ----------------------------------- */
 
 export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
-  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol]);
+  const catalogVersion = useFlowCatalogVersion();
+  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol, catalogVersion]);
   const historyRef = useRef<DepthHeatmapHistory | null>(null);
   const [frames, setFrames] = useState<HeatmapFrame[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);

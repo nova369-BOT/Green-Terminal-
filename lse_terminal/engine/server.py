@@ -6305,6 +6305,59 @@ def create_app() -> FastAPI:
             recordings = []
         return {"recordings": recordings}
 
+    # ── live flow-venue catalog (order-flow resolvable streams) ─────────────
+    # The Binance L2 transport (providers/binance_depth.py) streams ANY
+    # Binance spot symbol — depth@100ms + REST snapshot, sequence-validated.
+    # What used to gate resolution was a static 4-symbol list pretending to be
+    # "the catalog". This endpoint replaces the guess with the venue's own
+    # live exchangeInfo: every TRADING USDT/USDC-quoted spot symbol is
+    # streamable truth. Hyperliquid stays absent on purpose — the engine has
+    # no HL provider today, so claiming HL streams would promise data the
+    # transport cannot deliver. When upstream is unreachable the catalog is
+    # an honest empty answer (200, reachable=false), never a fabricated list.
+
+    _flow_catalog_cache: dict[str, object] = {"at": 0.0, "data": None}
+
+    @app.get("/api/market-data/flow-catalog")
+    def market_data_flow_catalog():
+        now = time.time()
+        cached = _flow_catalog_cache.get("data")
+        if cached and now - float(_flow_catalog_cache.get("at") or 0) < 300:
+            return cached
+        venues = []
+        note = None
+        try:
+            info = _binance_exchange_info()
+            rows = []
+            for s in info.get("symbols") or []:
+                if not isinstance(s, dict) or s.get("status") != "TRADING":
+                    continue
+                if s.get("quoteAsset") not in ("USDT", "USDC"):
+                    continue
+                stream = str(s.get("symbol") or "").upper()
+                if stream:
+                    rows.append(stream)
+            rows = sorted(set(rows))[:1200]
+            if not rows:
+                raise ValueError("exchangeInfo had no TRADING USDT/USDC rows")
+            venues.append({
+                "venue": "binance",
+                "provider": "binance-depth",
+                "product": "Binance Spot",
+                "streams": rows,
+            })
+        except Exception as e:
+            note = f"Binance exchangeInfo unreachable ({type(e).__name__}) — depth resolution falls back to the built-in verified majors."
+        out = {
+            "venues": venues,
+            "reachable": bool(venues),
+            "generatedMs": int(now * 1000),
+            **({"note": note} if note else {}),
+        }
+        _flow_catalog_cache["at"] = now
+        _flow_catalog_cache["data"] = out
+        return out
+
     # ── chart workspace (drawings, layouts, settings, tools) ────────────────
     # Persisted to a file next to the config so the user's work survives a
     # browser cache clear, a reinstall, or moving machines. See workspace.py.
