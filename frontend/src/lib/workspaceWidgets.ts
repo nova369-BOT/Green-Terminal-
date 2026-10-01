@@ -65,7 +65,22 @@ export function loadWorkspaceWidgets(): WorkspaceWidget[] {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
     if (!Array.isArray(raw)) return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w }));
-    return raw.filter((w): w is WorkspaceWidget => !!w && typeof w.id === 'string' && !!WIDGET_DEFS[w.type as WorkspaceWidgetType]);
+    const valid = raw.filter((w): w is WorkspaceWidget => !!w && typeof w.id === 'string' && !!WIDGET_DEFS[w.type as WorkspaceWidgetType]);
+    if (!valid.length) return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w }));
+    return valid.map(w => ({
+      ...w,
+      title: WIDGET_DEFS[w.type].title,
+      symbol: typeof w.symbol === 'string' ? w.symbol : '',
+      timeframe: typeof w.timeframe === 'string' ? w.timeframe : '5m',
+      symbolLink: w.symbolLink === 'independent' ? 'independent' : 'linked',
+      timeframeLink: w.timeframeLink === 'independent' ? 'independent' : 'linked',
+      visible: w.visible !== false,
+      minimized: w.minimized === true,
+      x: Number.isFinite(w.x) ? Math.max(0, w.x) : 0,
+      y: Number.isFinite(w.y) ? Math.max(0, w.y) : 0,
+      width: Number.isFinite(w.width) ? Math.max(2, Math.min(12, w.width)) : 4,
+      height: Number.isFinite(w.height) ? Math.max(2, Math.min(24, w.height)) : 4,
+    }));
   } catch { return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w })); }
 }
 
