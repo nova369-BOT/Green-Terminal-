@@ -827,6 +827,105 @@ def create_app() -> FastAPI:
         return {"ok": True, "version": __version__, "ui_version": ui_version,
                 "dev": os.environ.get("LSE_TERMINAL_DEV") == "1"}
 
+    # ── cTrader Open API: the "Connect cTrader" flow ────────────────────────
+    # The user is sent to cTrader's own consent page and signs in THERE. Green
+    # Terminal never sees a cTrader password - only a revocable token. Each
+    # user authorises their own broker account, so each user gets their own
+    # feed (no redistribution of one account's market data).
+    #
+    # Operator supplies CTRADER_CLIENT_ID / CTRADER_CLIENT_SECRET once; end
+    # users never touch the Open API portal. See design/CTRADER_SETUP.md.
+
+    # Short-lived CSRF states: issued at /connect, consumed at /callback.
+    _ctrader_states: dict[str, float] = {}
+
+    def _ctrader_redirect_uri(request: Request) -> str:
+        """The redirect URI for this deployment.
+
+        MUST byte-for-byte match one registered on the Open API application
+        AND be identical in the auth request and the token exchange, or
+        cTrader rejects the code. Derived from the live request so the same
+        build works on localhost and on the public host.
+        """
+        base = str(request.base_url).rstrip("/")
+        # Render terminates TLS upstream; the app still sees http internally.
+        if base.startswith("http://") and request.headers.get(
+                "x-forwarded-proto", "").split(",")[0].strip() == "https":
+            base = "https://" + base[len("http://"):]
+        return base + "/api/ctrader/callback"
+
+    @app.get("/api/ctrader/status")
+    def ctrader_status(request: Request):
+        """Measured state only: configured, connected, which environment.
+        Never returns a token, a secret, or a false 'connected'."""
+        from lse_terminal.engine.ctrader import oauth
+        body = oauth.status()
+        body["redirect_uri"] = _ctrader_redirect_uri(request)
+        return body
+
+    @app.get("/api/ctrader/connect")
+    def ctrader_connect(request: Request, scope: str = "accounts"):
+        """Begin the flow: hand back the cTrader consent URL to open."""
+        from fastapi.responses import RedirectResponse
+        from lse_terminal.engine.ctrader import oauth
+        try:
+            state = oauth.new_state()
+            _ctrader_states[state] = time.time()
+            # Drop states older than 10 minutes so the dict cannot grow forever.
+            cutoff = time.time() - 600
+            for k in [k for k, v in _ctrader_states.items() if v < cutoff]:
+                _ctrader_states.pop(k, None)
+            url = oauth.auth_url(_ctrader_redirect_uri(request),
+                                 scope=scope, state=state)
+        except oauth.CTraderNotConfigured as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        # A browser hitting this directly is sent straight on; the UI can also
+        # read the JSON form by asking for it.
+        if "application/json" in (request.headers.get("accept") or ""):
+            return JSONResponse({"auth_url": url, "state": state})
+        return RedirectResponse(url, status_code=302)
+
+    @app.get("/api/ctrader/callback")
+    def ctrader_callback(request: Request, code: str = "", state: str = "",
+                         error: str = ""):
+        """cTrader sends the user back here with ?code=. Swap it for tokens.
+
+        Always redirects back into the app with a readable result rather than
+        dumping raw JSON at a user who just clicked a button.
+        """
+        import urllib.parse
+        from fastapi.responses import RedirectResponse
+        from lse_terminal.engine.ctrader import oauth
+
+        def done(ok: bool, message: str):
+            q = urllib.parse.urlencode({
+                "ctrader": "connected" if ok else "error", "detail": message})
+            return RedirectResponse(f"/?{q}", status_code=302)
+
+        if error:
+            return done(False, f"cTrader returned: {error}")
+        if state and state not in _ctrader_states:
+            # Unknown state = the callback did not originate from our /connect.
+            return done(False, "Authorisation state did not match. Start again.")
+        _ctrader_states.pop(state, None)
+        if not code:
+            return done(False, "No authorisation code was returned.")
+        try:
+            tokens = oauth.exchange_code(code, _ctrader_redirect_uri(request))
+            oauth.save_tokens(tokens)
+        except (oauth.CTraderAuthError, oauth.CTraderNotConfigured) as e:
+            return done(False, str(e))
+        return done(True, "cTrader connected")
+
+    @app.post("/api/ctrader/disconnect")
+    def ctrader_disconnect():
+        """Forget the stored tokens. The user can also revoke from cTrader."""
+        from lse_terminal.engine.ctrader import oauth
+        oauth.clear_tokens()
+        return {"ok": True, **oauth.status()}
+
     @app.get("/api/edgedepth/status")
     def edgedepth_status(timeout: float = 0.35):
         """Honest EdgeDepth gateway status under Green Terminal ownership.
