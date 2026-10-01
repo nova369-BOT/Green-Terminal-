@@ -35,7 +35,7 @@ import { ChartSettingsProvider, useChartSettings, useHasSavedAppearance } from '
 import { AppearancePanel, ChartSettingsPanel } from '@/components/chart/InlineChartSettings';
 import MultiTimeframeLayoutSelector from '@/components/chart/MultiTimeframeLayoutSelector';
 import TerminalMultiGrid from '@/components/chart/TerminalMultiGrid';
-import WidgetWorkspaceControls from '@/components/chart/WidgetWorkspaceControls';
+import NativeWidgetWorkspace from '@/components/chart/NativeWidgetWorkspace';
 import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
 import ChartTypeMenu from '@/components/chart/ChartTypeMenu';
 import GoToNavigator from '@/components/chart/GoToNavigator';
@@ -761,7 +761,6 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           });
         }}
       >
-        <WidgetWorkspaceControls symbol={symbol} timeframe={timeframe} />
         {layout !== '1x1' ? (
           <TerminalMultiGrid
             layout={layout}
@@ -771,7 +770,15 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
             colors={colors}
             quote={quote}
           />
-        ) : (<>
+        ) : (
+        // The single-chart workspace is the native widget grid: the chart is
+        // one dragged/resized/persisted panel among DOM, Trades, Footprint,
+        // Heatmap, Volume Profile and CVD widgets (design spec:
+        // design/GREEN_TERMINAL_ORDERFLOW_SPEC.md). The multi-chart grid is a
+        // separate full-bleed mode; merging it with the widget grid is a
+        // later planned item.
+        <NativeWidgetWorkspace symbol={symbol} timeframe={timeframe}>
+        <>
         <ProChart
           candles={displayCandles}
           symbol={symbol}
@@ -873,7 +880,8 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           currentPrice={livePrice ?? undefined}
           candles={displayCandles}
         />
-        </>)}
+        </>
+        </NativeWidgetWorkspace>)}
       </div>
 
       {/* Drawing edit toolbar: floats next to a selected drawing (color, width,

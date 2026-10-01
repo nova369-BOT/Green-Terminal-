@@ -15,6 +15,11 @@ Read this first, every session. The user is a beginner; clarity beats cleverness
 
 - **Plan → user approval → build.** Present the plan, wait for an explicit go
   ("go ..."). Report after each step, briefly.
+- **Workspace batch rule (user, 2026-10-01):** once a plan is approved, work
+  AUTONOMOUSLY in multi-file vertical batches (≥3 connected files/features),
+  no approval-stops between steps, no one-file micro-commits, report briefly
+  after each complete validated batch. Never mistake foundations for finished
+  features — a feature is done when it is visible, wired, persisted, validated.
 - **Beginner user:** short messages, plain words, one thing at a time,
   copy-paste commands. No jargon. No big dumps.
 - **One bash / one edit / one pytest per turn.** No parallel pytest.
@@ -24,12 +29,12 @@ Read this first, every session. The user is a beginner; clarity beats cleverness
 
 ## 3. Git (strict)
 
-- Session branch ONLY: `arena/01a0caa0-green-terminal`
+- Session branch ONLY: `arena/01a0f82b-green-terminal`
   (origin: `nova369-BOT/Green-Terminal-`).
 - **NEVER push `main`.** Never switch/create/push any other branch.
 - `remote.origin.fetch` historically tracks only `main`; if the remote-tracking
   ref for the session branch is missing, fetch it explicitly:
-  `git fetch origin 'refs/heads/arena/01a0caa0-green-terminal:refs/remotes/origin/arena/01a0caa0-green-terminal'`
+  `git fetch origin 'refs/heads/arena/01a0f82b-green-terminal:refs/remotes/origin/arena/01a0f82b-green-terminal'`
 - If the local branch pointer ever looks wrong (e.g. sitting on `0baa171`
   with the whole tree "untracked"), do NOT `reset --hard` (destroys uncommitted
   edits). Fetch the remote tip, then `git reset <remote-tip>` (mixed) so the
@@ -68,11 +73,33 @@ Read this first, every session. The user is a beginner; clarity beats cleverness
 
 ## 5. Current state (update as it changes)
 
+- 2026-10-01: **Direction locked: XFlow-style NATIVE WIDGET WORKSPACE** on the
+  Chart page — no separate Chart/G-Flow tabs, no iframe. Widgets: Chart, DOM,
+  Trades, Market Stats, Footprint, Heatmap, Volume Profile, CVD (orderbook /
+  paperTrading / watchlist / replay typed but honest-unavailable). Spec:
+  `design/GREEN_TERMINAL_ORDERFLOW_SPEC.md`. Backend: Binance L2 provider
+  registered (`binance-depth`, BTCUSDT/ETHUSDT/BNBUSDT/SOLUSDT), sequence-safe
+  depth transport (SNAPSHOT/UPDATE/DEPTH_RESET) through the market-data bus.
+  **Rule 1 (real grid renderer) SHIPPED**: `NativeWidgetWorkspace` is the
+  12×24 persisted grid wrapping ProChart; `WorkspacePanelFrame` chrome on
+  every widget (drag, resize, S/T link toggles, minimize/maximize/close =
+  persisted); ghost-commit gestures; collision-safe layout; 1/2/4/16 presets;
+  single source of truth store in `lib/workspaceWidgets.ts`; live panels in
+  `chart/workspaceWidgetPanels.tsx`. Legacy overlay
+  (WidgetWorkspaceControls/registry/NativeWidgetPanel) deleted. Multi-chart
+  grid stays full-bleed for now (merge = later item).
+- Remaining list (user-approved order): link-group UI → provider/source
+  selection → DOM polish → heatmap visual renderer → footprint period
+  grouping → CVD sessions → volume profile sessions → Trading widget → Replay
+  → advanced widgets → chart/multi-grid integration → historical backfill →
+  capability/diagnostics → tests → final polish. The G-Flow `#orderflow` page
+  stays until the native workspace fully replaces it (HL-only; iframe).
 - 2026-09-25: Order Flow LIVE on Hyperliquid BTC inside GT (user confirmed).
   User's network blocks Binance (ISP + geo); Hyperliquid reachable.
 - Rebrand approved: **Palette A — Emerald + Gold** (`#0f9d58` / `#d4af37` on
   near-black). Awaiting explicit `go colors` to build Phase A (engine tokens +
   header + GT bar). Phase B (clean default layout, de-scatter labels) follows.
+  The workspace panels use the same emerald accents already.
 - GT logo reference: black + graphite + lime "GT" (user-supplied); final
   direction is emerald/gold, NOT lime.
 - Mockups (workspace root, NOT in git): `gt-green-mockup*.png`,

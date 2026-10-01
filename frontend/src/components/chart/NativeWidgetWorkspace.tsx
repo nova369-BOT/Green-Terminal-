@@ -1,62 +1,198 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { applyWorkspacePreset, loadWorkspaceWidgets, saveWorkspaceWidgets, type WorkspaceWidget } from '@/lib/workspaceWidgets';
-import { moveWidget, normalizeWorkspace, resizeWidget } from '@/lib/workspaceLayout';
-import { dragRect, resizeRect } from '@/lib/workspaceInteractions';
-import { createWorkspaceRendererRegistry } from './workspaceRendererRegistry';
+import React, { useEffect, useRef, useState } from 'react';
+import { applyWorkspacePreset, addWorkspaceWidget, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
+import { moveWidget, WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
+import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
+import { useCapabilities } from '@/market-data/hooks';
+import WorkspacePanelFrame from './WorkspacePanelFrame';
+import { UnsupportedPanel, WIDGET_PANELS } from './workspaceWidgetPanels';
 
 export type WorkspacePreset = '1' | '2' | '4' | '16';
 
-/** The actual persisted grid surface. Feed renderers are children/slots; this
- * component owns only geometry, ordering, visibility, and workspace chrome. */
-export default function NativeWidgetWorkspace({ symbol, timeframe, children, renderWidget }: { symbol: string; timeframe: string; children: React.ReactNode; renderWidget?: (widget: WorkspaceWidget) => React.ReactNode }) {
-  const [widgets, setWidgets] = useState<WorkspaceWidget[]>([]);
-  const fallbackRenderer = useMemo(() => createWorkspaceRendererRegistry({}), []);
-  const [drag, setDrag] = useState<{ id: string; x: number; y: number; rect: WorkspaceWidget } | null>(null);
-  const dragRef = useRef<{ id: string; rect: WorkspaceWidget } | null>(null);
-  useEffect(() => setWidgets(loadWorkspaceWidgets()), []);
-  const update = (next: WorkspaceWidget[]) => { const normalized = normalizeWorkspace(next); setWidgets(normalized); saveWorkspaceWidgets(normalized); };
-  const preset = (value: WorkspacePreset) => update(applyWorkspacePreset(widgets, value));
-  const chart = widgets.find(widget => widget.type === 'chart') || { id: 'chart-1', type: 'chart', title: 'Chart', x: 0, y: 0, width: 12, height: 12, visible: true } as WorkspaceWidget;
-  const panelStyle = useMemo(() => ({ display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gridTemplateRows: 'repeat(24, minmax(28px, 1fr))', gap: 3, position: 'relative' as const, width: '100%', height: '100%', minHeight: 0, background: '#0b1014' }), []);
-  const begin = (event: React.PointerEvent, widget: WorkspaceWidget, resizing: boolean) => {
-    event.preventDefault();
-    const host = (event.currentTarget as HTMLElement).closest('[data-workspace-grid]') as HTMLElement | null;
-    const box = host?.getBoundingClientRect();
-    const cellWidth = (box?.width || 1200) / 12;
-    const cellHeight = (box?.height || 720) / 24;
-    const origin = { clientX: event.clientX, clientY: event.clientY, rect: { x: widget.x, y: widget.y, width: widget.width, height: widget.height } };
-    const move = (next: PointerEvent) => {
-      const rect = (resizing ? resizeRect : dragRect)(origin, { clientX: next.clientX, clientY: next.clientY, cellWidth, cellHeight });
-      const nextRect = { ...widget, ...rect };
-      dragRef.current = { id: widget.id, rect: nextRect };
-      setDrag({ id: widget.id, x: rect.x, y: rect.y, rect: nextRect });
+const PICKER_GROUPS: Array<{ label: string; types: WorkspaceWidgetType[] }> = [
+  { label: 'Charts & flow', types: ['chart', 'footprint', 'heatmap', 'volumeProfile', 'cvdDelta'] },
+  { label: 'Market data', types: ['dom', 'orderbook', 'trades', 'marketStats'] },
+  { label: 'Trading & tools', types: ['paperTrading', 'watchlist', 'replay'] },
+];
+
+/**
+ * The native Green Terminal widget workspace. This is the REAL grid surface —
+ * not an overlay: a 12x24 persisted grid where the chart itself is one widget
+ * among DOM, Trades, Footprint, Heatmap, Volume Profile and CVD panels.
+ *
+ * Every panel is bound to its persisted rect; drag/resize gestures commit
+ * through the collision-safe layout engine; maximize, minimize and restore
+ * are persisted; and the 1/2/4/16 presets reposition the actual rendered
+ * panels. State survives reload through the versioned workspace document.
+ */
+export default function NativeWidgetWorkspace({ symbol, timeframe, children }: { symbol: string; timeframe: string; children: React.ReactNode }) {
+  const [widgets, update] = useWorkspaceWidgets();
+  const { caps } = useCapabilities();
+  const gridRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [ghost, setGhost] = useState<{ id: string; rect: WidgetRect } | null>(null);
+
+  /* Linked widgets follow the active symbol/timeframe of the chart widget.
+   * propagateWorkspaceLink returns the SAME array when nothing changed, and
+   * updateWorkspaceWidgets commits nothing on identity — so no render loop. */
+  useEffect(() => {
+    if (!symbol) return;
+    update(previous => {
+      const chart = previous.find(widget => widget.type === 'chart');
+      return chart ? propagateWorkspaceLink(previous, chart.id, symbol, timeframe) : previous;
+    });
+  }, [symbol, timeframe, update]);
+
+  /* Close picker/menus on any outside pointer-down. */
+  useEffect(() => {
+    if (!pickerOpen && !menuOpen) return undefined;
+    const close = (event: MouseEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(event.target as Node)) {
+        setPickerOpen(false);
+        setMenuOpen(false);
+      }
     };
-    const end = () => {
-      const finalRect = dragRef.current?.rect;
-      if (finalRect) update(resizing ? resizeWidget(widgets, widget.id, finalRect.width, finalRect.height) : moveWidget(widgets, widget.id, finalRect));
-      dragRef.current = null;
-      setDrag(null); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end);
-    };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end);
-  };
-  return <div data-workspace-grid style={panelStyle}>
-    <div style={{ position: 'absolute', top: 6, left: 8, zIndex: 100, display: 'flex', gap: 4 }}>
-      {(['1', '2', '4', '16'] as WorkspacePreset[]).map(value => <button key={value} type="button" onClick={() => preset(value)} style={presetStyle}>{value}</button>)}
-      <span style={workspaceLabel}>{symbol || 'Active symbol'} · {timeframe}</span>
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [pickerOpen, menuOpen]);
+
+  const commitRect = (id: string, rect: WidgetRect) => update(previous => moveWidget(previous, id, rect));
+  const preset = (value: WorkspacePreset) => { update(previous => applyWorkspacePreset(previous, value)); setMenuOpen(false); };
+  const reset = () => { update(() => DEFAULT_WORKSPACE_WIDGETS.map(widget => ({ ...widget, symbol, timeframe }))); setMenuOpen(false); };
+  const add = (type: WorkspaceWidgetType) => { update(previous => addWorkspaceWidget(previous, type, symbol, timeframe)); setPickerOpen(false); };
+
+  return (
+    <div style={rootStyle}>
+      <div ref={toolbarRef} style={toolbarStyle}>
+        <button type="button" aria-expanded={pickerOpen} onClick={() => { setPickerOpen(value => !value); setMenuOpen(false); }} style={accentButtonStyle}>
+          <span style={{ fontSize: 16, lineHeight: 0 }}>+</span> Widget
+        </button>
+        <div style={chipRowStyle}>
+          {widgets.filter(widget => widget.visible).map(widget => (
+            <button
+              key={widget.id}
+              type="button"
+              onClick={() => widget.minimized && update(previous => setWorkspaceWidgetMinimized(previous, widget.id, false))}
+              title={`${WIDGET_DEFS[widget.type].description}${widget.minimized ? ' — minimized, click to restore' : ''}`}
+              style={{ ...chipStyle, opacity: widget.minimized ? 0.55 : 1 }}
+            >
+              {widget.title}
+            </button>
+          ))}
+        </div>
+        <button type="button" aria-label="Workspace options" aria-expanded={menuOpen} onClick={() => { setMenuOpen(value => !value); setPickerOpen(false); }} style={ghostButtonStyle}>⋮</button>
+        {menuOpen && <div style={menuStyle}>
+          <div style={menuTitleStyle}>WORKSPACE</div>
+          <button type="button" onClick={reset} style={menuItemStyle}>Reset to Chart + DOM + Trades</button>
+          <div style={{ ...menuTitleStyle, marginTop: 8 }}>PANEL PRESETS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '3px 10px 8px' }}>
+            {(['1', '2', '4', '16'] as WorkspacePreset[]).map(value => <button key={value} type="button" onClick={() => preset(value)} style={presetButtonStyle}>{value}</button>)}
+          </div>
+          <div style={{ ...menuTitleStyle, marginTop: 6 }}>LINKING</div>
+          <div style={{ color: '#87939f', fontSize: 11, padding: '3px 10px 9px', lineHeight: 1.5 }}>New widgets follow {symbol || 'the active symbol'} and {timeframe} until unlinked (S / T on each panel).</div>
+        </div>}
+        {pickerOpen && <div style={pickerStyle}>
+          <div style={pickerHeaderStyle}><strong>Add widget</strong><span style={{ color: '#7e8a96', fontSize: 11 }}>Native workspace panels</span></div>
+          {PICKER_GROUPS.map(group => (
+            <section key={group.label}>
+              <div style={groupLabelStyle}>{group.label}</div>
+              <div style={pickerGridStyle}>
+                {group.types.map(type => {
+                  const def = WIDGET_DEFS[type];
+                  const exists = Boolean(def.single && widgets.some(widget => widget.type === type && widget.visible));
+                  const capability = resolveWidgetCapability(type, caps);
+                  const unavailable = capability.availability === 'unavailable';
+                  const disabled = exists || unavailable;
+                  return (
+                    <button type="button" key={type} disabled={disabled} title={exists ? 'Already on the workspace' : capability.reason} onClick={() => add(type)} style={{ ...pickerItemStyle, opacity: disabled ? 0.42 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+                      <span style={iconStyle}>{iconFor(type)}</span>
+                      <span><b>{def.title}</b><small style={{ display: 'block', color: '#83939d', fontSize: 10, lineHeight: 1.35 }}>{def.description}</small><em style={capabilityTextStyle}>{exists ? 'On workspace' : capability.availability === 'unknown' ? 'Capability pending' : capability.availability}</em></span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>}
+      </div>
+
+      <div ref={gridRef} data-workspace-grid style={gridStyle}>
+        {widgets.filter(widget => widget.visible).map(widget => (
+          <WorkspacePanelFrame
+            key={widget.id}
+            widget={widget}
+            gridRef={gridRef}
+            symbol={symbol}
+            timeframe={timeframe}
+            canClose={widget.type !== 'chart'}
+            canMinimize={widget.type !== 'chart'}
+            onGhost={(rect) => setGhost(rect ? { id: widget.id, rect } : null)}
+            onCommitRect={(rect) => commitRect(widget.id, rect)}
+            onToggleLink={(field) => update(previous => toggleWorkspaceLink(previous, widget.id, field))}
+            onMinimize={() => update(previous => setWorkspaceWidgetMinimized(previous, widget.id, !widget.minimized))}
+            onMaximize={() => update(previous => toggleWorkspaceMaximized(previous, widget.id))}
+            onClose={() => update(previous => removeWorkspaceWidget(previous, widget.id))}
+          >
+            {widget.type === 'chart'
+              ? <div style={chartContentStyle}>{children}</div>
+              : (() => {
+                  const Panel = WIDGET_PANELS[widget.type] || UnsupportedPanel;
+                  return <Panel widget={widget} symbol={symbol} timeframe={timeframe} />;
+                })()}
+          </WorkspacePanelFrame>
+        ))}
+        {ghost && <div aria-hidden style={ghostStyle(ghost.rect)} />}
+      </div>
     </div>
-    {widgets.filter(widget => widget.visible).map(widget => {
-      const rect = drag?.id === widget.id ? drag.rect : widget;
-      return <section key={widget.id} style={{ gridColumn: `${rect.x + 1} / span ${rect.width}`, gridRow: `${rect.y + 1} / span ${rect.height}`, minWidth: 0, minHeight: 0, overflow: 'hidden', position: 'relative', border: '1px solid #2d3b44', background: '#10171d' }}>
-        <header onPointerDown={event => begin(event, widget, false)} style={headerStyle}><b>{widget.title}</b><span>{widget.symbol || symbol || 'AUTO'} · {widget.timeframe || timeframe}</span></header>
-        <div style={{ height: 'calc(100% - 28px)', minHeight: 0, overflow: 'hidden' }}>{widget.id === chart.id ? children : (renderWidget ? renderWidget(widget) : fallbackRenderer(widget))}</div>
-        <button type="button" aria-label={`Resize ${widget.title}`} onPointerDown={event => begin(event, widget, true)} style={resizeHandleStyle} />
-      </section>;
-    })}
-  </div>;
+  );
 }
 
-const presetStyle: React.CSSProperties = { border: '1px solid #34434d', background: '#131c22e8', color: '#c5d0d6', borderRadius: 3, padding: '3px 7px', fontSize: 10, cursor: 'pointer' };
-const workspaceLabel: React.CSSProperties = { color: '#84939c', background: '#10171dcc', padding: '4px 7px', fontSize: 10, borderRadius: 3 };
-const headerStyle: React.CSSProperties = { height: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 8px', color: '#d9e2e7', background: '#151f26', borderBottom: '1px solid #293740', fontSize: 11, cursor: 'grab', userSelect: 'none' };
-const emptyStyle: React.CSSProperties = { height: '100%', display: 'grid', placeItems: 'center', textAlign: 'center', color: '#71808a', fontSize: 11 };
-const resizeHandleStyle: React.CSSProperties = { position: 'absolute', right: 0, bottom: 0, width: 15, height: 15, border: 0, background: 'transparent', cursor: 'nwse-resize' };
+function iconFor(type: WorkspaceWidgetType): string {
+  return ({ chart: '▥', footprint: '▤', heatmap: '▦', volumeProfile: '▥', cvdDelta: '∿', dom: '⇅', orderbook: '≋', trades: '≡', marketStats: '◌', paperTrading: '⌁', watchlist: '☆', replay: '↺' } as Record<WorkspaceWidgetType, string>)[type];
+}
+
+function ghostStyle(rect: WidgetRect): React.CSSProperties {
+  return {
+    position: 'absolute',
+    left: `${(rect.x / WORKSPACE_COLUMNS) * 100}%`,
+    top: `${(rect.y / WORKSPACE_ROWS) * 100}%`,
+    width: `${(rect.width / WORKSPACE_COLUMNS) * 100}%`,
+    height: `${(rect.height / WORKSPACE_ROWS) * 100}%`,
+    border: '1px dashed #42d493',
+    borderRadius: 6,
+    background: '#42d49314',
+    pointerEvents: 'none',
+    zIndex: 80,
+  };
+}
+
+const rootStyle: React.CSSProperties = { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#0b1014', overflow: 'hidden' };
+const toolbarStyle: React.CSSProperties = { flex: '0 0 34px', display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px', borderBottom: '1px solid #1c2830', background: '#0d1319', position: 'relative', zIndex: 70 };
+const accentButtonStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 5, background: '#123d2d', border: '1px solid #1e9b68', borderRadius: 5, color: '#7bf0b5', padding: '4px 9px', fontSize: 12, cursor: 'pointer', flex: '0 0 auto' };
+const ghostButtonStyle: React.CSSProperties = { border: '1px solid #34404a', borderRadius: 5, background: '#131a20', color: '#b5c0c8', padding: '4px 8px', fontSize: 13, cursor: 'pointer', flex: '0 0 auto' };
+const chipRowStyle: React.CSSProperties = { display: 'flex', gap: 4, overflowX: 'auto', flex: 1, minWidth: 0, scrollbarWidth: 'none' };
+const chipStyle: React.CSSProperties = { border: '1px solid #29353e', background: '#11181e', borderRadius: 4, color: '#aebbc4', padding: '3px 8px', fontSize: 11, whiteSpace: 'nowrap', cursor: 'pointer', flex: '0 0 auto' };
+const menuStyle: React.CSSProperties = { position: 'absolute', right: 8, top: 36, width: 230, background: '#10171d', border: '1px solid #33414b', borderRadius: 6, boxShadow: '0 12px 28px #000b', padding: '9px 0', zIndex: 90 };
+const menuTitleStyle: React.CSSProperties = { color: '#60717c', fontSize: 10, letterSpacing: '.08em', padding: '0 10px 4px' };
+const menuItemStyle: React.CSSProperties = { width: '100%', textAlign: 'left', border: 0, background: 'transparent', color: '#ccd6dc', cursor: 'pointer', padding: '7px 10px', fontSize: 12 };
+const presetButtonStyle: React.CSSProperties = { border: '1px solid #2b3942', borderRadius: 3, background: 'transparent', color: '#ccd6dc', cursor: 'pointer', padding: '5px 2px', fontSize: 11, textAlign: 'center' };
+const pickerStyle: React.CSSProperties = { position: 'absolute', top: 36, left: 8, width: 372, maxHeight: 'calc(100% - 48px)', overflowY: 'auto', background: '#10171d', border: '1px solid #33414b', borderRadius: 7, boxShadow: '0 14px 40px #000b', padding: '12px 12px 10px', zIndex: 90 };
+const pickerHeaderStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: '#e1e9ee', padding: '0 2px 10px', fontSize: 13 };
+const groupLabelStyle: React.CSSProperties = { color: '#697983', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', padding: '9px 2px 5px' };
+const pickerGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 };
+const pickerItemStyle: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, textAlign: 'left', background: '#161f26', border: '1px solid #26343d', borderRadius: 5, color: '#d8e0e5', padding: '8px 7px', fontSize: 12 };
+const iconStyle: React.CSSProperties = { color: '#42d493', fontSize: 17, width: 18, textAlign: 'center' };
+const capabilityTextStyle: React.CSSProperties = { display: 'block', color: '#71808a', fontSize: 9, fontStyle: 'normal', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 };
+const gridStyle: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+  position: 'relative',
+  display: 'grid',
+  gridTemplateColumns: `repeat(${WORKSPACE_COLUMNS}, minmax(0, 1fr))`,
+  gridTemplateRows: `repeat(${WORKSPACE_ROWS}, minmax(0, 1fr))`,
+  gap: 4,
+  padding: 4,
+};
+const chartContentStyle: React.CSSProperties = { flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' };
