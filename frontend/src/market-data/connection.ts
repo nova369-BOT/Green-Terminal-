@@ -18,6 +18,7 @@ import type {
 export type ConnectionListener = (state: ConnectionState, detail?: string) => void;
 export type TickListener = (msg: Extract<ServerMessage, { type: 'tick' }>) => void;
 export type StatusListener = (msg: Extract<ServerMessage, { type: 'status' }>) => void;
+export type DepthListener = (msg: Extract<ServerMessage, { type: 'ORDER_BOOK_SNAPSHOT' | 'ORDER_BOOK_UPDATE' | 'DEPTH_RESET' }>) => void;
 export type ErrorListener = (message: string) => void;
 export type CapsListener = (caps: CapabilitiesPayload) => void;
 
@@ -55,6 +56,7 @@ export class MarketDataConnection {
   private onConn = new Set<ConnectionListener>();
   private onTick = new Set<TickListener>();
   private onStatus = new Set<StatusListener>();
+  private onDepth = new Set<DepthListener>();
   private onError = new Set<ErrorListener>();
   private onCaps = new Set<CapsListener>();
 
@@ -74,6 +76,7 @@ export class MarketDataConnection {
   on(event: 'connection', fn: ConnectionListener): () => void;
   on(event: 'tick', fn: TickListener): () => void;
   on(event: 'status', fn: StatusListener): () => void;
+  on(event: 'depth', fn: DepthListener): () => void;
   on(event: 'error', fn: ErrorListener): () => void;
   on(event: 'capabilities', fn: CapsListener): () => void;
   on(event: string, fn: (...args: any[]) => void): () => void {
@@ -81,6 +84,7 @@ export class MarketDataConnection {
       event === 'connection' ? this.onConn
       : event === 'tick' ? this.onTick
       : event === 'status' ? this.onStatus
+      : event === 'depth' ? this.onDepth
       : event === 'error' ? this.onError
       : event === 'capabilities' ? this.onCaps
       : null;
@@ -238,6 +242,11 @@ export class MarketDataConnection {
       case 'status':
         this.lastServerStatus = msg;
         for (const fn of this.onStatus) fn(msg);
+        break;
+      case 'ORDER_BOOK_SNAPSHOT':
+      case 'ORDER_BOOK_UPDATE':
+      case 'DEPTH_RESET':
+        for (const fn of this.onDepth) fn(msg);
         break;
       case 'error':
         for (const fn of this.onError) fn(msg.message);

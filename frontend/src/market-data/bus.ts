@@ -29,6 +29,8 @@ export interface BusTrade extends BusQuote {
   size?: number;
 }
 
+export type BusDepth = Extract<import('./types').ServerMessage, { type: 'ORDER_BOOK_SNAPSHOT' | 'ORDER_BOOK_UPDATE' | 'DEPTH_RESET' }>;
+
 export interface BusConnectionStatus {
   provider: string;
   state: ConnectionState | string;
@@ -86,6 +88,7 @@ export class MarketDataBus {
   private conn: MarketDataConnection;
   private quoteH = new Set<Handler<BusQuote>>();
   private tradeH = new Set<Handler<BusTrade>>();
+  private depthH = new Set<Handler<BusDepth>>();
   private connH = new Set<Handler<BusConnectionStatus>>();
   private errorH = new Set<Handler<{ provider: string; message: string }>>();
   private statusH = new Set<Handler<{ state: string }>>();
@@ -147,6 +150,12 @@ export class MarketDataBus {
     this.ensureWired();
     this.quoteH.add(fn);
     return () => { this.quoteH.delete(fn); };
+  }
+
+  subscribeDepth(fn: Handler<BusDepth>): () => void {
+    this.ensureWired();
+    const off = this.conn.on('depth', fn);
+    return off;
   }
 
   subscribeTrade(fn: Handler<BusTrade>): () => void {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getBus, type BusTrade } from '@/market-data/bus';
+import { getBus, type BusDepth, type BusTrade } from '@/market-data/bus';
 import { useLiveQuote } from '@/market-data/hooks';
 import { useCapabilities } from '@/market-data/hooks';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
@@ -28,15 +28,30 @@ const GROUPS: Array<{ label: string; types: WorkspaceWidgetType[] }> = [
 export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol: string; timeframe: string }) {
   const [widgets, setWidgets] = useState<WorkspaceWidget[]>([]);
   const [trades, setTrades] = useState<BusTrade[]>([]);
+  const [depth, setDepth] = useState<{ bids: Array<[string, string]>; asks: Array<[string, string]>; ready: boolean; reset?: string }>({ bids: [], asks: [], ready: false });
   const { caps } = useCapabilities();
   const tradesOpen = widgets.some(widget => widget.type === 'trades' && widget.visible);
   const statsOpen = widgets.some(widget => widget.type === 'marketStats' && widget.visible);
+  const domOpen = widgets.some(widget => widget.type === 'dom' && widget.visible);
   const { quote, connected, lastTickAgeMs } = useLiveQuote(symbol || null, undefined, statsOpen);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setWidgets(loadWorkspaceWidgets()), []);
+  useEffect(() => {
+    if (!domOpen || !symbol) { setDepth({ bids: [], asks: [], ready: false }); return; }
+    const bus = getBus();
+    const stop = bus.stream([symbol], 'binance-depth');
+    const off = bus.subscribeDepth((event: BusDepth) => {
+      if (event.symbol !== symbol) return;
+      if (event.type === 'DEPTH_RESET') { setDepth({ bids: [], asks: [], ready: false, reset: String(event.reason || 'depth reset') }); return; }
+      const bids = Array.isArray(event.bids || event.b) ? (event.bids || event.b) as Array<[string, string]> : [];
+      const asks = Array.isArray(event.asks || event.a) ? (event.asks || event.a) as Array<[string, string]> : [];
+      setDepth(previous => event.type === 'ORDER_BOOK_SNAPSHOT' ? { bids, asks, ready: false } : { bids: applyDepth(previous.bids, bids), asks: applyDepth(previous.asks, asks), ready: true });
+    });
+    return () => { off(); stop(); };
+  }, [symbol, domOpen]);
   useEffect(() => {
     if (!tradesOpen || !symbol) { setTrades([]); return; }
     const bus = getBus();
@@ -115,6 +130,10 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
           </section>
         ))}
       </div>}
+      {domOpen && <div style={domPanelStyle}>
+        <div style={tradeHeaderStyle}><b>DOM · Binance L2</b><span style={{ color: depth.ready ? '#58d797' : '#e1a650' }}>{depth.ready ? 'Live' : 'Syncing'}</span></div>
+        {depth.ready ? <div style={domGridStyle}><div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, 8).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div><div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, 8).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div></div> : <div style={emptyTradeStyle}>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></div>}
+      </div>}
       {statsOpen && <div style={statsPanelStyle}>
         <div style={tradeHeaderStyle}><b>Market statistics · live</b><span style={{ color: connected ? '#58d797' : '#e1a650' }}>{connected ? 'Connected' : 'Offline'}</span></div>
         <div style={statsGridStyle}>
@@ -139,6 +158,12 @@ function Stat({ label, value }: { label: string; value: string }): JSX.Element {
   return <div><div style={statLabelStyle}>{label}</div><strong style={statValueStyle}>{value}</strong></div>;
 }
 
+function applyDepth(current: Array<[string, string]>, updates: Array<[string, string]>): Array<[string, string]> {
+  const map = new Map(current);
+  for (const [price, quantity] of updates) quantity === '0' ? map.delete(price) : map.set(price, quantity);
+  return [...map.entries()].sort((a, b) => Number(b[0]) - Number(a[0]));
+}
+function barStyle(quantity: string, color: string): React.CSSProperties { return { color, fontStyle: 'normal', textAlign: 'right', minWidth: 50, background: `linear-gradient(90deg, transparent 0%, ${color}33 ${Math.min(100, Number(quantity) || 0)}%)` }; }
 function formatPrice(value?: number): string {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—';
 }
@@ -155,6 +180,11 @@ const groupLabel: React.CSSProperties = { color: '#697983', fontSize: 10, textTr
 const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 };
 const pickerItem: React.CSSProperties = { display: 'flex', alignItems: 'flex-start', gap: 8, textAlign: 'left', background: '#161f26', border: '1px solid #26343d', borderRadius: 5, color: '#d8e0e5', padding: '8px 7px', cursor: 'pointer' };
 const iconStyle: React.CSSProperties = { color: '#42d493', fontSize: 17, width: 18, textAlign: 'center' };
+const domPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 360, maxHeight: 'calc(100% - 52px)', overflow: 'auto', pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
+const domGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 10 };
+const domRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 6, color: '#b8c5cc', fontSize: 10, padding: '3px 0', borderBottom: '1px solid #1e292f' };
+const domSideBid: React.CSSProperties = { color: '#58d797', fontSize: 9 };
+const domSideAsk: React.CSSProperties = { color: '#e28b91', fontSize: 9 };
 const statsPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
 const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 };
 const statLabelStyle: React.CSSProperties = { color: '#71808a', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em' };
