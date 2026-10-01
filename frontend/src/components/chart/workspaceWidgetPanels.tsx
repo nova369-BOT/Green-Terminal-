@@ -3,6 +3,10 @@ import { getBus, type BusDepth, type BusTrade } from '@/market-data/bus';
 import { useCapabilities, useLiveQuote } from '@/market-data/hooks';
 import { DepthHeatmapHistory, type HeatmapFrame } from '@/lib/depthHeatmap';
 import { bucketPrints, FOOTPRINT_PERIODS, formatCompact, isBuyImbalance, isSellImbalance, MAX_RETAINED_PRINTS, timeframeToMs, type FootprintPeriod, type FootprintPrint } from '@/lib/footprintAggregator';
+import { buildCvdSeries, type CvdPrint, type CvdSeries } from '@/lib/cvdSeries';
+import { buildVolumeProfile, type ProfilePrint, type VolumeProfileResult } from '@/lib/volumeProfile';
+import { applyPaperOrder, closePaperPosition, loadPaperAccount, paperUnrealized, savePaperAccount, type PaperAccount, type PaperFill } from '@/lib/paperTrading';
+import { drawCvd } from './cvdCanvas';
 import { drawHeatmap } from './heatmapCanvas';
 import { resolveFlowSource } from '@/lib/flowSources';
 import type { WorkspaceWidget, WorkspaceWidgetType } from '@/lib/workspaceWidgets';
@@ -219,33 +223,60 @@ export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps):
 
 /* ---------------------------------- CVD / Delta ---------------------------------- */
 
-export function CvdPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
+export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  const [cvd, setCvd] = useState({ value: 0, buy: 0, sell: 0, sideKnown: true });
+  const tf = widget.timeframe || timeframe;
+  const [mode, setMode] = useState<'cvd' | 'delta'>('cvd');
+  const printsRef = useRef<CvdPrint[]>([]);
+  const dirtyRef = useRef(false);
+  const [series, setSeries] = useState<CvdSeries>({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 });
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (!sym) return undefined;
-    setCvd({ value: 0, buy: 0, sell: 0, sideKnown: true });
+    printsRef.current = [];
+    dirtyRef.current = false;
+    setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 });
     const bus = getBus();
     const stop = bus.stream([sym]);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== sym) return;
-      setCvd(previous => {
-        const size = typeof trade.size === 'number' ? trade.size : 0;
-        if (!trade.side) return { ...previous, sideKnown: false };
-        return trade.side === 'buy'
-          ? { ...previous, value: previous.value + size, buy: previous.buy + size }
-          : { ...previous, value: previous.value - size, sell: previous.sell + size };
-      });
+      printsRef.current.push({ tsMs: trade.tsMs, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
+      if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
+      dirtyRef.current = true;
     });
-    return () => { off(); stop(); };
-  }, [sym]);
+    const flush = setInterval(() => {
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      setSeries(buildCvdSeries(printsRef.current, timeframeToMs(tf), Date.now(), 60));
+    }, 400);
+    return () => { off(); stop(); clearInterval(flush); };
+  }, [sym, tf]);
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const canvas = canvasRef.current;
+    if (!wrap || !canvas) return undefined;
+    const draw = () => drawCvd(canvas, { width: wrap.clientWidth, height: wrap.clientHeight, series, mode, devicePixelRatio: window.devicePixelRatio || 1 });
+    const observer = new ResizeObserver(draw);
+    observer.observe(wrap);
+    draw();
+    return () => observer.disconnect();
+  }, [series, mode]);
+  const last = series.cumulative[series.cumulative.length - 1] || 0;
+  const reset = () => { printsRef.current = []; dirtyRef.current = false; setSeries({ periods: [], cumulative: [], buyTotal: 0, sellTotal: 0, ignoredNoSide: 0 }); };
   return <div style={bodyStyle}>
-    <StatusStrip left="Cumulative delta" right={formatPrice(cvd.value)} tone={cvd.value >= 0 ? 'live' : 'wait'} />
-    <div style={statsGridStyle}>
-      <Stat label="Aggressive buy" value={formatPrice(cvd.buy)} />
-      <Stat label="Aggressive sell" value={formatPrice(cvd.sell)} />
+    <StatusStrip left={`${mode === 'cvd' ? 'Cumulative delta' : 'Period delta'} · ${tf}`} right={formatPrice(last)} tone={last >= 0 ? 'live' : 'wait'} />
+    <div style={domToolbarStyle}>
+      <div style={domSegmentStyle}>
+        {(['cvd', 'delta'] as const).map(value => <button key={value} type="button" onClick={() => setMode(value)} style={{ ...domSegmentButtonStyle, color: mode === value ? '#7bf0b5' : '#71808a', borderColor: mode === value ? '#1e9b68' : '#26343d' }}>{value === 'cvd' ? 'CVD' : 'Δ bars'}</button>)}
+        <button type="button" onClick={reset} title="Reset the session accumulation" style={{ ...domSegmentButtonStyle, color: '#84949d' }}>Reset</button>
+      </div>
+      <span style={{ color: '#71808a', fontSize: 9 }}>buy {formatCompact(series.buyTotal)} · sell {formatCompact(series.sellTotal)}</span>
     </div>
-    {!cvd.sideKnown && <div style={statsFootStyle}>Provider has not supplied aggressor side; delta is not complete.</div>}
+    <div ref={wrapRef} style={heatWrapStyle}>
+      {series.periods.length ? <canvas ref={canvasRef} style={heatCanvasStyle} /> : <EmptyNote>Waiting for provider trade prints.<br /><small>Side is never inferred from price movement.</small></EmptyNote>}
+    </div>
+    <div style={statsFootStyle}>{series.ignoredNoSide ? `Provider omitted aggressor side on ${series.ignoredNoSide} prints — delta is not complete.` : 'Aggressor side supplied by the provider only.'}</div>
   </div>;
 }
 
@@ -300,31 +331,102 @@ export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element 
 
 export function VolumeProfilePanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  const [profile, setProfile] = useState<Record<string, number>>({});
+  const [mode, setMode] = useState<'volume' | 'delta'>('volume');
+  const printsRef = useRef<ProfilePrint[]>([]);
+  const dirtyRef = useRef(false);
+  const [profile, setProfile] = useState<VolumeProfileResult | null>(null);
   useEffect(() => {
     if (!sym) return undefined;
-    setProfile({});
+    printsRef.current = [];
+    dirtyRef.current = false;
+    setProfile(null);
     const bus = getBus();
     const stop = bus.stream([sym]);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== sym || typeof trade.price !== 'number') return;
-      setProfile(previous => {
-        const key = String(trade.price);
-        return { ...previous, [key]: (previous[key] || 0) + (typeof trade.size === 'number' ? trade.size : 0) };
-      });
+      printsRef.current.push({ price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
+      if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
+      dirtyRef.current = true;
     });
-    return () => { off(); stop(); };
+    const flush = setInterval(() => {
+      if (!dirtyRef.current) return;
+      dirtyRef.current = false;
+      setProfile(buildVolumeProfile(printsRef.current, 24));
+    }, 600);
+    return () => { off(); stop(); clearInterval(flush); };
   }, [sym]);
-  const rows = Object.entries(profile).sort((a, b) => b[1] - a[1]).slice(0, 18);
-  const max = rows[0]?.[1] || 1;
   return <div style={bodyStyle}>
-    <StatusStrip left="Volume by price" right={Object.keys(profile).length ? `${Object.keys(profile).length} prices` : 'Waiting'} tone={rows.length ? 'live' : 'wait'} />
-    {rows.map(([price, volume], index) => <div key={price} style={profileRowStyle}>
-      <span>{price}</span>
-      <i style={profileBarStyle(volume, max)}>{volume.toFixed(4)}</i>
-      {index === 0 && <strong style={{ color: '#e1b65c' }}>POC</strong>}
-    </div>)}
-    {!rows.length && <EmptyNote>Waiting for verified trade volume.<br /><small>Candle volume is never used as a substitute.</small></EmptyNote>}
+    <StatusStrip left={`Session profile · ${sym || '—'}`} right={profile ? `POC ${profile.poc != null ? profile.poc.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}` : 'Waiting'} tone={profile ? 'live' : 'wait'} />
+    <div style={domToolbarStyle}>
+      <div style={domSegmentStyle}>
+        {(['volume', 'delta'] as const).map(value => <button key={value} type="button" onClick={() => setMode(value)} style={{ ...domSegmentButtonStyle, color: mode === value ? '#7bf0b5' : '#71808a', borderColor: mode === value ? '#1e9b68' : '#26343d' }}>{value === 'volume' ? 'Volume' : 'Delta'}</button>)}
+      </div>
+      {profile && <span style={{ color: '#71808a', fontSize: 9 }}>VAH {profile.vah?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? '—'} · VAL {profile.val?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? '—'}</span>}
+    </div>
+    {profile ? <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '6px 0' }}>
+      {profile.rows.map(row => {
+        const share = row.total / profile.maxRowVolume;
+        const delta = row.buy - row.sell;
+        const isPoc = row.price === profile.poc;
+        const isVa = profile.vah != null && profile.val != null && row.price <= profile.vah && row.price >= profile.val;
+        return <div key={row.price} style={{ ...vpRowStyle, borderLeft: isPoc ? '2px solid #e1b65c' : '2px solid transparent', background: isVa ? '#e1b65c10' : 'transparent' }}>
+          <span style={vpPriceStyle}>{row.price.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+          {mode === 'volume' ? <span style={vpBarTrackStyle}>
+            <i style={{ ...vpFillStyle, width: `${(row.buy / (row.buy + row.sell || 1)) * share * 100}%`, background: '#318f6990' }} />
+            <i style={{ ...vpFillStyle, width: `${(row.sell / (row.buy + row.sell || 1)) * share * 100}%`, background: '#b55e6390' }} />
+          </span> : <span style={vpBarTrackStyle}>
+            <i style={{ ...vpDeltaStyle, width: `${Math.min(100, Math.abs(delta) / (profile.maxRowVolume || 1) * 100)}%`, background: delta >= 0 ? '#318f69aa' : '#b55e63aa', alignSelf: delta >= 0 ? 'flex-end' : 'flex-start' }} />
+          </span>}
+          <span style={{ ...vpTagStyle, color: isPoc ? '#e1b65c' : row.hvn ? '#8bb7e8' : row.lvn ? '#5f6e77' : 'transparent' }}>{isPoc ? 'POC' : row.hvn ? 'HVN' : row.lvn ? 'LVN' : '·'}</span>
+        </div>;
+      })}
+    </div> : <EmptyNote>Waiting for verified trade volume.<br /><small>Candle volume is never used as a substitute.</small></EmptyNote>}
+    {profile && <div style={statsFootStyle}>Prints since panel opened · buy/sell split from provider aggressor only · value area = 70%</div>}
+  </div>;
+}
+
+/* -------------------------------- Paper Trading -------------------------------- */
+
+export function PaperTradingPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
+  const sym = widget.symbol || symbol;
+  const { quote, connected } = useLiveQuote(sym || null, undefined, true);
+  const [account, setAccount] = useState<PaperAccount>(() => loadPaperAccount(widget.id));
+  const [qtyText, setQtyText] = useState('0.01');
+  const [notice, setNotice] = useState('');
+  useEffect(() => { setAccount(loadPaperAccount(widget.id)); setNotice(''); }, [widget.id, sym]);
+  const commit = (result: { account: PaperAccount; fill: PaperFill }) => {
+    setAccount(result.account);
+    savePaperAccount(widget.id, result.account);
+    setNotice(result.fill.pnl != null ? `${result.fill.message} · P&L ${result.fill.pnl >= 0 ? '+' : ''}${result.fill.pnl.toFixed(2)}` : result.fill.message);
+  };
+  const qty = Number(qtyText);
+  const mark = typeof quote?.price === 'number' ? quote.price : 0;
+  const position = account.position && account.position.symbol === sym ? account.position : null;
+  const unrealized = position && mark > 0 ? paperUnrealized(position, mark) : null;
+  return <div style={bodyStyle}>
+    <StatusStrip left={`Paper trading · ${sym || '—'}`} right={connected ? 'Live marks' : 'Offline'} tone={connected ? 'live' : 'wait'} />
+    <div style={paperBannerStyle}>SIMULATION ONLY — no real orders, no broker, no risk.</div>
+    <div style={{ padding: '10px 12px', display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <span style={statLabelStyle}>Qty</span>
+        <input value={qtyText} onChange={event => setQtyText(event.target.value)} inputMode="decimal" aria-label="Order quantity" style={symbolInputStyle2} />
+        <span style={{ color: '#71808a', fontSize: 10 }}>@ {mark > 0 ? mark.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—'}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button type="button" onClick={() => commit(applyPaperOrder(account, sym, 'buy', qty, mark))} style={paperBuyStyle}>BUY / LONG</button>
+        <button type="button" onClick={() => commit(applyPaperOrder(account, sym, 'sell', qty, mark))} style={paperSellStyle}>SELL / SHORT</button>
+        <button type="button" onClick={() => commit(closePaperPosition(account, mark))} style={paperFlatStyle}>FLATTEN</button>
+      </div>
+      {notice && <div style={{ color: '#84949d', fontSize: 10 }}>{notice}</div>}
+    </div>
+    <div style={paperPositionStyle}>
+      {position ? <>
+        <div><span style={statLabelStyle}>Position</span><strong style={{ ...statValueStyle, color: position.side === 'long' ? '#58d797' : '#e28b91' }}>{position.side.toUpperCase()} {position.qty} @ {position.entry.toLocaleString(undefined, { maximumFractionDigits: 8 })}</strong></div>
+        <div><span style={statLabelStyle}>Unrealized</span><strong style={{ ...statValueStyle, color: unrealized != null && unrealized >= 0 ? '#58d797' : '#e28b91' }}>{unrealized != null ? `${unrealized >= 0 ? '+' : ''}${unrealized.toFixed(2)}` : '—'}</strong></div>
+      </> : <div><span style={statLabelStyle}>Position</span><strong style={statValueStyle}>Flat</strong></div>}
+      <div><span style={statLabelStyle}>Realized (session)</span><strong style={{ ...statValueStyle, color: account.realized >= 0 ? '#58d797' : '#e28b91' }}>{account.realized >= 0 ? '+' : ''}{account.realized.toFixed(2)}</strong></div>
+      <div><span style={statLabelStyle}>Fills</span><strong style={statValueStyle}>{account.trades}</strong></div>
+    </div>
   </div>;
 }
 
@@ -350,13 +452,11 @@ export const WIDGET_PANELS: Partial<Record<WorkspaceWidgetType, (props: WidgetPa
   cvdDelta: CvdPanel,
   heatmap: HeatmapPanel,
   volumeProfile: VolumeProfilePanel,
+  paperTrading: PaperTradingPanel,
 };
 
 function barStyle(quantity: string, color: string): React.CSSProperties {
   return { color, fontStyle: 'normal', textAlign: 'right', minWidth: 50, background: `linear-gradient(90deg, transparent 0%, ${color}33 ${Math.min(100, Number(quantity) || 0)}%)` };
-}
-function profileBarStyle(value: number, max: number): React.CSSProperties {
-  return { color: '#8bb7e8', fontStyle: 'normal', background: `linear-gradient(90deg, #366a9d55 ${Math.min(100, (value / max) * 100)}%, transparent 0)` };
 }
 
 const bodyStyle: React.CSSProperties = { height: '100%', minHeight: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' };
@@ -384,4 +484,16 @@ const footEmptyCell: React.CSSProperties = { color: '#4d5c64', textAlign: 'cente
 const footDeltaStyle: React.CSSProperties = { marginTop: 'auto', textAlign: 'center', fontSize: 10, fontWeight: 700, padding: '4px 2px', borderTop: '1px solid #1e292f', background: '#121b21' };
 const heatWrapStyle: React.CSSProperties = { flex: 1, minHeight: 0, position: 'relative' };
 const heatCanvasStyle: React.CSSProperties = { position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' };
+const vpRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '92px 1fr 40px', gap: 8, alignItems: 'center', padding: '3px 10px' };
+const vpPriceStyle: React.CSSProperties = { color: '#8fa8b3', fontSize: 9, textAlign: 'right' };
+const vpBarTrackStyle: React.CSSProperties = { display: 'flex', height: 11, background: '#121b21', borderRadius: 2, overflow: 'hidden' };
+const vpFillStyle: React.CSSProperties = { display: 'block', height: '100%' };
+const vpDeltaStyle: React.CSSProperties = { display: 'block', height: '100%' };
+const vpTagStyle: React.CSSProperties = { fontSize: 8, fontWeight: 700, letterSpacing: '.05em', textAlign: 'right' };
+const paperBannerStyle: React.CSSProperties = { margin: '8px 10px 0', padding: '6px 9px', border: '1px dashed #e1a650', borderRadius: 4, color: '#e1a650', fontSize: 9, letterSpacing: '.05em', textTransform: 'uppercase', textAlign: 'center' };
+const symbolInputStyle2: React.CSSProperties = { width: 90, background: '#0d141a', border: '1px solid #26343d', borderRadius: 3, color: '#d8e3e8', fontSize: 11, padding: '4px 6px' };
+const paperBuyStyle: React.CSSProperties = { flex: 1, border: '1px solid #1e9b68', borderRadius: 4, background: '#123d2d', color: '#7bf0b5', cursor: 'pointer', padding: '8px 0', fontSize: 11, fontWeight: 700 };
+const paperSellStyle: React.CSSProperties = { flex: 1, border: '1px solid #b55e63', borderRadius: 4, background: '#3d1518', color: '#f0a0a5', cursor: 'pointer', padding: '8px 0', fontSize: 11, fontWeight: 700 };
+const paperFlatStyle: React.CSSProperties = { flex: 1, border: '1px solid #34404a', borderRadius: 4, background: '#131a20', color: '#b5c0c8', cursor: 'pointer', padding: '8px 0', fontSize: 11 };
+const paperPositionStyle: React.CSSProperties = { margin: '0 10px 10px', padding: '10px 12px', borderTop: '1px solid #293740', display: 'grid', gap: 10 };
 const profileRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.5fr .5fr', gap: 7, color: '#c0cbd0', fontSize: 10, padding: '4px 10px', borderTop: '1px solid #1e292f' };
