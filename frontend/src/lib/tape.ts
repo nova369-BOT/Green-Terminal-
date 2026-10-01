@@ -61,12 +61,40 @@ export function fmtTimeSeconds(tsMs: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+export interface SessionStats {
+  /** Running aggregates since the tape attached to this instrument —
+   * explicitly session-observed, never labelled as a venue 24h set. */
+  startMs: number;
+  lastPrice: number | null;
+  high: number | null;
+  low: number | null;
+  volumeBuy: number;
+  volumeSell: number;
+  volume: number;
+  /** CVD: cumulative signed volume, buys − sells, since session start. */
+  cvd: number;
+  vwap: number | null;
+  prints: number;
+}
+
 export class TradeTape {
   /** Ring buffer, one slot per print (trades_ / row_text_ parity). */
   private readonly ring: (TapePrint | undefined)[] = new Array(MAX_TRADES);
   private count = 0;
   private qtyEma = 0;
   private revisionCount = 0;
+
+  /* Session running counters — the stats_widget "session" rows the market
+   * statistics panel derives from verifiable prints only. All start at 0 /
+   * null: nothing is seeded. */
+  private sessionStart = 0;
+  private lastPrice: number | null = null;
+  private sessionHigh: number | null = null;
+  private sessionLow: number | null = null;
+  private sessionVolBuy = 0;
+  private sessionVolSell = 0;
+  private sessionVwapNum = 0;
+  private sessionVwapDen = 0;
 
   /** Price decimals for new rows (fmt_.price_fmt). Rises when a finer print
    * arrives from a finer instrument — earlier rows stay at their insert
@@ -87,6 +115,14 @@ export class TradeTape {
 
     const big = this.qtyEma > 0 && qty > this.qtyEma * BIG_PRINT_FACTOR;
     this.qtyEma = this.qtyEma <= 0 ? qty : this.qtyEma * (1 - EMA_ALPHA) + qty * EMA_ALPHA;
+
+    if (this.sessionStart === 0) this.sessionStart = tsMs;
+    this.lastPrice = price;
+    this.sessionHigh = this.sessionHigh == null ? price : Math.max(this.sessionHigh, price);
+    this.sessionLow = this.sessionLow == null ? price : Math.min(this.sessionLow, price);
+    if (isBuy) this.sessionVolBuy += qty; else this.sessionVolSell += qty;
+    this.sessionVwapNum += price * qty;
+    this.sessionVwapDen += qty;
 
     const print: TapePrint = {
       tsMs, price, qty, isBuy,
@@ -123,7 +159,33 @@ export class TradeTape {
     this.ring.fill(undefined);
     this.count = 0;
     this.qtyEma = 0;
+    this.sessionStart = 0;
+    this.lastPrice = null;
+    this.sessionHigh = null;
+    this.sessionLow = null;
+    this.sessionVolBuy = 0;
+    this.sessionVolSell = 0;
+    this.sessionVwapNum = 0;
+    this.sessionVwapDen = 0;
     this.revisionCount += 1;
+  }
+
+  /** Session aggregates derived strictly from observed prints since attach.
+   * VWAP = Σ(price·qty)/Σqty over the observed tape — the natural session
+   * mean, not an exchange-published anchor or a mid-approximation. */
+  session(): SessionStats {
+    return {
+      startMs: this.sessionStart,
+      lastPrice: this.lastPrice,
+      high: this.sessionHigh,
+      low: this.sessionLow,
+      volumeBuy: this.sessionVolBuy,
+      volumeSell: this.sessionVolSell,
+      volume: this.sessionVolBuy + this.sessionVolSell,
+      cvd: this.sessionVolBuy - this.sessionVolSell,
+      vwap: this.sessionVwapDen > 0 ? this.sessionVwapNum / this.sessionVwapDen : null,
+      prints: this.count,
+    };
   }
 
   /** calculate_statistics() parity: buy/sell volumes against the wall clock

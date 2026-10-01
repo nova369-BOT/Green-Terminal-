@@ -163,39 +163,90 @@ function NotProvided({ label }: { label: string }): JSX.Element {
   return <div style={statsCellStyle}><div style={statLabelStyle}>{label}</div><strong style={statValueStyle}>—</strong><small style={notProvidedStyle}>NOT PROVIDED</small></div>;
 }
 
+/**
+ * Market statistics — G-Flow parity port of the stats widget's public side
+ * (Overview/Market/Session). Overview cells come from the validated book and
+ * quote; Session cells are running aggregates over the observed print tape
+ * (see tape.ts session()). Mark/index/funding/open-interest/24h cells are
+ * NOT PROVIDED: no subscribed stream publishes them, so nothing is filled
+ * from candles and no value is rolled across sessions.
+ */
 export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
   const flow = useAdaptiveFlowSource(sym);
   const resolved = flow.flow.status === 'resolved' ? flow.flow.source : null;
-  /* The display symbol alone ("BTC/USD") is not a provider stream and the
-   * subscribe carries no provider hint → the hub rejects with "provider
-   * required" and no tick ever arrived. Follow the resolved venue stream;
-   * Binance down ⇒ Hyperliquid Perp with an honest banner. */
   const { quote, connected, lastTickAgeMs } = useLiveQuote(resolved?.stream ?? null, resolved?.provider, true);
-  /* The normalized tick carries price/bid/ask/source only. Mark, index,
-   * funding, open interest and the 24h set are NOT published into this feed
-   * today, so they render NOT PROVIDED instead of candle-derived guesses. */
+  const { depth } = useResolvedDepth(widget, symbol);
+
+  const streamId = resolved ? resolved.stream : 'none';
+  const tapeRef = useRef(new TradeTape());
+  const [tapeRev, setTapeRev] = useState(0);
+  useEffect(() => {
+    tapeRef.current = new TradeTape();
+    setTapeRev(tapeRef.current.revision());
+  }, [streamId]);
+  useEffect(() => {
+    if (!resolved) return undefined;
+    const provider = resolved.provider;
+    const bus = getBus();
+    const off = bus.subscribeTrade((trade) => {
+      if (trade.symbol !== resolved.stream) return;
+      if (trade.side !== 'buy' && trade.side !== 'sell') return;
+      if (trade.size == null) return;
+      noteFlowVenueEvent(provider, 'data');
+      if (tapeRef.current.add(trade.tsMs, trade.price, trade.size, trade.side === 'buy')) {
+        setTapeRev(tapeRef.current.revision());
+      }
+    });
+    return off;
+  }, [resolved]);
+  const session = useMemo(() => tapeRef.current.session(), [tapeRev]);
+
+  const bid = depth.ready && depth.bids.length ? Number(depth.bids[0][0]) : null;
+  const ask = depth.ready && depth.asks.length ? Number(depth.asks[0][0]) : null;
+  const mid = bid != null && ask != null ? (bid + ask) / 2 : null;
+  const spread = bid != null && ask != null ? ask - bid : null;
+  const spreadBps = spread != null && mid ? (spread / mid) * 1e4 : null;
+  const decimals = depth.ready ? decimalsForTick(deriveTickFromPrices(
+    [depth.bids[0]?.[0], depth.asks[0]?.[0]].filter((s): s is string => typeof s === 'string'))) : 2;
+  const fmtD = (v: number | null): string => v == null ? '—' : fmtLadderPrice(v, decimals);
+  const fmtVol = (v: number): string => v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+
   if (flow.flow.status === 'none') {
-    return <div style={bodyStyle}><StatusStrip left={`${sym || 'No symbol'} · expanded`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
+    return <div style={bodyStyle}><StatusStrip left={`${sym || 'No symbol'} · stats`} right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
+  const sessionLive = session.prints > 0;
   return <div style={bodyStyle}>
-    <StatusStrip left={`${(resolved?.stream ?? sym) || 'No symbol'} · expanded`} right={connected ? (quote ? 'Connected' : 'Connecting') : 'Offline'} tone={quote ? 'live' : connected ? 'wait' : 'muted'} />
+    <StatusStrip left={resolved?.stream ?? sym} right={connected ? (sessionLive ? 'Live' : 'Waiting') : 'Offline'} tone={sessionLive ? 'live' : connected ? 'wait' : 'muted'} />
     <SwapBanner flow={flow} />
+    <div style={statsSectionStyle}>OVERVIEW</div>
     <div style={statsCellGridStyle}>
-      <Stat label="Last" value={formatPrice(quote?.price)} />
-      <Stat label="Bid" value={formatPrice(quote?.bid)} />
-      <Stat label="Ask" value={formatPrice(quote?.ask)} />
-      <Stat label="Source" value={quote?.source || '—'} />
+      <Stat label="Last" value={fmtD(session.lastPrice ?? quote?.price ?? null)} />
+      <Stat label="Bid" value={fmtD(bid)} />
+      <Stat label="Ask" value={fmtD(ask)} />
+      <Stat label="Spread" value={spread == null ? '—' : `${fmtD(spread)}${spreadBps != null ? ` · ${spreadBps.toFixed(2)}bp` : ''}`} />
+    </div>
+    <div style={statsSectionStyle}>SESSION <small>Tape-verified aggregates since attach</small></div>
+    <div style={statsCellGridStyle}>
+      <Stat label="High" value={fmtD(session.high)} />
+      <Stat label="Low" value={fmtD(session.low)} />
+      <Stat label="Volume" value={sessionLive ? fmtVol(session.volume) : '—'} />
+      <Stat label="VWAP" value={fmtD(session.vwap)} />
+      <Stat label="Buy vol" value={sessionLive ? fmtVol(session.volumeBuy) : '—'} />
+      <Stat label="Sell vol" value={sessionLive ? fmtVol(session.volumeSell) : '—'} />
+      <div style={statsCellStyle}><div style={statLabelStyle}>CVD</div><strong style={{ ...statValueStyle, color: session.cvd >= 0 ? '#58d797' : '#e28b91' }}>{sessionLive ? `${session.cvd >= 0 ? '+' : ''}${fmtVol(session.cvd)}` : '—'}</strong></div>
+      <Stat label="Prints" value={sessionLive ? String(session.prints) : '—'} />
+    </div>
+    <div style={statsSectionStyle}>VENUE-DEPENDENT</div>
+    <div style={statsCellGridStyle}>
       <NotProvided label="Mark price" />
       <NotProvided label="Index" />
       <NotProvided label="Funding" />
       <NotProvided label="Open interest" />
       <NotProvided label="24h volume" />
-      <NotProvided label="24h high" />
-      <NotProvided label="24h low" />
       <NotProvided label="24h change" />
     </div>
-    <div style={statsFootStyle}>{lastTickAgeMs == null ? 'No live tick received.' : `Last tick ${Math.round(lastTickAgeMs / 100) / 10}s ago.`} NOT PROVIDED cells are fields the venue feed does not publish — never derived from candles.</div>
+    <div style={statsFootStyle}>{lastTickAgeMs == null ? 'No live tick received.' : `Last tick ${Math.round(lastTickAgeMs / 100) / 10}s ago.`} Session cells derive only from verified prints after attach; venue-dependent cells the feed does not publish stay NOT PROVIDED — never candle-derived.</div>
   </div>;
 }
 
@@ -1125,6 +1176,7 @@ const tapeRowStyle2: React.CSSProperties = { display: 'grid', gridTemplateColumn
 const tapeFootStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderTop: '1px solid #1c2a22', color: '#7d8a80', fontSize: 8, letterSpacing: '.06em', background: '#0e1511' };
 const pressureTrackStyle: React.CSSProperties = { position: 'relative', flex: 1, height: 6, borderRadius: 3, background: '#141c16', overflow: 'hidden' };
 const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 };
+const statsSectionStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: '#7d8a80', fontSize: 8, letterSpacing: '.08em', padding: '8px 12px 2px', borderTop: '1px solid #1c2a22', background: '#0e1511' };
 const statsFootStyle: React.CSSProperties = { borderTop: '1px solid #293740', color: '#71808a', fontSize: 10, padding: '8px 12px' };
 const statLabelStyle: React.CSSProperties = { color: '#71808a', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em' };
 const statValueStyle: React.CSSProperties = { display: 'block', color: '#d8e3e8', fontSize: 13, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis' };
