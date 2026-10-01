@@ -27,6 +27,8 @@ export interface WorkspaceWidget {
   title: string;
   symbol: string;
   timeframe: string;
+  source?: string;
+  productType?: string;
   symbolLink: WidgetLinkMode;
   timeframeLink: WidgetLinkMode;
   linkGroup?: string;
@@ -75,6 +77,8 @@ export function loadWorkspaceWidgets(): WorkspaceWidget[] {
       title: WIDGET_DEFS[w.type].title,
       symbol: typeof w.symbol === 'string' ? w.symbol : '',
       timeframe: typeof w.timeframe === 'string' ? w.timeframe : '5m',
+      source: typeof w.source === 'string' ? w.source : undefined,
+      productType: typeof w.productType === 'string' ? w.productType : undefined,
       symbolLink: w.symbolLink === 'independent' ? 'independent' : 'linked',
       timeframeLink: w.timeframeLink === 'independent' ? 'independent' : 'linked',
       linkGroup: typeof w.linkGroup === 'string' && w.linkGroup.trim() ? w.linkGroup.trim() : undefined,
@@ -93,11 +97,11 @@ export function saveWorkspaceWidgets(widgets: WorkspaceWidget[]): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(widgets)); } catch { /* workspace remains usable in memory */ }
 }
 
-export function addWorkspaceWidget(widgets: WorkspaceWidget[], type: WorkspaceWidgetType, symbol: string, timeframe: string): WorkspaceWidget[] {
+export function addWorkspaceWidget(widgets: WorkspaceWidget[], type: WorkspaceWidgetType, symbol: string, timeframe: string, source?: string, productType?: string): WorkspaceWidget[] {
   const def = WIDGET_DEFS[type];
   if (def.single && widgets.some(w => w.type === type && w.visible)) return widgets;
   const widget: WorkspaceWidget = {
-    id: uid(type), type, title: def.title, symbol, timeframe,
+    id: uid(type), type, title: def.title, symbol, timeframe, source, productType,
     symbolLink: 'linked', timeframeLink: 'linked', visible: true, minimized: false,
     x: 0, y: 0, width: type === 'chart' ? 8 : 4, height: type === 'chart' ? 8 : 4,
   };
