@@ -27,6 +27,7 @@ export interface BusQuote {
 
 export interface BusTrade extends BusQuote {
   size?: number;
+  side?: 'buy' | 'sell';
 }
 
 export type BusDepth = Extract<import('./types').ServerMessage, { type: 'ORDER_BOOK_SNAPSHOT' | 'ORDER_BOOK_UPDATE' | 'DEPTH_RESET' }>;
@@ -141,7 +142,9 @@ export class MarketDataBus {
 
     // Trade event: has size or explicit trade print semantics.
     const hasSize = typeof msg.size === 'number';
-    const trade: BusTrade = { ...quote, size: hasSize ? (msg.size as number) : undefined };
+    const rawSide = String(msg.side || '').toLowerCase();
+    const side = rawSide === 'buy' || rawSide === 'sell' ? rawSide : undefined;
+    const trade: BusTrade = { ...quote, size: hasSize ? (msg.size as number) : undefined, side };
     for (const fn of this.tradeH) fn(trade);
     for (const fn of this.quoteH) fn(quote);
   }
