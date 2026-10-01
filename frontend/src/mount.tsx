@@ -1884,3 +1884,5 @@ window.LSEBacktestResults = LSEBacktestResults;
 window.LSEPortfolioBacktest = LSEPortfolioBacktest;
 
 export default LSEChart;
+import WidgetWorkspaceControls from '@/components/chart/WidgetWorkspaceControls';
+        <WidgetWorkspaceControls symbol={symbol} timeframe={timeframe} />
