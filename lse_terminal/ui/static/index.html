@@ -546,41 +546,10 @@ def my_ind(df, length=20):
       </div>
     </div>
     </div><!-- /#chart-col -->
-    <!-- Phase 3-UI right rail: dense OHLC / market / session / technical
-         facts. Every cell is filled from the active series or quote —
-         never a placeholder card, empty cells stay —. -->
-    <aside id="info-rail" class="hidden" aria-label="Market information">
-      <div class="ir-sect">
-        <div class="ir-head">OVERVIEW</div>
-        <div class="ir-row"><span>Open</span><b id="ir-open">—</b></div>
-        <div class="ir-row"><span>High</span><b id="ir-high">—</b></div>
-        <div class="ir-row"><span>Low</span><b id="ir-low">—</b></div>
-        <div class="ir-row"><span>Prev Close</span><b id="ir-prev">—</b></div>
-        <div class="ir-row"><span>Volume</span><b id="ir-vol">—</b></div>
-      </div>
-      <div class="ir-sect">
-        <div class="ir-head">MARKET</div>
-        <div class="ir-row"><span>Bid</span><b id="ir-bid">—</b></div>
-        <div class="ir-row"><span>Ask</span><b id="ir-ask">—</b></div>
-        <div class="ir-row"><span>Spread</span><b id="ir-spread">—</b></div>
-        <div class="ir-row"><span>Last</span><b id="ir-last">—</b></div>
-      </div>
-      <div class="ir-sect">
-        <div class="ir-head">SESSION</div>
-        <div class="ir-row"><span>Status</span><b id="ir-ses">—</b></div>
-        <div class="ir-row"><span>Session High</span><b id="ir-shigh">—</b></div>
-        <div class="ir-row"><span>Session Low</span><b id="ir-slow">—</b></div>
-        <div class="ir-row"><span>Timeframe</span><b id="ir-tf">—</b></div>
-      </div>
-      <div class="ir-sect">
-        <div class="ir-head">TECHNICAL</div>
-        <div class="ir-row"><span>SMA 20</span><b id="ir-sma20">—</b></div>
-        <div class="ir-row"><span>EMA 20</span><b id="ir-ema20">—</b></div>
-        <div class="ir-row"><span>VWAP</span><b id="ir-vwap">—</b></div>
-        <div class="ir-row"><span>RSI 14</span><b id="ir-rsi">—</b></div>
-        <div class="ir-row ir-ind"><span>Active</span><b id="ir-inds">—</b></div>
-      </div>
-    </aside>
+    <!-- The old OVERVIEW/MARKET/SESSION/TECHNICAL info rail was retired:
+         every fact it showed now lives in native workspace widgets with
+         honest capability state (Market Statistics, DOM, Orderbook), so the
+         shell no longer maintains a parallel hardcoded panel. -->
     </div><!-- /#chart-stage -->
   </section>
   <!-- The BACKTEST mode chooser page ("Choose how you want to test") was

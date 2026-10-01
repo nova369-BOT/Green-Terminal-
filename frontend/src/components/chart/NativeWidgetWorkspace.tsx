@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, setWorkspaceWidgetSymbol, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
+import { applyChartSplit, applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, setWorkspaceWidgetSymbol, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidget, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 import { moveWidget, WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import { useCapabilities } from '@/market-data/hooks';
 import WorkspacePanelFrame from './WorkspacePanelFrame';
+import { ChartTilePanel } from './chartTilePanel';
 import { UnsupportedPanel, WIDGET_PANELS } from './workspaceWidgetPanels';
+
+export type ChartSplit = 1 | 2 | 4;
 
 export type WorkspacePreset = '1' | '2' | '4' | '16';
 
@@ -33,13 +36,19 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
   const [menuOpen, setMenuOpen] = useState(false);
   const [ghost, setGhost] = useState<{ id: string; rect: WidgetRect } | null>(null);
 
-  /* Linked widgets follow the active symbol/timeframe of the chart widget.
+  /* Multi-chart: the FIRST visible chart widget is the primary pane — it
+   * renders the full native engine ({children}) and drives the floor. Every
+   * further visible chart widget is a real engine-candle tile. */
+  const chartWidgets = widgets.filter(widget => widget.visible && widget.type === 'chart');
+  const primaryChartId = chartWidgets.length ? chartWidgets[0].id : null;
+
+  /* Linked widgets follow the active symbol/timeframe of the PRIMARY chart.
    * propagateWorkspaceLink returns the SAME array when nothing changed, and
    * updateWorkspaceWidgets commits nothing on identity — so no render loop. */
   useEffect(() => {
     if (!symbol) return;
     update(previous => {
-      const chart = previous.find(widget => widget.type === 'chart');
+      const chart = previous.find(widget => widget.visible && widget.type === 'chart');
       return chart ? propagateWorkspaceLink(previous, chart.id, symbol, timeframe) : previous;
     });
   }, [symbol, timeframe, update]);
@@ -59,8 +68,29 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
 
   const commitRect = (id: string, rect: WidgetRect) => update(previous => moveWidget(previous, id, rect));
   const preset = (value: WorkspacePreset) => { update(previous => applyWorkspacePreset(previous, value)); setMenuOpen(false); };
+  const split = (count: ChartSplit) => { update(previous => applyChartSplit(previous, count, symbol, timeframe)); setMenuOpen(false); };
   const reset = () => { update(() => DEFAULT_WORKSPACE_WIDGETS.map(widget => ({ ...widget, symbol, timeframe }))); setMenuOpen(false); };
   const add = (type: WorkspaceWidgetType) => { update(previous => addWorkspaceWidget(previous, type, symbol, timeframe)); setPickerOpen(false); };
+
+  /* Symbol commits: the primary pane must drive the REAL engine symbol
+   * (bridge to the shell, so candles + linked panels follow), not just a
+   * widget-local override. Secondary panes commit widget-locally and drive
+   * their link group, as before. */
+  const commitSymbol = (widget: WorkspaceWidget, value: string) => {
+    const clean = value.trim().toUpperCase();
+    if (!clean) return;
+    if (widget.id === primaryChartId) {
+      try { (window as unknown as { __lseShell?: { setSymbol?: (s: string) => void } }).__lseShell?.setSymbol?.(clean); } catch { /* bridge absent outside the shell */ }
+      return;
+    }
+    update(previous => {
+      const changed = setWorkspaceWidgetSymbol(previous, widget.id, value);
+      if (changed === previous) return previous;
+      // A group member's own symbol drives its whole group; an ungrouped
+      // panel stays local (only the primary chart drives the floor).
+      return widget.linkGroup ? propagateWorkspaceLink(changed, widget.id, clean, widget.timeframe || timeframe) : changed;
+    });
+  };
 
   return (
     <div style={rootStyle}>
@@ -85,7 +115,11 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
         {menuOpen && <div style={menuStyle}>
           <div style={menuTitleStyle}>WORKSPACE</div>
           <button type="button" onClick={reset} style={menuItemStyle}>Reset to Chart + DOM + Trades</button>
-          <div style={{ ...menuTitleStyle, marginTop: 8 }}>PANEL PRESETS</div>
+          <div style={{ ...menuTitleStyle, marginTop: 8 }}>CHART SPLIT</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, padding: '3px 10px 8px' }}>
+            {([1, 2, 4] as ChartSplit[]).map(count => <button key={count} type="button" onClick={() => split(count)} style={{ ...presetButtonStyle, ...(chartWidgets.length === count ? presetActiveStyle : {}) }} title={`${count} chart pane${count > 1 ? 's' : ''} in a mosaic`}>{count}</button>)}
+          </div>
+          <div style={{ ...menuTitleStyle, marginTop: 2 }}>PANEL PRESETS</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '3px 10px 8px' }}>
             {(['1', '2', '4', '16'] as WorkspacePreset[]).map(value => <button key={value} type="button" onClick={() => preset(value)} style={presetButtonStyle}>{value}</button>)}
           </div>
@@ -125,25 +159,22 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
             gridRef={gridRef}
             symbol={symbol}
             timeframe={timeframe}
-            canClose={widget.type !== 'chart'}
-            canMinimize={widget.type !== 'chart'}
+            titleOverride={widget.type === 'chart' && widget.id !== primaryChartId ? `${WIDGET_DEFS.chart.title} tile` : undefined}
+            canClose={widget.id !== primaryChartId}
+            canMinimize={widget.id !== primaryChartId}
             onGhost={(rect) => setGhost(rect ? { id: widget.id, rect } : null)}
             onCommitRect={(rect) => commitRect(widget.id, rect)}
             onToggleLink={(field) => update(previous => toggleWorkspaceLink(previous, widget.id, field))}
             onCycleLinkGroup={() => update(previous => cycleWorkspaceLinkGroup(previous, widget.id))}
-            onSymbolCommit={(value) => update(previous => {
-              const changed = setWorkspaceWidgetSymbol(previous, widget.id, value);
-              if (changed === previous) return previous;
-              // A group member's own symbol drives its whole group; an
-              // ungrouped panel stays local (only the chart drives the floor).
-              return widget.linkGroup ? propagateWorkspaceLink(changed, widget.id, value.trim().toUpperCase(), widget.timeframe || timeframe) : changed;
-            })}
+            onSymbolCommit={(value) => commitSymbol(widget, value)}
             onMinimize={() => update(previous => setWorkspaceWidgetMinimized(previous, widget.id, !widget.minimized))}
             onMaximize={() => update(previous => toggleWorkspaceMaximized(previous, widget.id))}
             onClose={() => update(previous => removeWorkspaceWidget(previous, widget.id))}
           >
             {widget.type === 'chart'
-              ? <div style={chartContentStyle}>{children}</div>
+              ? (widget.id === primaryChartId
+                  ? <div style={chartContentStyle}>{children}</div>
+                  : <ChartTilePanel widget={widget} symbol={symbol} timeframe={timeframe} />)
               : (() => {
                   const Panel = WIDGET_PANELS[widget.type] || UnsupportedPanel;
                   return <Panel widget={widget} symbol={symbol} timeframe={timeframe} />;
@@ -185,6 +216,7 @@ const menuStyle: React.CSSProperties = { position: 'absolute', right: 8, top: 36
 const menuTitleStyle: React.CSSProperties = { color: '#60717c', fontSize: 10, letterSpacing: '.08em', padding: '0 10px 4px' };
 const menuItemStyle: React.CSSProperties = { width: '100%', textAlign: 'left', border: 0, background: 'transparent', color: '#ccd6dc', cursor: 'pointer', padding: '7px 10px', fontSize: 12 };
 const presetButtonStyle: React.CSSProperties = { border: '1px solid #2b3942', borderRadius: 3, background: 'transparent', color: '#ccd6dc', cursor: 'pointer', padding: '5px 2px', fontSize: 11, textAlign: 'center' };
+const presetActiveStyle: React.CSSProperties = { borderColor: '#1e9b68', color: '#7bf0b5', background: '#123d2d' };
 const pickerStyle: React.CSSProperties = { position: 'absolute', top: 36, left: 8, width: 372, maxHeight: 'calc(100% - 48px)', overflowY: 'auto', background: '#10171d', border: '1px solid #33414b', borderRadius: 7, boxShadow: '0 14px 40px #000b', padding: '12px 12px 10px', zIndex: 90 };
 const pickerHeaderStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: '#e1e9ee', padding: '0 2px 10px', fontSize: 13 };
 const groupLabelStyle: React.CSSProperties = { color: '#697983', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', padding: '9px 2px 5px' };

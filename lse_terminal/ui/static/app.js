@@ -201,112 +201,13 @@ function refreshInstrumentBarSoon() {
   refreshInstrumentBarSoon._t = setTimeout(() => {
     refreshInstrumentBarSoon._t = null;
     updateInstrumentBar();
-    updateInfoRail();
     updateTermStatus();
   }, 50);
 }
 
-/* Phase 3-UI: right info rail + bottom status strip — real series / quote /
-   feed facts only. Missing fields stay "—"; latency comes from the
-   market-data health EWMA when present, never a made-up number. */
-function updateInfoRail() {
-  const rail = $("info-rail");
-  if (!rail) return;
-  const charts = $("charts");
-  const onCharts = charts && !charts.classList.contains("hidden");
-  if (!onCharts || !state.symbol) { rail.classList.add("hidden"); return; }
-  rail.classList.remove("hidden");
-
-  const data = state.candleData || [];
-  const last = data.length ? data[data.length - 1] : null;
-  const prev = data.length >= 2 ? data[data.length - 2] : null;
-  const q = state.quotes[state.symbol];
-  const set = (id, val, cls) => {
-    const el = $(id);
-    if (!el) return;
-    el.textContent = val == null || val === "" ? "—" : val;
-    el.classList.remove("up", "down");
-    if (cls) el.classList.add(cls);
-  };
-  const f = (p) => (p == null || !isFinite(p)) ? null : fmt(p);
-
-  if (last) {
-    set("ir-open", f(last.open));
-    set("ir-high", f(last.high));
-    set("ir-low", f(last.low));
-    const vol = last.volume != null && isFinite(last.volume) ? last.volume : null;
-    set("ir-vol", vol == null ? null
-      : vol >= 1e6 ? (vol / 1e6).toFixed(2) + "M"
-      : vol >= 1e3 ? (vol / 1e3).toFixed(2) + "K"
-      : String(Math.round(vol)));
-    set("ir-prev", prev ? f(prev.close) : null);
-    // Session high/low over the visible series (real bars only).
-    const hi = Math.max(...data.slice(-200).map(c => c.high));
-    const lo = Math.min(...data.slice(-200).map(c => c.low));
-    set("ir-shigh", f(hi));
-    set("ir-slow", f(lo));
-    set("ir-last", f(state.prices[state.symbol] != null ? state.prices[state.symbol] : last.close));
-  } else {
-    for (const id of ["ir-open","ir-high","ir-low","ir-prev","ir-vol","ir-shigh","ir-slow","ir-last"])
-      set(id, null);
-  }
-  set("ir-bid", q && q.bid != null ? f(q.bid) : null);
-  set("ir-ask", q && q.ask != null ? f(q.ask) : null);
-  set("ir-spread", q && q.ask > q.bid ? fmtSpread(q.ask - q.bid) : null);
-  set("ir-tf", state.timeframe || null);
-
-  let ses = "—", sesCls = null;
-  try {
-    if (window.LSEChart && typeof window.LSEChart.sessionOpen === "function") {
-      const open = window.LSEChart.sessionOpen(state.symbol);
-      if (open === true) { ses = "OPEN"; sesCls = "up"; }
-      else if (open === false) { ses = "CLOSED"; }
-    }
-  } catch (e) { /* keep — */ }
-  if (ses === "—" && q && Date.now() - (q.ts || 0) < 15000) { ses = "LIVE QUOTE"; sesCls = "up"; }
-  set("ir-ses", ses, sesCls);
-
-  // Technical: real indicator values from the active series when computable.
-  const closes = data.map(c => c.close);
-  const sma = (arr, n) => arr.length >= n
-    ? arr.slice(-n).reduce((a, b) => a + b, 0) / n : null;
-  const emaN = (arr, n) => {
-    if (arr.length < n) return null;
-    const k = 2 / (n + 1);
-    let e = arr.slice(0, n).reduce((a, b) => a + b, 0) / n;
-    for (let i = n; i < arr.length; i++) e = arr[i] * k + e * (1 - k);
-    return e;
-  };
-  const rsi14 = (arr, n = 14) => {
-    if (arr.length < n + 1) return null;
-    let g = 0, l = 0;
-    for (let i = arr.length - n; i < arr.length; i++) {
-      const d = arr[i] - arr[i - 1];
-      if (d >= 0) g += d; else l -= d;
-    }
-    if (l === 0) return 100;
-    const rs = (g / n) / (l / n);
-    return 100 - 100 / (1 + rs);
-  };
-  // VWAP over the visible window (typical price × volume).
-  let vwap = null;
-  if (data.length) {
-    let pv = 0, vv = 0;
-    for (const c of data.slice(-300)) {
-      const tp = (c.high + c.low + c.close) / 3;
-      const v = c.volume || 0;
-      pv += tp * v; vv += v;
-    }
-    if (vv > 0) vwap = pv / vv;
-  }
-  set("ir-sma20", f(sma(closes, 20)));
-  set("ir-ema20", f(emaN(closes, 20)));
-  set("ir-vwap", f(vwap));
-  const r = rsi14(closes);
-  set("ir-rsi", r == null ? null : r.toFixed(1));
-  const act = (state.activeIndicators || []).map(i => (i.name || "").toUpperCase()).filter(Boolean);
-  set("ir-inds", act.length ? act.join(" · ") : null);
-}
+/* The phase-3 info rail (updateInfoRail) was retired with the #info-rail
+   markup: those facts now live in native workspace widgets. The bottom
+   status strip remains and is fed by updateTermStatus below. */
 
 function updateTermStatus() {
   const set = (id, val, cls) => {
@@ -18282,16 +18183,12 @@ async function boot() {
     const off = $("charts").classList.contains("hidden");
     $("controls").classList.toggle("hidden", off);
     $("ind-active").classList.toggle("hidden", off);
-    // Instrument header + workspace controls + info rail ride with charts.
+    // Instrument header + workspace controls ride with charts.
     const ib = $("instrument-bar");
     if (ib) ib.classList.toggle("hidden", off);
     const wsc = $("ws-controls");
     if (wsc) wsc.classList.toggle("hidden", off);
-    if (!off) { updateInstrumentBar(); updateInfoRail(); updateTermStatus(); }
-    else {
-      const rail = $("info-rail");
-      if (rail) rail.classList.add("hidden");
-    }
+    if (!off) { updateInstrumentBar(); updateTermStatus(); }
     // The symbol/timeframe status readout is chart context too.
     $("status").classList.toggle("hidden", off);
   };

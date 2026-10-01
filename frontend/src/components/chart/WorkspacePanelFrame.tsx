@@ -15,6 +15,7 @@ export default function WorkspacePanelFrame({
   gridRef,
   symbol,
   timeframe,
+  titleOverride,
   canClose,
   canMinimize = true,
   onGhost,
@@ -31,6 +32,9 @@ export default function WorkspacePanelFrame({
   gridRef: React.RefObject<HTMLDivElement>;
   symbol: string;
   timeframe: string;
+  /** Display title for panes whose role differs from the base widget title
+   * (secondary chart panes show "Chart tile"). */
+  titleOverride?: string;
   canClose: boolean;
   /** The chart widget cannot minimize: collapsing would unmount the heavy
    * chart engine and its session state. It still drags, resizes, maximizes. */
@@ -104,13 +108,15 @@ export default function WorkspacePanelFrame({
     zIndex: widget.maximized ? 40 : undefined,
   };
 
+  const displayTitle = titleOverride || widget.title;
+
   return <section data-widget-id={widget.id} style={sectionStyle}>
     <header
       onPointerDown={(event) => begin(event, false)}
-      title={`${widget.title} · ${effSymbol || 'AUTO'} · ${effTimeframe}${widget.source ? ` · ${widget.source}` : ''}${widget.productType ? ` (${widget.productType})` : ''}`}
+      title={`${displayTitle} · ${effSymbol || 'AUTO'} · ${effTimeframe}${widget.source ? ` · ${widget.source}` : ''}${widget.productType ? ` (${widget.productType})` : ''}`}
       style={headerStyle}
     >
-      <strong style={titleStyle}>{widget.title}</strong>
+      <strong style={titleStyle}>{displayTitle}</strong>
       {editingSymbol ? <input
         autoFocus
         value={symbolDraft}

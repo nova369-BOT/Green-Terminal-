@@ -55,7 +55,7 @@ export interface WorkspaceWidget {
 }
 
 export const WIDGET_DEFS: Record<WorkspaceWidgetType, { title: string; description: string; single?: boolean }> = {
-  chart: { title: 'Chart', description: 'Native price chart with existing tools and indicators.', single: true },
+  chart: { title: 'Chart', description: 'Price chart panes. The primary pane is the full native engine; extra panes are live engine-candle tiles.' },
   orderbook: { title: 'Orderbook', description: 'Read-only depth bars on the same validated L2 book as the DOM — spread, mid, imbalance.' },
   dom: { title: 'Depth of Market (DOM)', description: 'Price ladder with bid, ask, delta, and execution controls.' },
   trades: { title: 'Trades', description: 'Time and Sales for the resolved market source.' },
@@ -177,8 +177,12 @@ function findFreeSpot(widgets: WorkspaceWidget[], width: number, height: number)
 export function addWorkspaceWidget(widgets: WorkspaceWidget[], type: WorkspaceWidgetType, symbol: string, timeframe: string, source?: string, productType?: string): WorkspaceWidget[] {
   const def = WIDGET_DEFS[type];
   if (def.single && widgets.some(w => w.type === type && w.visible)) return widgets;
-  const width = type === 'chart' ? 8 : 4;
-  const height = type === 'chart' ? WORKSPACE_ROWS : 8;
+  /* Chart panes past the first are tiles — sized like a tile, not the full
+   * engine pane, so adding one never swallows the whole grid. */
+  const isChart = type === 'chart';
+  const hasChart = widgets.some(w => w.type === 'chart' && w.visible);
+  const width = isChart ? (hasChart ? 6 : 8) : 4;
+  const height = isChart ? (hasChart ? 12 : WORKSPACE_ROWS) : 8;
   const spot = findFreeSpot(widgets, width, height);
   const widget: WorkspaceWidget = {
     id: uid(type), type, title: def.title, symbol, timeframe, source, productType,
@@ -292,4 +296,54 @@ export function applyWorkspacePreset(widgets: WorkspaceWidget[], preset: '1' | '
     maximized: false,
     restoreRect: undefined,
   }));
+}
+
+/**
+ * XFlow-style chart split: make the workspace show exactly `count` visible
+ * chart panes and lay them in a mosaic (1 -> 1x1, 2 -> 2x1, 4 -> 2x2) across
+ * the full grid. Extra chart panes are added linked to the active symbol so
+ * they follow the floor until unlinked; surplus panes are dropped (tiles
+ * carry no user data beyond a symbol, and the primary pane is never
+ * removed). Non-chart panels keep their identity — the commit normalization
+ * pushes them below the mosaic instead of deleting them.
+ */
+export function applyChartSplit(widgets: WorkspaceWidget[], count: 1 | 2 | 4, symbol: string, timeframe: string): WorkspaceWidget[] {
+  let charts = widgets.filter(widget => widget.visible && widget.type === 'chart');
+  let next = widgets;
+  if (charts.length > count) {
+    const keep = new Set(charts.slice(0, count).map(widget => widget.id));
+    next = next.filter(widget => !(widget.type === 'chart' && widget.visible && !keep.has(widget.id)));
+  }
+  while (next.filter(widget => widget.visible && widget.type === 'chart').length < count) {
+    const spot = findFreeSpot(next, 6, 12);
+    const tile: WorkspaceWidget = {
+      id: uid('chart'), type: 'chart', title: WIDGET_DEFS.chart.title, symbol, timeframe,
+      symbolLink: 'linked', timeframeLink: 'linked', visible: true, minimized: false,
+      x: spot.x, y: spot.y, width: 6, height: 12,
+    };
+    next = [...next, tile];
+  }
+  const columns = count === 1 ? 1 : 2;
+  const rows = Math.ceil(count / columns);
+  const cellW = Math.floor(WORKSPACE_COLUMNS / columns);
+  const cellH = Math.floor(WORKSPACE_ROWS / rows);
+  charts = next.filter(widget => widget.visible && widget.type === 'chart');
+  let index = 0;
+  return next.map(widget => {
+    if (!(widget.visible && widget.type === 'chart')) return widget;
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    index += 1;
+    return {
+      ...widget,
+      x: col * cellW,
+      y: row * cellH,
+      // Last column/row absorbs the remainder so the mosaic always spans 12x24.
+      width: col === columns - 1 ? WORKSPACE_COLUMNS - col * cellW : cellW,
+      height: row === rows - 1 ? WORKSPACE_ROWS - row * cellH : cellH,
+      minimized: false,
+      maximized: false,
+      restoreRect: undefined,
+    };
+  });
 }

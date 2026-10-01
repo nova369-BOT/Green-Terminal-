@@ -4462,43 +4462,9 @@ html:not(.dark) #gd-side {
 .ws-btn:hover { color: var(--text); border-color: var(--up); }
 .ws-btn.active { color: var(--up); border-color: var(--up); }
 
-/* Right information rail: dense OHLC / market / session / technical. */
-#info-rail {
-  width: 210px;
-  flex: 0 0 210px;
-  overflow-y: auto;
-  border-left: 1px solid var(--edge);
-  background: var(--panel, var(--bg));
-  font: 11px/1.4 var(--mono, ui-monospace, Menlo, Consolas, monospace);
-  color: var(--text);
-  user-select: none;
-  padding: 4px 0 12px;
-}
-#info-rail.hidden { display: none; }
-#info-rail .ir-sect { padding: 6px 10px 8px; border-bottom: 1px solid var(--edge); }
-#info-rail .ir-head {
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  color: var(--dim);
-  margin-bottom: 4px;
-  font-weight: 700;
-}
-#info-rail .ir-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 1px 0;
-}
-#info-rail .ir-row span { color: var(--dim); }
-#info-rail .ir-row b {
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-  text-align: right;
-}
-#info-rail .ir-row b.up { color: var(--up); }
-#info-rail .ir-row b.down { color: var(--down); }
-#info-rail .ir-ind b { font-size: 10px; color: var(--accent, var(--up)); }
+/* The #info-rail block was retired with its markup and app.js writers —
+   native workspace widgets (Market Statistics, DOM, Orderbook) now carry
+   those facts with honest per-venue capability state. */
 
 /* Fullscreen: chart workspace takes the whole viewport, chrome stays. */
 body.ws-fullscreen #side,
@@ -4693,7 +4659,6 @@ body.ws-fullscreen #lasso-layer { z-index: 90; }
   color: #0a0f0c; background: var(--accent-bar); border-color: transparent;
 }
 body.ws-fullscreen #charts { position: fixed; inset: 0 0 22px 62px; z-index: 80; background: var(--bg); }
-body.ws-fullscreen #info-rail { display: flex; flex-direction: column; }
 body.ws-fullscreen #term-status { z-index: 90; }
 
 /* Bottom status strip: DATA · FEED · LATENCY · SESSION · SYMBOL · TF */
