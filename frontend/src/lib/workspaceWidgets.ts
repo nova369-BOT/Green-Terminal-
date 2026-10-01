@@ -29,6 +29,7 @@ export interface WorkspaceWidget {
   timeframe: string;
   symbolLink: WidgetLinkMode;
   timeframeLink: WidgetLinkMode;
+  linkGroup?: string;
   visible: boolean;
   minimized: boolean;
   // Grid coordinates are persisted; the renderer may translate them into
@@ -76,6 +77,7 @@ export function loadWorkspaceWidgets(): WorkspaceWidget[] {
       timeframe: typeof w.timeframe === 'string' ? w.timeframe : '5m',
       symbolLink: w.symbolLink === 'independent' ? 'independent' : 'linked',
       timeframeLink: w.timeframeLink === 'independent' ? 'independent' : 'linked',
+      linkGroup: typeof w.linkGroup === 'string' && w.linkGroup.trim() ? w.linkGroup.trim() : undefined,
       visible: w.visible !== false,
       minimized: w.minimized === true,
       x: Number.isFinite(w.x) ? Math.max(0, w.x) : 0,
@@ -116,6 +118,28 @@ export function reorderWorkspaceWidget(widgets: WorkspaceWidget[], id: string, b
   remaining.splice(index < 0 ? remaining.length : index, 0, source);
   saveWorkspaceWidgets(remaining);
   return remaining;
+}
+
+export function updateWorkspaceLinkGroup(widgets: WorkspaceWidget[], id: string, group?: string): WorkspaceWidget[] {
+  const next = widgets.map(widget => widget.id === id ? { ...widget, linkGroup: group?.trim() || undefined } : { ...widget });
+  saveWorkspaceWidgets(next);
+  return next;
+}
+
+export function propagateWorkspaceLink(widgets: WorkspaceWidget[], sourceId: string, symbol: string, timeframe: string): WorkspaceWidget[] {
+  const source = widgets.find(widget => widget.id === sourceId);
+  if (!source) return widgets;
+  const next = widgets.map(widget => {
+    const sameGroup = source.linkGroup && widget.linkGroup === source.linkGroup;
+    if (widget.id === sourceId || sameGroup) return {
+      ...widget,
+      symbol: widget.symbolLink === 'linked' || widget.id === sourceId ? symbol : widget.symbol,
+      timeframe: widget.timeframeLink === 'linked' || widget.id === sourceId ? timeframe : widget.timeframe,
+    };
+    return { ...widget };
+  });
+  saveWorkspaceWidgets(next);
+  return next;
 }
 
 export function applyWorkspacePreset(widgets: WorkspaceWidget[], preset: '1' | '2' | '4' | '16'): WorkspaceWidget[] {
