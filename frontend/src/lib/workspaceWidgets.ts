@@ -1,4 +1,5 @@
 import { normalizeWorkspace } from './workspaceLayout';
+import { decodeWorkspace, encodeWorkspace } from './workspaceDocument';
 
 /** Native Green Terminal workspace widget model.
  *
@@ -70,8 +71,8 @@ function uid(type: WorkspaceWidgetType): string { return `${type}-${Date.now()}-
 
 export function loadWorkspaceWidgets(): WorkspaceWidget[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (!Array.isArray(raw)) return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w }));
+    const raw = decodeWorkspace(localStorage.getItem(STORAGE_KEY));
+    if (!raw) return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w }));
     const valid = raw.filter((w): w is WorkspaceWidget => !!w && typeof w.id === 'string' && !!WIDGET_DEFS[w.type as WorkspaceWidgetType]);
     if (!valid.length) return DEFAULT_WORKSPACE_WIDGETS.map(w => ({ ...w }));
     return normalizeWorkspace(valid.map(w => ({
@@ -96,7 +97,7 @@ export function loadWorkspaceWidgets(): WorkspaceWidget[] {
 }
 
 export function saveWorkspaceWidgets(widgets: WorkspaceWidget[]): void {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(widgets)); } catch { /* workspace remains usable in memory */ }
+  try { localStorage.setItem(STORAGE_KEY, encodeWorkspace(widgets)); } catch { /* workspace remains usable in memory */ }
 }
 
 export function addWorkspaceWidget(widgets: WorkspaceWidget[], type: WorkspaceWidgetType, symbol: string, timeframe: string, source?: string, productType?: string): WorkspaceWidget[] {
