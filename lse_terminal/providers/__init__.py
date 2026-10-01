@@ -4,7 +4,8 @@ Provider contract: `demo` shows the minimum viable shape (no network, no auth),
 """
 
 from lse_terminal.providers.demo import DemoProvider
+from lse_terminal.providers.binance_depth import BinanceDepthProvider
 from lse_terminal.providers.lse import LseProvider
 from lse_terminal.providers.userdata import UserDataProvider
 
-__all__ = ["DemoProvider", "LseProvider", "UserDataProvider"]
+__all__ = ["DemoProvider", "LseProvider", "UserDataProvider", "BinanceDepthProvider"]

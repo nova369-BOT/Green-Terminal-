@@ -65,10 +65,11 @@ class Registry:
 
 def load_builtins(reg: Registry) -> None:
     from lse_terminal.backtest.runner import PythonRunner
-    from lse_terminal.providers import DemoProvider, LseProvider, UserDataProvider
+    from lse_terminal.providers import BinanceDepthProvider, DemoProvider, LseProvider, UserDataProvider
 
     reg.register(UserDataProvider())
     reg.register(DemoProvider())
+    reg.register(BinanceDepthProvider())
     reg.register(LseProvider())
     # One engine, and it runs the user's plain Python. Brue was removed as a
     # strategy language (it is an execution language now); the previous
