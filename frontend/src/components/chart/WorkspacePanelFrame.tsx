@@ -1,7 +1,7 @@
 import React from 'react';
 import { WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
 import { dragRect, resizeRect } from '@/lib/workspaceInteractions';
-import type { WorkspaceWidget } from '@/lib/workspaceWidgets';
+import { LINK_GROUP_COLORS, type WorkspaceWidget } from '@/lib/workspaceWidgets';
 
 /**
  * The one panel chrome every workspace widget wears: a draggable header with
@@ -20,6 +20,7 @@ export default function WorkspacePanelFrame({
   onGhost,
   onCommitRect,
   onToggleLink,
+  onCycleLinkGroup,
   onMinimize,
   onMaximize,
   onClose,
@@ -36,6 +37,7 @@ export default function WorkspacePanelFrame({
   onGhost: (rect: WidgetRect | null) => void;
   onCommitRect: (rect: WidgetRect) => void;
   onToggleLink: (field: 'symbol' | 'timeframe') => void;
+  onCycleLinkGroup: () => void;
   onMinimize: () => void;
   onMaximize: () => void;
   onClose: () => void;
@@ -102,6 +104,7 @@ export default function WorkspacePanelFrame({
       <strong style={titleStyle}>{widget.title}</strong>
       <span style={metaStyle}>{effSymbol || 'AUTO'} · {effTimeframe}</span>
       <div style={controlsStyle} onPointerDown={(event) => event.stopPropagation()}>
+        <button type="button" aria-label={`Link group for ${widget.title}: ${widget.linkGroup || 'none'}`} title={widget.linkGroup ? `Link group ${widget.linkGroup} — synced with other ${widget.linkGroup} panels. Click to cycle.` : 'No link group — follows the chart. Click to join a group.'} onClick={onCycleLinkGroup} style={{ ...controlStyle, color: widget.linkGroup ? LINK_GROUP_COLORS[widget.linkGroup] || '#84949d' : '#5f6e77', fontSize: 13 }}>{widget.linkGroup ? '●' : '○'}</button>
         <button type="button" aria-label={`Toggle symbol link for ${widget.title}`} title={widget.symbolLink === 'linked' ? 'Symbol linked to workspace — click to unlink' : 'Symbol independent — click to link'} onClick={() => onToggleLink('symbol')} style={{ ...controlStyle, color: widget.symbolLink === 'linked' ? '#58d797' : '#5f6e77' }}>S</button>
         <button type="button" aria-label={`Toggle timeframe link for ${widget.title}`} title={widget.timeframeLink === 'linked' ? 'Timeframe linked to workspace — click to unlink' : 'Timeframe independent — click to link'} onClick={() => onToggleLink('timeframe')} style={{ ...controlStyle, color: widget.timeframeLink === 'linked' ? '#58d797' : '#5f6e77' }}>T</button>
         {canMinimize && <button type="button" aria-label={widget.minimized ? `Restore ${widget.title}` : `Minimize ${widget.title}`} title={widget.minimized ? 'Restore panel' : 'Minimize panel'} onClick={onMinimize} style={controlStyle}>{widget.minimized ? '▴' : '—'}</button>}

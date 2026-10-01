@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getBus, type BusDepth, type BusTrade } from '@/market-data/bus';
 import { useCapabilities, useLiveQuote } from '@/market-data/hooks';
 import { DepthHeatmapHistory, type HeatmapFrame } from '@/lib/depthHeatmap';
+import { resolveFlowSource } from '@/lib/flowSources';
 import type { WorkspaceWidget, WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 
 /**
@@ -88,16 +89,25 @@ export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Elem
 
 /* ------------------------------------- DOM ------------------------------------- */
 
+const DOM_STALE_AFTER_MS = 3000;
+
 export function DomPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
-  const sym = widget.symbol || symbol;
+  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol]);
+  const [levels, setLevels] = useState<8 | 12 | 16>(8);
   const [depth, setDepth] = useState<{ bids: Array<[string, string]>; asks: Array<[string, string]>; ready: boolean; reset?: string }>({ bids: [], asks: [], ready: false });
+  const [lastEventAt, setLastEventAt] = useState(0);
+  const [eventAgeMs, setEventAgeMs] = useState<number | null>(null);
+
   useEffect(() => {
-    if (!sym) return undefined;
+    if (flow.status !== 'resolved') return undefined;
+    const stream = flow.source.stream;
     setDepth({ bids: [], asks: [], ready: false });
+    setLastEventAt(0);
     const bus = getBus();
-    const stop = bus.stream([sym], 'binance-depth');
+    const stop = bus.stream([stream], flow.source.provider);
     const off = bus.subscribeDepth((event: BusDepth) => {
-      if (event.symbol !== sym) return;
+      if (event.symbol !== stream) return;
+      setLastEventAt(Date.now());
       if (event.type === 'DEPTH_RESET') { setDepth({ bids: [], asks: [], ready: false, reset: String(event.reason || 'depth reset') }); return; }
       const bids = Array.isArray(event.bids || event.b) ? (event.bids || event.b) as Array<[string, string]> : [];
       const asks = Array.isArray(event.asks || event.a) ? (event.asks || event.a) as Array<[string, string]> : [];
@@ -106,13 +116,50 @@ export function DomPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
         : { bids: applyDepth(previous.bids, bids), asks: applyDepth(previous.asks, asks), ready: true });
     });
     return () => { off(); stop(); };
-  }, [sym]);
+  }, [flow]);
+
+  /* Measured staleness: a DOM that has not moved in seconds is not "live". */
+  useEffect(() => {
+    if (!lastEventAt) return undefined;
+    const tick = setInterval(() => setEventAgeMs(Date.now() - lastEventAt), 1000);
+    setEventAgeMs(Date.now() - lastEventAt);
+    return () => clearInterval(tick);
+  }, [lastEventAt]);
+
+  if (flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left="DOM" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span><small>Depth is never substituted from another instrument.</small></EmptyNote></div>;
+  }
+
+  const stale = eventAgeMs != null && eventAgeMs > DOM_STALE_AFTER_MS;
+  const topBid = depth.bids[0]?.[0];
+  const topAsk = depth.asks[0]?.[0];
+  const mid = topBid && topAsk ? (Number(topBid) + Number(topAsk)) / 2 : null;
+  const spread = topBid && topAsk ? Number(topAsk) - Number(topBid) : null;
+  const sumSide = (rows: Array<[string, string]>) => rows.slice(0, levels).reduce((sum, [, qty]) => sum + (Number(qty) || 0), 0);
+  const bidSum = sumSide(depth.bids);
+  const askSum = sumSide(depth.asks);
+  const imbalance = bidSum + askSum > 0 ? ((bidSum - askSum) / (bidSum + askSum)) * 100 : null;
+  const statusText = depth.ready ? (stale ? `Stale ${eventAgeMs != null ? Math.round(eventAgeMs / 1000) : ''}s` : 'Live') : 'Syncing';
+
   return <div style={bodyStyle}>
-    <StatusStrip left="DOM · Binance L2" right={depth.ready ? 'Live' : 'Syncing'} tone={depth.ready ? 'live' : 'wait'} />
-    {depth.ready ? <div style={domGridStyle}>
-      <div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, 8).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div>
-      <div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, 8).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div>
-    </div> : <EmptyNote>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></EmptyNote>}
+    <StatusStrip left={`DOM · ${flow.source.stream}`} right={statusText} tone={depth.ready ? (stale ? 'wait' : 'live') : 'wait'} />
+    <div style={domToolbarStyle}>
+      <div style={domSegmentStyle}>
+        {([8, 12, 16] as const).map(count => <button key={count} type="button" onClick={() => setLevels(count)} style={{ ...domSegmentButtonStyle, color: levels === count ? '#7bf0b5' : '#71808a', borderColor: levels === count ? '#1e9b68' : '#26343d' }}>{count}</button>)}
+      </div>
+      <span style={sourceChipStyle}>{flow.source.label}</span>
+    </div>
+    {depth.ready ? <>
+      <div style={domQuoteRowStyle}>
+        <span>Mid <b style={{ color: '#d8e3e8' }}>{mid != null ? mid.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}</b></span>
+        <span>Spread <b style={{ color: '#d8e3e8' }}>{spread != null ? spread.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}</b></span>
+        <span>Imbalance <b style={{ color: imbalance != null && imbalance >= 0 ? '#58d797' : '#e28b91' }}>{imbalance != null ? `${imbalance >= 0 ? '+' : ''}${imbalance.toFixed(1)}%` : '—'}</b></span>
+      </div>
+      <div style={domGridStyle}>
+        <div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, levels).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div>
+        <div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, levels).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div>
+      </div>
+    </> : <EmptyNote>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></EmptyNote>}
   </div>;
 }
 
@@ -181,27 +228,31 @@ export function CvdPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
 /* ----------------------------------- Heatmap ----------------------------------- */
 
 export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
-  const sym = widget.symbol || symbol;
+  const flow = useMemo(() => resolveFlowSource(widget.symbol || symbol), [widget.symbol, symbol]);
   const historyRef = useRef<DepthHeatmapHistory | null>(null);
   const [frames, setFrames] = useState<HeatmapFrame[]>([]);
   useEffect(() => {
-    if (!sym) return undefined;
+    if (flow.status !== 'resolved') return undefined;
+    const stream = flow.source.stream;
     const history = new DepthHeatmapHistory(240);
     historyRef.current = history;
     setFrames([]);
     const bus = getBus();
-    const stop = bus.stream([sym], 'binance-depth');
+    const stop = bus.stream([stream], flow.source.provider);
     const off = bus.subscribeDepth((event: BusDepth) => {
-      if (event.symbol !== sym) return;
+      if (event.symbol !== stream) return;
       const frame = history.apply(event);
       if (frame) setFrames(history.snapshot());
       if (event.type === 'DEPTH_RESET') setFrames([]);
     });
     return () => { off(); stop(); historyRef.current = null; };
-  }, [sym]);
+  }, [flow]);
+  if (flow.status === 'none') {
+    return <div style={bodyStyle}><StatusStrip left="Resting liquidity history" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.reason}</span><small>Heatmap is never painted from candles or trade prints.</small></EmptyNote></div>;
+  }
   const recent = frames.slice(-12);
   return <div style={bodyStyle}>
-    <StatusStrip left="Resting liquidity history" right={frames.length ? `${frames.length} frames` : 'Waiting'} tone={frames.length ? 'live' : 'wait'} />
+    <StatusStrip left={`Resting liquidity · ${flow.source.stream}`} right={frames.length ? `${frames.length} frames` : 'Waiting'} tone={frames.length ? 'live' : 'wait'} />
     {recent.length ? <div style={{ padding: '4px 10px 10px' }}>{recent.map((frame, index) => <div key={`${frame.receivedAt}-${index}`} style={heatmapFrameStyle}>
       <time>{new Date(frame.receivedAt).toLocaleTimeString()}</time>
       <span style={{ color: '#58d797' }}>B {frame.bids.length}</span>
@@ -282,6 +333,11 @@ const statsFootStyle: React.CSSProperties = { borderTop: '1px solid #293740', co
 const statLabelStyle: React.CSSProperties = { color: '#71808a', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em' };
 const statValueStyle: React.CSSProperties = { display: 'block', color: '#d8e3e8', fontSize: 13, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis' };
 const domGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: 10 };
+const domToolbarStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', borderBottom: '1px solid #1e292f' };
+const domSegmentStyle: React.CSSProperties = { display: 'flex', gap: 3 };
+const domSegmentButtonStyle: React.CSSProperties = { border: '1px solid #26343d', borderRadius: 3, background: 'transparent', cursor: 'pointer', fontSize: 10, padding: '2px 7px' };
+const sourceChipStyle: React.CSSProperties = { color: '#6f8a7d', fontSize: 8, letterSpacing: '.06em', textTransform: 'uppercase', border: '1px solid #23413a', borderRadius: 3, padding: '2px 5px' };
+const domQuoteRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 10px', color: '#71808a', fontSize: 10, borderBottom: '1px solid #1e292f' };
 const domRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 6, color: '#b8c5cc', fontSize: 10, padding: '3px 0', borderBottom: '1px solid #1e292f' };
 const domSideBid: React.CSSProperties = { color: '#58d797', fontSize: 9 };
 const domSideAsk: React.CSSProperties = { color: '#e28b91', fontSize: 9 };

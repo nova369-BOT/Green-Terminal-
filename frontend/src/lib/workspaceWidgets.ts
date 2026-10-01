@@ -227,6 +227,20 @@ export function updateWorkspaceLinkGroup(widgets: WorkspaceWidget[], id: string,
   return widgets.map(widget => widget.id === id ? { ...widget, linkGroup: group?.trim() || undefined } : widget);
 }
 
+export const LINK_GROUPS = ['A', 'B', 'C'] as const;
+export const LINK_GROUP_COLORS: Record<string, string> = { A: '#e1b65c', B: '#58d797', C: '#8bb7e8' };
+
+/** Cycle none → A → B → C → none. Group members sync symbol/timeframe with
+ * each other; widgets outside every group follow the chart by default. */
+export function cycleWorkspaceLinkGroup(widgets: WorkspaceWidget[], id: string): WorkspaceWidget[] {
+  return widgets.map(widget => {
+    if (widget.id !== id) return widget;
+    const current = widget.linkGroup ? LINK_GROUPS.indexOf(widget.linkGroup as typeof LINK_GROUPS[number]) : -1;
+    const next = current + 1 >= LINK_GROUPS.length ? undefined : LINK_GROUPS[current + 1];
+    return { ...widget, linkGroup: next };
+  });
+}
+
 export function toggleWorkspaceLink(widgets: WorkspaceWidget[], id: string, field: 'symbol' | 'timeframe'): WorkspaceWidget[] {
   const key = field === 'symbol' ? 'symbolLink' : 'timeframeLink';
   return widgets.map(widget => widget.id === id ? { ...widget, [key]: widget[key] === 'linked' ? 'independent' : 'linked' } : widget);

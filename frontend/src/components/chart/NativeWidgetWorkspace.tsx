@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { applyWorkspacePreset, addWorkspaceWidget, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
+import { applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 import { moveWidget, WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import { useCapabilities } from '@/market-data/hooks';
@@ -90,7 +90,7 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
             {(['1', '2', '4', '16'] as WorkspacePreset[]).map(value => <button key={value} type="button" onClick={() => preset(value)} style={presetButtonStyle}>{value}</button>)}
           </div>
           <div style={{ ...menuTitleStyle, marginTop: 6 }}>LINKING</div>
-          <div style={{ color: '#87939f', fontSize: 11, padding: '3px 10px 9px', lineHeight: 1.5 }}>New widgets follow {symbol || 'the active symbol'} and {timeframe} until unlinked (S / T on each panel).</div>
+          <div style={{ color: '#87939f', fontSize: 11, padding: '3px 10px 9px', lineHeight: 1.5 }}>Panels follow {symbol || 'the active symbol'} and {timeframe} until unlinked (S / T on each panel). The ●/○ dot cycles link groups A · B · C — same-color panels sync with each other.</div>
         </div>}
         {pickerOpen && <div style={pickerStyle}>
           <div style={pickerHeaderStyle}><strong>Add widget</strong><span style={{ color: '#7e8a96', fontSize: 11 }}>Native workspace panels</span></div>
@@ -130,6 +130,7 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
             onGhost={(rect) => setGhost(rect ? { id: widget.id, rect } : null)}
             onCommitRect={(rect) => commitRect(widget.id, rect)}
             onToggleLink={(field) => update(previous => toggleWorkspaceLink(previous, widget.id, field))}
+            onCycleLinkGroup={() => update(previous => cycleWorkspaceLinkGroup(previous, widget.id))}
             onMinimize={() => update(previous => setWorkspaceWidgetMinimized(previous, widget.id, !widget.minimized))}
             onMaximize={() => update(previous => toggleWorkspaceMaximized(previous, widget.id))}
             onClose={() => update(previous => removeWorkspaceWidget(previous, widget.id))}
