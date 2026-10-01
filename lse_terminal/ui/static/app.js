@@ -4692,6 +4692,10 @@ function setupLayouts() {
     // no duplicate top-bar buttons): a chart screenshot and the AI zone lasso.
     screenshot: () => { try { screenshotChart(); } catch (_) {} },
     lasso: () => { try { lassoArm(true); } catch (_) {} },
+    // Widget-workspace Watchlist rows change the REAL chart symbol, so the
+    // candle engine and every linked panel follow the same pick (one symbol,
+    // one product — never a widget-only selection drifting from the chart).
+    setSymbol: (sym) => { try { if (sym) setSymbol(sym); } catch (_) {} },
     // Phase 2 infinite scrollback: the chart bundle pages older bars and
     // asks the shell to own the prepended rows (single source of truth).
     prependCandles: (older) => {

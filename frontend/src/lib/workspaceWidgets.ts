@@ -56,17 +56,17 @@ export interface WorkspaceWidget {
 
 export const WIDGET_DEFS: Record<WorkspaceWidgetType, { title: string; description: string; single?: boolean }> = {
   chart: { title: 'Chart', description: 'Native price chart with existing tools and indicators.', single: true },
-  orderbook: { title: 'Orderbook', description: 'Current visible bid/ask liquidity.' },
+  orderbook: { title: 'Orderbook', description: 'Read-only depth bars on the same validated L2 book as the DOM — spread, mid, imbalance.' },
   dom: { title: 'Depth of Market (DOM)', description: 'Price ladder with bid, ask, delta, and execution controls.' },
   trades: { title: 'Trades', description: 'Time and Sales for the resolved market source.' },
-  marketStats: { title: 'Market Statistics', description: 'Live mark, funding, open interest, volume, and session data.' },
+  marketStats: { title: 'Market Statistics', description: 'Live last/bid/ask/source plus an honest NOT PROVIDED grid for fields the venue feed never publishes.' },
   footprint: { title: 'Footprint', description: 'Executed buy/sell volume at each traded price.' },
   heatmap: { title: 'Heatmap', description: 'Historical and live resting depth when the feed supplies it.' },
   volumeProfile: { title: 'Volume Profile', description: 'Volume-by-price and delta profile.' },
   cvdDelta: { title: 'CVD / Delta', description: 'Cumulative and per-period aggressive volume delta.' },
   paperTrading: { title: 'Paper Trading', description: 'Simulation order entry and position tracking.' },
-  watchlist: { title: 'Watchlist', description: 'Symbols and live changes.' },
-  replay: { title: 'Replay Library', description: 'Recorded market data and replay sessions.' },
+  watchlist: { title: 'Watchlist', description: 'Shell watchlists with live prices — row click switches the real workspace symbol.' },
+  replay: { title: 'Replay Library', description: 'Recorded engine sessions. Catalog is live; playback ships with the recorder phase.' },
 };
 
 /** The default pro workspace: full-height chart left, DOM + trades docked right. */

@@ -6274,6 +6274,37 @@ def create_app() -> FastAPI:
                     df[c] = pd.to_datetime(df[c], errors="coerce", format="mixed")
         return _viz_table(df)
 
+    # ── replay catalog (recorded DOM + tape sessions) ───────────────────────
+    # Honest by construction fact: this engine build has NO recorder yet, so
+    # an empty list is the normal answer. When the recorder phase lands it
+    # writes <config>/recordings/*.replay.json and rows appear here. The
+    # workspace Replay Library widget reads this and can never invent a
+    # session that is not on disk.
+
+    @app.get("/api/market-data/recordings")
+    def market_data_recordings():
+        deny_hosted()
+        rec_dir = cfg.config_dir() / "recordings"
+        recordings = []
+        try:
+            if rec_dir.is_dir():
+                for path in sorted(rec_dir.glob("*.replay.json")):
+                    try:
+                        header = json.loads(path.read_text(encoding="utf-8")) or {}
+                        recordings.append({
+                            "id": path.stem,
+                            "symbol": str(header.get("symbol") or ""),
+                            "provider": str(header.get("provider") or ""),
+                            "startMs": header.get("startMs"),
+                            "endMs": header.get("endMs"),
+                            "sizeBytes": path.stat().st_size,
+                        })
+                    except Exception:
+                        continue  # one corrupt header never breaks the catalog
+        except Exception:
+            recordings = []
+        return {"recordings": recordings}
+
     # ── chart workspace (drawings, layouts, settings, tools) ────────────────
     # Persisted to a file next to the config so the user's work survives a
     # browser cache clear, a reinstall, or moving machines. See workspace.py.
