@@ -4597,6 +4597,9 @@ function setupLayouts() {
     // candle engine and every linked panel follow the same pick (one symbol,
     // one product — never a widget-only selection drifting from the chart).
     setSymbol: (sym) => { try { if (sym) setSymbol(sym); } catch (_) {} },
+    // Panel timeframe cycle on the PRIMARY chart pane drives the real engine:
+    // same state change + reload the shell's own timeframe buttons perform.
+    setTimeframe: (tf) => { try { if (tf) { state.timeframe = tf; renderTimeframes(); loadChart(); } } catch (_) {} },
     // Phase 2 infinite scrollback: the chart bundle pages older bars and
     // asks the shell to own the prepended rows (single source of truth).
     prependCandles: (older) => {

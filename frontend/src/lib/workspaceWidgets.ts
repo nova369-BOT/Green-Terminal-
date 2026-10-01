@@ -259,6 +259,19 @@ export function setWorkspaceWidgetSymbol(widgets: WorkspaceWidget[], id: string,
   return widgets.map(widget => widget.id === id && widget.symbol !== clean ? { ...widget, symbol: clean, symbolLink: 'independent' } : widget);
 }
 
+/** Timeframes the panel header's cycle control walks through. The full shell
+ * list is reachable from the workspace timeframe toolbar; this is the quick
+ * per-pane set. */
+export const PANEL_TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+
+/** Editing a panel's own timeframe makes its tf link independent by
+ * definition — same rule as hand-set symbols. */
+export function setWorkspaceWidgetTimeframe(widgets: WorkspaceWidget[], id: string, timeframe: string): WorkspaceWidget[] {
+  const clean = timeframe.trim().toLowerCase();
+  if (!(PANEL_TIMEFRAMES as readonly string[]).includes(clean)) return widgets;
+  return widgets.map(widget => widget.id === id && widget.timeframe !== clean ? { ...widget, timeframe: clean, timeframeLink: 'independent' } : widget);
+}
+
 export function propagateWorkspaceLink(widgets: WorkspaceWidget[], sourceId: string, symbol: string, timeframe: string): WorkspaceWidget[] {
   const source = widgets.find(widget => widget.id === sourceId);
   if (!source) return widgets;

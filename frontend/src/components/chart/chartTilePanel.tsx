@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchLocalCandles, type CandleRow } from '@/lib/localEngine';
 import { formatCompact, timeframeToMs } from '@/lib/footprintAggregator';
+import { publishCrosshair, subscribeCrosshair } from '@/lib/chartCrosshairSync';
 import { useLiveQuote } from '@/market-data/hooks';
 import type { WidgetPanelProps } from './workspaceWidgetPanels';
 
@@ -24,6 +25,7 @@ const C_DOWN = '#e28b91';
 const C_GRID = '#1c283066';
 const C_TEXT = '#71808a';
 const C_CROSS = '#5f7480';
+const C_GHOST = '#8bb7e8aa';
 
 export function ChartTilePanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
@@ -32,11 +34,16 @@ export function ChartTilePanel({ widget, symbol, timeframe }: WidgetPanelProps):
   const [status, setStatus] = useState<'loading' | 'ok' | 'error' | 'empty'>('loading');
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  const [ghostMs, setGhostMs] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { quote, connected } = useLiveQuote(sym || null, undefined, true);
   const quoteRef = useRef(quote);
   quoteRef.current = quote;
+
+  /* Crosshair sync: mirror other tiles' hovered bar times; publish ours. */
+  useEffect(() => subscribeCrosshair(widget.id, setGhostMs), [widget.id]);
+  useEffect(() => () => publishCrosshair(widget.id, null), [widget.id]);
 
   /* Fetch engine candles for this tile. Identity guard: only setState when
    * the payload actually changed, so the 30s refresh does not churn renders. */
@@ -111,12 +118,29 @@ export function ChartTilePanel({ widget, symbol, timeframe }: WidgetPanelProps):
     return () => observer.disconnect();
   }, []);
 
+  /* Ghost bar index for another tile's published crosshair time: bars are
+   * ascending ISO window-starts, so a binary search on the string keys is
+   * exact — the line lands only on a bar that really exists. */
+  const ghostIndex = useMemo(() => {
+    if (ghostMs == null || !bars.length) return null;
+    const iso = new Date(Math.floor(ghostMs / timeframeToMs(tf)) * timeframeToMs(tf)).toISOString();
+    let low = 0;
+    let high = bars.length - 1;
+    while (low <= high) {
+      const midPoint = (low + high) >> 1;
+      if (bars[midPoint].timestamp === iso) return midPoint;
+      if (bars[midPoint].timestamp < iso) low = midPoint + 1;
+      else high = midPoint - 1;
+    }
+    return null; // the ghost time is outside this tile's loaded range — no line
+  }, [ghostMs, bars, tf]);
+
   /* Full redraw whenever bars, size or crosshair change. */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || size.w <= 0 || size.h <= 0) return;
-    draw(canvas, size.w, size.h, bars, hover);
-  }, [bars, size, hover]);
+    draw(canvas, size.w, size.h, bars, hover, ghostIndex);
+  }, [bars, size, hover, ghostIndex]);
 
   const legend = useMemo(() => (hover ? pickBar(bars, hover.x, size.w) : pickBar(bars, Number.NaN, size.w) ?? (bars.length ? { bar: bars[bars.length - 1], index: bars.length - 1 } : null)), [bars, hover, size.w]);
 
@@ -135,9 +159,12 @@ export function ChartTilePanel({ widget, symbol, timeframe }: WidgetPanelProps):
               style={{ display: 'block', width: size.w, height: size.h }}
               onMouseMove={event => {
                 const rect = (event.currentTarget as HTMLCanvasElement).getBoundingClientRect();
-                setHover({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+                const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+                setHover(point);
+                const picked = pickBar(bars, point.x, size.w);
+                publishCrosshair(widget.id, picked ? Date.parse(picked.bar.timestamp) : null);
               }}
-              onMouseLeave={() => setHover(null)}
+              onMouseLeave={() => { setHover(null); publishCrosshair(widget.id, null); }}
             />
             {legend && <div style={tileLegendStyle}>
               <span style={{ color: '#d8e3e8' }}>{fmtTime(legend.bar.timestamp)}</span>
@@ -175,7 +202,7 @@ function pickBar(bars: CandleRow[], x: number, width: number): PickedBar | null 
   return { bar: bars[index], index };
 }
 
-function draw(canvas: HTMLCanvasElement, width: number, height: number, bars: CandleRow[], hover: { x: number; y: number } | null): void {
+function draw(canvas: HTMLCanvasElement, width: number, height: number, bars: CandleRow[], hover: { x: number; y: number } | null, ghostIndex: number | null): void {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(width * dpr);
   canvas.height = Math.floor(height * dpr);
@@ -254,6 +281,15 @@ function draw(canvas: HTMLCanvasElement, width: number, height: number, bars: Ca
   ctx.fillRect(padL + innerW + 1, yc - 6, 48, 12);
   ctx.fillStyle = '#0b1014';
   ctx.fillText(fmtPx(last.close), padL + innerW + 4, yc - 4);
+
+  // Ghost cursor mirrored from another chart tile's crosshair (bar-exact).
+  if (ghostIndex != null && ghostIndex >= 0 && ghostIndex < bars.length) {
+    const gx = padL + (ghostIndex + 0.5) * step;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = C_GHOST;
+    ctx.beginPath(); ctx.moveTo(Math.round(gx) + 0.5, padT); ctx.lineTo(Math.round(gx) + 0.5, padT + innerH); ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // Crosshair.
   if (hover && hover.x >= padL && hover.x <= padL + innerW) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { applyChartSplit, applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, setWorkspaceWidgetSymbol, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidget, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
+import { applyChartSplit, applyWorkspacePreset, addWorkspaceWidget, cycleWorkspaceLinkGroup, DEFAULT_WORKSPACE_WIDGETS, propagateWorkspaceLink, removeWorkspaceWidget, setWorkspaceWidgetMinimized, setWorkspaceWidgetSymbol, setWorkspaceWidgetTimeframe, toggleWorkspaceLink, toggleWorkspaceMaximized, useWorkspaceWidgets, WIDGET_DEFS, type WorkspaceWidget, type WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 import { initLiveFlowCatalog } from '@/lib/flowSources';
 import { moveWidget, WORKSPACE_COLUMNS, WORKSPACE_ROWS, type WidgetRect } from '@/lib/workspaceLayout';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
@@ -98,6 +98,21 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
     });
   };
 
+  /* Same rule for timeframe: the primary pane bridges to the real engine
+   * (state.timeframe + reload), every other pane commits locally and drives
+   * its link group. */
+  const commitTimeframe = (widget: WorkspaceWidget, nextTf: string) => {
+    if (widget.id === primaryChartId) {
+      try { (window as unknown as { __lseShell?: { setTimeframe?: (tf: string) => void } }).__lseShell?.setTimeframe?.(nextTf); } catch { /* bridge absent outside the shell */ }
+      return;
+    }
+    update(previous => {
+      const changed = setWorkspaceWidgetTimeframe(previous, widget.id, nextTf);
+      if (changed === previous) return previous;
+      return widget.linkGroup ? propagateWorkspaceLink(changed, widget.id, widget.symbol || symbol, nextTf) : changed;
+    });
+  };
+
   return (
     <div style={rootStyle}>
       <div ref={toolbarRef} style={toolbarStyle}>
@@ -129,8 +144,8 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '3px 10px 8px' }}>
             {(['1', '2', '4', '16'] as WorkspacePreset[]).map(value => <button key={value} type="button" onClick={() => preset(value)} style={presetButtonStyle}>{value}</button>)}
           </div>
-          <div style={{ ...menuTitleStyle, marginTop: 6 }}>LINKING</div>
-          <div style={{ color: '#87939f', fontSize: 11, padding: '3px 10px 9px', lineHeight: 1.5 }}>Panels follow {symbol || 'the active symbol'} and {timeframe} until unlinked (S / T on each panel). The ●/○ dot cycles link groups A · B · C — same-color panels sync with each other.</div>
+          <div style={{ ...menuTitleStyle, marginTop: 6 }}>LINKING & SYNC</div>
+          <div style={{ color: '#87939f', fontSize: 11, padding: '3px 10px 9px', lineHeight: 1.5 }}>Panels follow {symbol || 'the active symbol'} and {timeframe} until unlinked (S / T on each panel). The ●/○ dot cycles link groups A · B · C — same-color panels sync with each other. Timeframe cycles 1m→1d per pane from its header. Chart tiles mirror each other's crosshair by bar time; the primary pane's crosshair lives in the engine and is not mirrored.</div>
         </div>}
         {pickerOpen && <div style={pickerStyle}>
           <div style={pickerHeaderStyle}><strong>Add widget</strong><span style={{ color: '#7e8a96', fontSize: 11 }}>Native workspace panels</span></div>
@@ -173,6 +188,7 @@ export default function NativeWidgetWorkspace({ symbol, timeframe, children }: {
             onToggleLink={(field) => update(previous => toggleWorkspaceLink(previous, widget.id, field))}
             onCycleLinkGroup={() => update(previous => cycleWorkspaceLinkGroup(previous, widget.id))}
             onSymbolCommit={(value) => commitSymbol(widget, value)}
+            onTimeframeCommit={(nextTf) => commitTimeframe(widget, nextTf)}
             onMinimize={() => update(previous => setWorkspaceWidgetMinimized(previous, widget.id, !widget.minimized))}
             onMaximize={() => update(previous => toggleWorkspaceMaximized(previous, widget.id))}
             onClose={() => update(previous => removeWorkspaceWidget(previous, widget.id))}
