@@ -22,6 +22,7 @@ import {
 } from '../src/lib/domLadder.ts';
 
 let passed = 0;
+function nearly(a, b, eps = 1e-9) { assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`); }
 function test(name, fn) {
   try { fn(); passed += 1; console.log(`ok   ${name}`); }
   catch (e) { console.error(`FAIL ${name}`); console.error(e); process.exitCode = 1; }
@@ -192,7 +193,7 @@ test('buildLadderModel: asks high→low, current between, bids best→worst', ()
   assert.equal(model.current.priceText, '100.00');
   assert.equal(model.asks[0].hasSize, true);
   assert.equal(model.asks[0].depthFrac, 1);        // 3 is the visible max
-  assert.close(model.bids[0].depthFrac, 2 / 4, 1e-9);
+  nearly(model.bids[0].depthFrac, 2 / 4);
   assert.equal(model.bids[1].depthFrac, 1);
   assert.equal(model.current.hasBuy, true);
   assert.equal(model.current.buyText, '1');
@@ -210,7 +211,7 @@ test('buildLadderModel: depthFrac normalises against VISIBLE maxima only', () =>
     showTradeColumns: false, accumulator: acc,
   });
   assert.equal(model.asks[1].depthFrac, 1);        // 20 of max 20
-  assert.close(model.bids[0].depthFrac, 0.5, 1e-9); // 10 of max 20
+  nearly(model.bids[0].depthFrac, 0.5); // 10 of max 20
 });
 
 test('grouping ×10 bands sub-ticks into one row (dom_band_size)', () => {

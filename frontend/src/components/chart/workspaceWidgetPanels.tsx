@@ -9,6 +9,7 @@ import { applyPaperOrder, closePaperPosition, loadPaperAccount, paperUnrealized,
 import { drawCvd } from './cvdCanvas';
 import { drawHeatmap } from './heatmapCanvas';
 import { buildLadderModel, decimalsForTick, deriveTickFromPrices, formatPrice as fmtLadderPrice, oceanLuminance, oceanRgb, priceKey, resolveCenterKey, TradeAtPriceAccumulator, RESET_PRESETS, type LadderCurrentModel, type LadderRowModel } from '@/lib/domLadder';
+import { TradeTape } from '@/lib/tape';
 import { resolveFlowSource, useAdaptiveFlowSource, useFlowCatalogVersion, noteFlowVenueEvent, type AdaptiveFlow } from '@/lib/flowSources';
 import type { WorkspaceWidget, WorkspaceWidgetType } from '@/lib/workspaceWidgets';
 
@@ -69,39 +70,89 @@ function EmptyNote({ children }: { children: React.ReactNode }): JSX.Element {
 
 /* ---------------------------------- Trades ---------------------------------- */
 
+/**
+ * Time & Sales — G-Flow parity port of ui/trades_widget.cpp.
+ *
+ * The tape is a 64-print ring buffer of venue-aggressor-verified prints,
+ * newest at the top. PRICE and QTY are side-colored (UP green / DOWN red),
+ * TIME is muted; rows are formatted ONCE at insert (immutable RowText) and
+ * the print flushes a brand-soft wash when it outsizes the rolling qty EMA
+ * by more than ×8 — the original's `.tape-row.big` rule. Below the header
+ * the 1-minute buy/sell pressure meter and prints/sec sit exactly where the
+ * stats strip did, computed on the same 60s window as calculate_statistics().
+ *
+ * Honesty preserved: only prints carrying a venue side and a size enter the
+ * tape; the empty state says so plainly instead of guessing.
+ */
 export function TradesPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const sym = widget.symbol || symbol;
-  /* Venue resolution, same rule as the DOM: subscribe the resolved venue
-   * stream (BTCUSDT) — the raw display symbol (BTC/USD) is not a Binance
-   * stream id, so subscribing it only produced reset loops and an empty
-   * tape. Trades also filter on the venue stream id, never the display
-   * name. Adaptive: Binance down ⇒ Hyperliquid Perp, banner-disclosed. */
   const flow = useAdaptiveFlowSource(sym);
   const stream = flow.flow.status === 'resolved' ? flow.flow.source.stream : null;
-  const [trades, setTrades] = useState<BusTrade[]>([]);
+  const tapeRef = useRef(new TradeTape());
+  const [tapeRev, setTapeRev] = useState(0);
+
+  /* Late instrument bind (refresh_instrument parity) — a venue swap or
+   * symbol change starts a fresh tape; mixed-instrument prints are lies. */
   useEffect(() => {
-    if (!stream || flow.flow.status !== 'resolved') { setTrades([]); return undefined; }
+    tapeRef.current = new TradeTape();
+    setTapeRev(tapeRef.current.revision());
+  }, [stream]);
+
+  useEffect(() => {
+    if (!stream || flow.flow.status !== 'resolved') { return undefined; }
     const provider = flow.flow.source.provider;
     const bus = getBus();
     const stop = bus.stream([stream], provider);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream) return;
+      if (trade.side !== 'buy' && trade.side !== 'sell') return;
+      if (trade.size == null) return;
       noteFlowVenueEvent(provider, 'data');
-      setTrades(previous => [trade, ...previous].slice(0, 24));
+      if (tapeRef.current.add(trade.tsMs, trade.price, trade.size, trade.side === 'buy')) {
+        setTapeRev(tapeRef.current.revision());
+      }
     });
     return () => { off(); stop(); };
   }, [stream, flow]);
+
+  // tapeRev pins reads to ring state (like the DOM's accumulator revision).
+  const rows = useMemo(() => tapeRef.current.list(), [tapeRev]);
+  const stats = useMemo(() => tapeRef.current.statistics(Date.now()), [tapeRev]);
+
   if (flow.flow.status === 'none') {
     return <div style={bodyStyle}><StatusStrip left="Time & Sales" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
+  const pressurePct = Math.round(stats.buyPressure * 100);
   return <div style={bodyStyle}>
-    <StatusStrip left={`Time & Sales · ${stream}`} right={trades.length ? `Live · ${trades.length} prints` : 'Waiting'} tone={trades.length ? 'live' : 'wait'} />
+    <StatusStrip left={`Time & Sales · ${stream}`} right={rows.length ? `Live · ${tapeRef.current.totalSeen()} prints` : 'Waiting'} tone={rows.length ? 'live' : 'wait'} />
     <SwapBanner flow={flow} />
-    {trades.length ? trades.map((trade, index) => <div key={`${trade.tsMs}-${index}`} style={tradeRowStyle}>
-      <time>{new Date(trade.tsMs).toLocaleTimeString()}</time>
-      <strong style={{ color: trade.side === 'buy' ? '#58d797' : trade.side === 'sell' ? '#e28b91' : '#b8c5cc' }}>{formatPrice(trade.price)}</strong>
-      <span>{trade.size == null ? '—' : trade.size}</span>
-    </div>) : <EmptyNote>No verified trade prints received yet.<br /><small>The panel populates only from the selected live provider.</small></EmptyNote>}
+    {rows.length === 0 ? <EmptyNote>
+      No trades received. The feed is connected but its trade stream has not
+      delivered anything — some networks block it.<br />
+      <small>The tape is waiting, not broken. Nothing is synthesized.</small>
+    </EmptyNote> : <>
+      <div style={tapeHeadStyle}>
+        <span>PRICE</span>
+        <span style={{ textAlign: 'right' }}>QTY</span>
+        <span style={{ textAlign: 'right' }}>TIME</span>
+      </div>
+      <div style={tapeScrollStyle}>
+        {rows.map((print, index) => <div key={`${print.tsMs}-${index}`} style={{ ...tapeRowStyle2, background: print.big ? 'rgba(176,141,87,0.14)' : 'transparent' }}>
+          <strong style={{ color: print.isBuy ? '#1f9d55' : '#a83246', fontWeight: 500 }}>{print.priceText}</strong>
+          <span style={{ color: print.isBuy ? '#1f9d55' : '#a83246', textAlign: 'right' }}>{print.qtyText}</span>
+          <span style={{ color: '#66736b', textAlign: 'right' }}>{print.timeText}</span>
+        </div>)}
+      </div>
+      <div style={tapeFootStyle}>
+        <span style={{ minWidth: 40 }}>1M FLOW</span>
+        <span style={pressureTrackStyle}>
+          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pressurePct}%`, background: '#1f9d55', opacity: 0.85 }} />
+          <span style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: `${100 - pressurePct}%`, background: '#a83246', opacity: 0.55 }} />
+        </span>
+        <span style={{ minWidth: 66, textAlign: 'right', color: pressurePct >= 50 ? '#58d797' : '#e28b91' }}>{pressurePct}/BP</span>
+        <span style={{ minWidth: 52, textAlign: 'right', color: '#66736b' }}>{stats.tradesPerSecond.toFixed(1)}/s</span>
+      </div>
+    </>}
   </div>;
 }
 
@@ -504,26 +555,118 @@ const DomCurrentRow = React.forwardRef<HTMLDivElement, { model: LadderCurrentMod
 
 /* ---------------------------------- Orderbook ---------------------------------- */
 
-/** Read-only depth view of the SAME validated L2 book the DOM drives — the
- * depth bars the mockup shows, with no second stream and no execution keys. */
+/**
+ * Orderbook — G-Flow parity port of ui/orderbook_widget.cpp.
+ *
+ * Layout: ask table (highest price first) → enlarged LAST PRICE block
+ * (direction-colored on change: buy-green when the trade ticks up, sell-red
+ * when it ticks down — update()/render_center_price parity) → bid table
+ * (best first). Each row shows PRICE | AMOUNT | cumulative TOTAL, with a
+ * right-anchored soft depth bar scaled by the max cumulative across both
+ * visible tables. Settings collapse: Show Cumulative / Show Depth Bars /
+ * Bar Opacity.
+ *
+ * Data contract unchanged: the SAME validated L2 book the DOM reads —
+ * verified snapshots + sequence-bridged diffs only, never interpolated.
+ */
 export function OrderbookPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
   const { flow, depth, lastEventAt } = useResolvedDepth(widget, symbol);
   const stale = useStaleness(lastEventAt, DOM_STALE_AFTER_MS);
+  const LEVELS = 12;
+  const [showCumulative, setShowCumulative] = useState(true);
+  const [showDepthBars, setShowDepthBars] = useState(true);
+  const [barOpacity, setBarOpacity] = useState(0.4);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /* Direction color for the center price (update() parity). */
+  const [lastTx, setLastTx] = useState<{ price: number | null; up: boolean | null }>({ price: null, up: null });
+  useEffect(() => {
+    if (flow.flow.status !== 'resolved') return undefined;
+    const stream = flow.flow.source.stream;
+    const bus = getBus();
+    const off = bus.subscribeTrade((trade) => {
+      if (trade.symbol !== stream) return;
+      setLastTx(previous => {
+        if (previous.price == null || trade.price === previous.price) return previous;
+        return { price: trade.price, up: trade.price > previous.price };
+      });
+    });
+    return off;
+  }, [flow]);
+
+  const decimals = useMemo(() => {
+    if (!depth.ready) return 2;
+    const strings: string[] = [];
+    for (const [price] of depth.bids.slice(0, LEVELS)) strings.push(price);
+    for (const [price] of depth.asks.slice(0, LEVELS)) strings.push(price);
+    const tick = deriveTickFromPrices(strings);
+    return decimalsForTick(tick);
+  }, [depth]);
+
   if (flow.flow.status === 'none') {
     return <div style={bodyStyle}><StatusStrip left="Orderbook" right="No source" tone="muted" /><EmptyNote><strong>No order-flow source</strong><span>{flow.flow.reason}</span></EmptyNote></div>;
   }
   const { mid, spread, imbalance } = bookStats(depth, 6);
-  const topBids = depth.bids.slice(0, 6);
-  const topAsks = depth.asks.slice(0, 6);
-  const bidMax = Math.max(0, ...topBids.map(([, qty]) => Number(qty) || 0));
-  const askMax = Math.max(0, ...topAsks.map(([, qty]) => Number(qty) || 0));
+
+  const topBids = depth.bids.slice(0, LEVELS);
+  const topAsks = depth.asks.slice(0, LEVELS);
+  let run = 0;
+  const askCum = topAsks.map(([, qty]) => { run += Number(qty) || 0; return run; });
+  run = 0;
+  const bidCum = topBids.map(([, qty]) => { run += Number(qty) || 0; return run; });
+  const maxCum = Math.max(0, ...askCum, ...bidCum);
+
+  const renderRows = (rows: Array<[string, string]>, cums: number[], side: 'bid' | 'ask'): JSX.Element[] => {
+    /* Asks render highest-first (walked in reverse), bids best-first. */
+    const order = side === 'ask' ? rows.map((_, i) => rows.length - 1 - i) : rows.map((_, i) => i);
+    return order.map(idx => {
+      const [price, qty] = rows[idx];
+      const cum = cums[idx];
+      const pct = maxCum > 0 ? (cum / maxCum) * 100 : 0;
+      const hex = side === 'bid' ? '31,157,85' : '168,50,70';
+      return <div key={`${side}${price}`} style={{ position: 'relative', height: 18, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', padding: '0 8px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10 }}>
+        {showDepthBars && pct > 0 ? <span style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: `${pct}%`, background: `rgba(${hex},${(barOpacity * 0.22).toFixed(3)})`, pointerEvents: 'none' }} /> : null}
+        <span style={{ color: side === 'bid' ? '#1f9d55' : '#a83246', position: 'relative' }}>{fmtLadderPrice(Number(price), decimals)}</span>
+        <span style={{ color: '#b9c0b4', textAlign: 'right', position: 'relative' }}>{qty}</span>
+        <span style={{ color: '#7d8a80', textAlign: 'right', position: 'relative' }}>{showCumulative ? cum.toLocaleString(undefined, { maximumFractionDigits: 8 }) : ''}</span>
+      </div>;
+    });
+  };
+
   return <div style={bodyStyle}>
     <StatusStrip left={`Orderbook · ${flow.flow.source.stream}`} right={depth.ready ? (stale ? 'Stale' : 'Live') : 'Syncing'} tone={depth.ready && !stale ? 'live' : 'wait'} />
     <SwapBanner flow={flow} />
+    <div style={{ ...domToolbarStyle, position: 'relative' }}>
+      <button type="button" onClick={() => setSettingsOpen(!settingsOpen)} style={{ ...domSegmentButtonStyle, color: settingsOpen ? '#7bf0b5' : '#71808a', borderColor: settingsOpen ? '#1e9b68' : '#26343d' }}>Settings</button>
+      <span style={sourceChipStyle}>{flow.swapped ? `${flow.flow.source.label} · FALLBACK` : flow.flow.source.label}</span>
+      {settingsOpen ? <>
+        <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)} style={domSettingsBackdrop} />
+        <div style={{ ...domSettingsPop, right: 10, left: 'auto' }}>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 10, color: '#b9c0b4' }}>
+            <input type="checkbox" checked={showCumulative} onChange={() => setShowCumulative(!showCumulative)} /> Show Cumulative
+          </label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 10, color: '#b9c0b4' }}>
+            <input type="checkbox" checked={showDepthBars} onChange={() => setShowDepthBars(!showDepthBars)} /> Show Depth Bars
+          </label>
+          {showDepthBars ? <label style={{ display: 'grid', gap: 3, fontSize: 9, color: '#7d8a80' }}>
+            Bar Opacity <output style={{ color: '#b9c0b4' }}>{barOpacity.toFixed(2)}</output>
+            <input type="range" min={0.1} max={1} step={0.05} value={barOpacity} onChange={e => setBarOpacity(Number(e.target.value))} />
+          </label> : null}
+        </div>
+      </> : null}
+    </div>
     {depth.ready ? <>
-      <div style={obGridStyle}>
-        <div><strong style={domSideBid}>BIDS</strong>{topBids.map(([price, qty]) => <ObRow key={`b${price}`} price={price} qty={qty} max={bidMax} color="#318f69" />)}</div>
-        <div><strong style={domSideAsk}>ASKS</strong>{topAsks.map(([price, qty]) => <ObRow key={`a${price}`} price={price} qty={qty} max={askMax} color="#b55e63" flip />)}</div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: '3px 8px', color: '#7d8a80', fontSize: 8, letterSpacing: '.08em', position: 'sticky', top: 0, background: '#0e1511', borderBottom: '1px solid #1c2a22', zIndex: 1 }}>
+          <span>PRICE</span><span style={{ textAlign: 'right' }}>AMOUNT</span><span style={{ textAlign: 'right' }}>{showCumulative ? 'TOTAL' : ''}</span>
+        </div>
+        {renderRows(topAsks, askCum, 'ask')}
+        <div style={{ padding: '8px', borderTop: '1px solid #1c2a22', borderBottom: '1px solid #1c2a22', background: '#0e1511' }}>
+          <b style={{ fontSize: 15, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: lastTx.up == null ? '#d8e3e8' : lastTx.up ? '#1f9d55' : '#a83246' }}>
+            {lastTx.price != null ? fmtLadderPrice(lastTx.price, decimals) : '—'}
+          </b>
+        </div>
+        {renderRows(topBids, bidCum, 'bid')}
       </div>
       <div style={domQuoteRowStyle}>
         <span>Spread <b style={{ color: '#d8e3e8' }}>{spread != null ? spread.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}</b></span>
@@ -975,6 +1118,12 @@ const statusStripStyle: React.CSSProperties = { display: 'flex', justifyContent:
 const swapBannerStyle: React.CSSProperties = { background: '#2b2416', color: '#e1b65c', fontSize: 10, lineHeight: 1.4, padding: '5px 10px', borderBottom: '1px solid #3d3424' };
 const emptyStyle: React.CSSProperties = { color: '#87949c', fontSize: 11, lineHeight: 1.5, padding: 18, textAlign: 'center', display: 'grid', placeContent: 'center', gap: 4, height: '100%' };
 const tradeRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '5px 10px', borderBottom: '1px solid #1e292f', color: '#b8c5cc', fontSize: 11 };
+/* Tape chrome (trades_widget.cpp .tape-*): mono, 18px hairline-free rows. */
+const tapeHeadStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 72px', gap: 6, padding: '0 10px', height: 20, lineHeight: '20px', color: '#7d8a80', fontSize: 8, letterSpacing: '.08em', borderBottom: '1px solid #1c2a22', background: '#0e1511', position: 'sticky', top: 0, zIndex: 1 };
+const tapeScrollStyle: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 10 };
+const tapeRowStyle2: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 72px', gap: 6, padding: '0 10px', height: 18, lineHeight: '18px' };
+const tapeFootStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderTop: '1px solid #1c2a22', color: '#7d8a80', fontSize: 8, letterSpacing: '.06em', background: '#0e1511' };
+const pressureTrackStyle: React.CSSProperties = { position: 'relative', flex: 1, height: 6, borderRadius: 3, background: '#141c16', overflow: 'hidden' };
 const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 };
 const statsFootStyle: React.CSSProperties = { borderTop: '1px solid #293740', color: '#71808a', fontSize: 10, padding: '8px 12px' };
 const statLabelStyle: React.CSSProperties = { color: '#71808a', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em' };

@@ -378,6 +378,16 @@ def test_orderflow_workspace_markers():
         assert marker in ladder, f"missing domLadder port marker {marker!r}"
     # The ported ladder core carries a self-checking parity suite.
     assert (root / "frontend/tests/domLadder.test.mjs").is_file()
+    # Trades + Orderbook G-Flow parity: 64-print tape ring with qty EMA
+    # big-print wash, 1m flow meter; orderbook with ask/bid tables straddling
+    # the direction-colored last-trade price and cumulative TOTAL bars.
+    tape = (root / "frontend/src/lib/tape.ts").read_text()
+    for marker in ("MAX_TRADES", "qtyEma", "BIG_PRINT_FACTOR", "buyPressure",
+                   "statistics"):
+        assert marker in tape, f"missing tape port marker {marker!r}"
+    assert "TradeTape" in panels
+    assert "Show Cumulative" in panels and "Bar Opacity" in panels
+    assert (root / "frontend/tests/tape.test.mjs").is_file()
     # Vendored authoritative EdgeDepth source still present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
