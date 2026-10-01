@@ -106,3 +106,14 @@ export function addWorkspaceWidget(widgets: WorkspaceWidget[], type: WorkspaceWi
 export function removeWorkspaceWidget(widgets: WorkspaceWidget[], id: string): WorkspaceWidget[] {
   const next = widgets.filter(w => w.id !== id); saveWorkspaceWidgets(next); return next;
 }
+
+export function reorderWorkspaceWidget(widgets: WorkspaceWidget[], id: string, beforeId: string): WorkspaceWidget[] {
+  if (id === beforeId) return widgets;
+  const source = widgets.find(widget => widget.id === id);
+  if (!source) return widgets;
+  const remaining = widgets.filter(widget => widget.id !== id);
+  const index = Math.max(0, remaining.findIndex(widget => widget.id === beforeId));
+  remaining.splice(index < 0 ? remaining.length : index, 0, source);
+  saveWorkspaceWidgets(remaining);
+  return remaining;
+}

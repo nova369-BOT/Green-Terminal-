@@ -9,6 +9,7 @@ import {
   DEFAULT_WORKSPACE_WIDGETS,
   loadWorkspaceWidgets,
   removeWorkspaceWidget,
+  reorderWorkspaceWidget,
   saveWorkspaceWidgets,
   WIDGET_DEFS,
   type WorkspaceWidget,
@@ -121,7 +122,11 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
         </button>
         <div style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>
           {widgets.filter(w => w.visible).map(widget => (
-            <span key={widget.id} style={pillStyle} title={WIDGET_DEFS[widget.type].description}>
+            <span key={widget.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/green-terminal-widget', widget.id)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+              event.preventDefault();
+              const dragged = event.dataTransfer.getData('text/green-terminal-widget');
+              if (dragged) setWidgets(reorderWorkspaceWidget(widgets, dragged, widget.id));
+            }} style={{ ...pillStyle, cursor: 'grab' }} title={WIDGET_DEFS[widget.type].description}>
               {widget.title}
               {widget.type !== 'chart' && <button type="button" aria-label={`Close ${widget.title}`} onClick={() => remove(widget.id)} style={closeStyle}>×</button>}
             </span>
@@ -238,7 +243,7 @@ const domGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns
 const domRowStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 6, color: '#b8c5cc', fontSize: 10, padding: '3px 0', borderBottom: '1px solid #1e292f' };
 const domSideBid: React.CSSProperties = { color: '#58d797', fontSize: 9 };
 const domSideAsk: React.CSSProperties = { color: '#e28b91', fontSize: 9 };
-const statsPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
+const statsPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, minWidth: 220, minHeight: 120, pointerEvents: 'auto', resize: 'both', overflow: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
 const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 };
 const cvdBodyStyle: React.CSSProperties = { ...statsGridStyle, borderTop: '1px solid #293740' };
 const profileRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.5fr .5fr', gap: 7, color: '#c0cbd0', fontSize: 10, padding: '4px 10px', borderTop: '1px solid #1e292f' };
