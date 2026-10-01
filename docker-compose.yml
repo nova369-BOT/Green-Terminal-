@@ -1,9 +1,13 @@
-# Green Terminal — full stack in one container (app + managed EdgeDepth gateway).
+# Green Terminal — full stack in one container (app + managed EDGE gateway).
 #
 # Preview after `docker compose up --build`:
-#   App / Order Flow UI : http://127.0.0.1:7787/
-#   Gateway WebSocket   : ws://127.0.0.1:18791/ws   (browser reaches this via
-#                         the published port; config_js already emits 127.0.0.1)
+#   Green Terminal UI : http://127.0.0.1:7787/
+#
+# The G-Flow WASM surface was retired: the EdgeDepth gateway is now a purely
+# INTERNAL service (loopback inside the container, probed by
+# /api/edgedepth/status). Its port is deliberately NOT published — the
+# browser no longer connects to it, and the native workspace widgets stream
+# depth/trades through the app's own /api/market-data/ws fabric instead.
 #
 # The prebuilt bin/edgedepth-gateway is linux/amd64 — platform is pinned so
 # Apple Silicon / ARM hosts use emulation instead of failing exec format.
@@ -17,17 +21,12 @@ services:
     container_name: green-terminal
     platform: linux/amd64
     ports:
-      # Green Terminal UI (Price & Chart, Order Flow shell)
+      # Green Terminal UI (chart workspace with native order-flow widgets)
       - "7787:7787"
-      # EdgeDepth gateway — MUST be published: the WASM client in the browser
-      # opens ws://127.0.0.1:18791/ws on the host, not inside the container.
-      - "18791:18791"
     environment:
+      # Internal service coordinates — container loopback, never published.
       EDGEDEPTH_PORT: "18791"
-      # Status/healthz from inside the container (gateway binds :18791).
       EDGEDEPTH_HOST: "127.0.0.1"
-      # Optional absolute override for the browser (rarely needed for local Docker):
-      # EDGEDEPTH_WS: "ws://127.0.0.1:18791/ws"
       LSE_TERMINAL_CONFIG_DIR: "/tmp/lse-terminal"
       LSE_TERMINAL_REMOTE: "1"
       PYTHONUNBUFFERED: "1"
@@ -43,11 +42,10 @@ services:
     # Persist workspace/config across restarts (optional).
     volumes:
       - gt-config:/tmp/lse-terminal
-      # Live code mount (data saver): the container reads the app, gateway
-      # binary and WASM artifacts straight from this checkout, so `git pull`
-      # + `docker compose up` picks up updates with NO rebuild and NO
-      # downloads. Rebuild (`--build`) only when the Dockerfile or Python
-      # dependencies change.
+      # Live code mount (data saver): the container reads the app and gateway
+      # binary straight from this checkout, so `git pull` + `docker compose up`
+      # picks up updates with NO rebuild and NO downloads. Rebuild (`--build`)
+      # only when the Dockerfile or Python dependencies change.
       - ./:/app:ro
 
 volumes:

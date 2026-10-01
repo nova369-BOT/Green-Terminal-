@@ -1,6 +1,10 @@
-# Green Terminal — one image: lset + managed EdgeDepth gateway + WASM artifacts.
-# The gateway binary is linux/amd64 (see bin/edgedepth-gateway). Build/run with
-# --platform=linux/amd64 on Apple Silicon / ARM hosts so the binary can execute.
+# Green Terminal — one image: the lset app with its managed internal
+# EdgeDepth gateway. The G-Flow WASM surface was retired (native workspace
+# widgets now carry DOM/heatmap/tape/footprints), so the gateway is an
+# INTERNAL service only: it binds loopback inside the container and is not
+# published to the host or the browser. The gateway binary is linux/amd64
+# (see bin/edgedepth-gateway) — build/run with --platform=linux/amd64 on
+# Apple Silicon / ARM hosts so the binary can execute.
 
 FROM python:3.11-slim-bookworm
 
@@ -10,9 +14,8 @@ ENV PYTHONUNBUFFERED=1 \
     # Browser-facing app (published to the host).
     LSE_HOST=0.0.0.0 \
     LSE_PORT=7787 \
-    # Internal EdgeDepth gateway: bind all interfaces inside the container so
-    # the host-published port reaches it. Browser config still uses 127.0.0.1
-    # + the published host port (see docker-compose.yml EDGEDEPTH_*).
+    # Internal EdgeDepth gateway: loopback inside the container; the app's
+    # /api/edgedepth/status probes it here. Nothing outside connects.
     EDGEDEPTH_PORT=18791 \
     EDGEDEPTH_HOST=127.0.0.1 \
     LSE_TERMINAL_CONFIG_DIR=/tmp/lse-terminal \
@@ -46,7 +49,7 @@ RUN pip install -e . \
 
 USER gt
 
-EXPOSE 7787 18791
+EXPOSE 7787
 
 HEALTHCHECK --interval=15s --timeout=3s --start-period=25s --retries=5 \
   CMD curl -fsS "http://127.0.0.1:${LSE_PORT}/api/health" || exit 1
