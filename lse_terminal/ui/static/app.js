@@ -4422,6 +4422,13 @@ async function runSwitchProvider(name) {
       const gold = state.instruments.find((i) => i.symbol === "DEMO:GOLD");
       if (gold) first = gold.symbol;
     }
+    // House default pair (user directive): a fresh workspace opens on
+    // BTC/USD whenever the active catalog actually lists it; otherwise the
+    // provider's own first row stands (never an invented instrument).
+    if (!restored) {
+      const btc = state.instruments.find((i) => i.symbol === "BTC/USD");
+      if (btc) first = btc.symbol;
+    }
     state.symbol = restored ? pending : first;
     if (restored) {
       state.pendingShellSymbol = null;
