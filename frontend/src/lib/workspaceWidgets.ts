@@ -117,3 +117,20 @@ export function reorderWorkspaceWidget(widgets: WorkspaceWidget[], id: string, b
   saveWorkspaceWidgets(remaining);
   return remaining;
 }
+
+export function applyWorkspacePreset(widgets: WorkspaceWidget[], preset: '1' | '2' | '4' | '16'): WorkspaceWidget[] {
+  const count = Number(preset);
+  const columns = count === 1 ? 12 : count === 2 ? 6 : count === 4 ? 6 : 3;
+  const rows = count === 1 ? 12 : count === 2 ? 8 : count === 4 ? 6 : 4;
+  const next = widgets.map((widget, index) => ({
+    ...widget,
+    x: (index % (12 / columns)) * columns,
+    y: Math.floor(index / (12 / columns)) * rows,
+    width: columns,
+    height: rows,
+    visible: index < count || widget.type === 'chart',
+    minimized: false,
+  }));
+  saveWorkspaceWidgets(next);
+  return next;
+}

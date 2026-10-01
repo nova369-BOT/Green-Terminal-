@@ -6,6 +6,7 @@ import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import { DepthHeatmapHistory, type HeatmapFrame } from '@/lib/depthHeatmap';
 import {
   addWorkspaceWidget,
+  applyWorkspacePreset,
   DEFAULT_WORKSPACE_WIDGETS,
   loadWorkspaceWidgets,
   removeWorkspaceWidget,
@@ -138,6 +139,10 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
         {menu && <div style={menuStyle}>
           <div style={menuTitle}>WORKSPACE</div>
           <button type="button" onClick={reset} style={menuItem}>Reset to Chart + DOM + Trades</button>
+          <div style={{ ...menuTitle, marginTop: 8 }}>PANEL PRESETS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '3px 10px 7px' }}>
+            {(['1', '2', '4', '16'] as const).map(preset => <button key={preset} type="button" onClick={() => { setWidgets(applyWorkspacePreset(widgets, preset)); setMenu(false); }} style={{ ...menuItem, border: '1px solid #2b3942', borderRadius: 3, padding: '5px 2px', textAlign: 'center' }}>{preset}</button>)}
+          </div>
           <div style={{ ...menuTitle, marginTop: 8 }}>LINKING</div>
           <div style={{ color: '#87939f', fontSize: 11, padding: '5px 10px 8px' }}>New widgets follow {symbol || 'the active symbol'} and {timeframe} until unlinked.</div>
         </div>}
