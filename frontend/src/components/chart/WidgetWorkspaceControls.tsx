@@ -30,6 +30,7 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
   const [widgets, setWidgets] = useState<WorkspaceWidget[]>([]);
   const [trades, setTrades] = useState<BusTrade[]>([]);
   const [footprint, setFootprint] = useState<Record<string, { buy: number; sell: number }>>({});
+  const [volumeProfile, setVolumeProfile] = useState<Record<string, number>>({});
   const [cvd, setCvd] = useState({ value: 0, buy: 0, sell: 0, sideKnown: true });
   const [depth, setDepth] = useState<{ bids: Array<[string, string]>; asks: Array<[string, string]>; ready: boolean; reset?: string }>({ bids: [], asks: [], ready: false });
   const [heatmapFrames, setHeatmapFrames] = useState<HeatmapFrame[]>([]);
@@ -40,6 +41,7 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
   const cvdOpen = widgets.some(widget => widget.type === 'cvdDelta' && widget.visible);
   const footprintOpen = widgets.some(widget => widget.type === 'footprint' && widget.visible);
   const heatmapOpen = widgets.some(widget => widget.type === 'heatmap' && widget.visible);
+  const profileOpen = widgets.some(widget => widget.type === 'volumeProfile' && widget.visible);
   const { quote, connected, lastTickAgeMs } = useLiveQuote(symbol || null, undefined, statsOpen);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -63,12 +65,16 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
     return () => { off(); stop(); };
   }, [symbol, domOpen, heatmapOpen]);
   useEffect(() => {
-    if ((!tradesOpen && !cvdOpen && !footprintOpen) || !symbol) { setTrades([]); setCvd({ value: 0, buy: 0, sell: 0, sideKnown: true }); setFootprint({}); return; }
+    if ((!tradesOpen && !cvdOpen && !footprintOpen && !profileOpen) || !symbol) { setTrades([]); setCvd({ value: 0, buy: 0, sell: 0, sideKnown: true }); setFootprint({}); setVolumeProfile({}); return; }
     const bus = getBus();
     const stop = bus.stream([symbol]);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== symbol) return;
       if (tradesOpen) setTrades(previous => [trade, ...previous].slice(0, 24));
+      if (profileOpen && typeof trade.price === 'number') setVolumeProfile(previous => {
+        const key = String(trade.price);
+        return { ...previous, [key]: (previous[key] || 0) + (typeof trade.size === 'number' ? trade.size : 0) };
+      });
       if (footprintOpen && trade.side && typeof trade.price === 'number') setFootprint(previous => {
         const key = String(trade.price);
         const row = previous[key] || { buy: 0, sell: 0 };
@@ -84,7 +90,7 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
       });
     });
     return () => { off(); stop(); };
-  }, [symbol, tradesOpen, cvdOpen, footprintOpen]);
+  }, [symbol, tradesOpen, cvdOpen, footprintOpen, profileOpen]);
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) { setOpen(false); setMenu(false); }
@@ -162,6 +168,11 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
         <div style={tradeHeaderStyle}><b>DOM · Binance L2</b><span style={{ color: depth.ready ? '#58d797' : '#e1a650' }}>{depth.ready ? 'Live' : 'Syncing'}</span></div>
         {depth.ready ? <div style={domGridStyle}><div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, 8).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div><div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, 8).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div></div> : <div style={emptyTradeStyle}>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></div>}
       </div>}
+      {profileOpen && <div style={statsPanelStyle}>
+        <div style={tradeHeaderStyle}><b>Volume Profile · live</b><span>{Object.keys(volumeProfile).length} prices</span></div>
+        {Object.entries(volumeProfile).sort((a, b) => b[1] - a[1]).slice(0, 18).map(([price, volume], index) => <div key={price} style={profileRowStyle}><span>{price}</span><i style={profileBarStyle(volume, Object.entries(volumeProfile).sort((a, b) => b[1] - a[1])[0]?.[1] || 1)}>{volume.toFixed(4)}</i>{index === 0 && <strong style={{ color: '#e1b65c' }}>POC</strong>}</div>)}
+        {!Object.keys(volumeProfile).length && <div style={emptyTradeStyle}>Waiting for verified trade volume.</div>}
+      </div>}
       {footprintOpen && <div style={statsPanelStyle}>
         <div style={tradeHeaderStyle}><b>Footprint · live</b><span>Real prints</span></div>
         <div style={footprintHeaderStyle}><span>Price</span><span>Buy × Sell</span><span>Delta</span></div>
@@ -230,6 +241,8 @@ const domSideAsk: React.CSSProperties = { color: '#e28b91', fontSize: 9 };
 const statsPanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
 const statsGridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 };
 const cvdBodyStyle: React.CSSProperties = { ...statsGridStyle, borderTop: '1px solid #293740' };
+const profileRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.5fr .5fr', gap: 7, color: '#c0cbd0', fontSize: 10, padding: '4px 10px', borderTop: '1px solid #1e292f' };
+function profileBarStyle(value: number, max: number): React.CSSProperties { return { color: '#8bb7e8', fontStyle: 'normal', background: `linear-gradient(90deg, #366a9d55 ${Math.min(100, value / max * 100)}%, transparent 0)` }; }
 const footprintHeaderStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.4fr .6fr', color: '#71808a', fontSize: 9, padding: '8px 10px 4px', textTransform: 'uppercase' };
 const footprintRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1.4fr .6fr', color: '#c0cbd0', fontSize: 10, padding: '4px 10px', borderTop: '1px solid #1e292f' };
 const statLabelStyle: React.CSSProperties = { color: '#71808a', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.06em' };
