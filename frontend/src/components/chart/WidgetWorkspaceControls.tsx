@@ -4,6 +4,7 @@ import { useLiveQuote } from '@/market-data/hooks';
 import { useCapabilities } from '@/market-data/hooks';
 import { resolveWidgetCapability } from '@/lib/widgetCapabilities';
 import { DepthHeatmapHistory, type HeatmapFrame } from '@/lib/depthHeatmap';
+import { TradeTape } from '@/lib/tape';
 import {
   addWorkspaceWidget,
   applyWorkspacePreset,
@@ -42,11 +43,15 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
   const tradesOpen = widgets.some(widget => widget.type === 'trades' && widget.visible);
   const statsOpen = widgets.some(widget => widget.type === 'marketStats' && widget.visible);
   const domOpen = widgets.some(widget => widget.type === 'dom' && widget.visible);
+  const orderbookOpen = widgets.some(widget => widget.type === 'orderbook' && widget.visible);
   const cvdOpen = widgets.some(widget => widget.type === 'cvdDelta' && widget.visible);
   const footprintOpen = widgets.some(widget => widget.type === 'footprint' && widget.visible);
   const heatmapOpen = widgets.some(widget => widget.type === 'heatmap' && widget.visible);
   const profileOpen = widgets.some(widget => widget.type === 'volumeProfile' && widget.visible);
   const { quote, connected, lastTickAgeMs } = useLiveQuote(symbol || null, undefined, statsOpen);
+  /* Session tape: hand-verified prints in a bounded ring. VWAP/buy/sell
+   * splits compute from provider-side flags only — side is never inferred. */
+  const tapeRef = useRef(new TradeTape());
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -60,7 +65,7 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
     });
   }, [symbol, timeframe]);
   useEffect(() => {
-    if ((!domOpen && !heatmapOpen) || !symbol) { setDepth({ bids: [], asks: [], ready: false }); setHeatmapFrames([]); return; }
+    if ((!domOpen && !heatmapOpen && !orderbookOpen) || !symbol) { setDepth({ bids: [], asks: [], ready: false }); setHeatmapFrames([]); return; }
     const history = new DepthHeatmapHistory(240);
     const bus = getBus();
     const stop = bus.stream([symbol], 'binance-depth');
@@ -74,13 +79,16 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
       setDepth(previous => event.type === 'ORDER_BOOK_SNAPSHOT' ? { bids, asks, ready: false } : { bids: applyDepth(previous.bids, bids), asks: applyDepth(previous.asks, asks), ready: true });
     });
     return () => { off(); stop(); };
-  }, [symbol, domOpen, heatmapOpen]);
+  }, [symbol, domOpen, heatmapOpen, orderbookOpen]);
   useEffect(() => {
-    if ((!tradesOpen && !cvdOpen && !footprintOpen && !profileOpen) || !symbol) { setTrades([]); setCvd({ value: 0, buy: 0, sell: 0, sideKnown: true }); setFootprint({}); setVolumeProfile({}); return; }
+    if ((!tradesOpen && !cvdOpen && !footprintOpen && !profileOpen) || !symbol) { setTrades([]); setCvd({ value: 0, buy: 0, sell: 0, sideKnown: true }); setFootprint({}); setVolumeProfile({}); tapeRef.current.clear(); return; }
     const bus = getBus();
     const stop = bus.stream([symbol]);
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== symbol) return;
+      if (trade.price != null && trade.size != null) {
+        tapeRef.current.add(trade.tsMs, trade.price, trade.size, trade.side ?? null);
+      }
       if (tradesOpen) setTrades(previous => [trade, ...previous].slice(0, 24));
       if (profileOpen && typeof trade.price === 'number') setVolumeProfile(previous => {
         const key = String(trade.price);
@@ -187,7 +195,16 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
       </div>}
       {domOpen && <div style={{ ...domPanelStyle, ...panelLayout(widgets, 'dom') }}>
         <div style={tradeHeaderStyle}><b>DOM · Binance L2</b><span style={{ color: depth.ready ? '#58d797' : '#e1a650' }}>{depth.ready ? 'Live' : 'Syncing'}</span></div>
-        {depth.ready ? <div style={domGridStyle}><div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, 8).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div><div><strong style={domSideAsk}>ASKS</strong>{depth.asks.slice(0, 8).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div></div> : <div style={emptyTradeStyle}>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></div>}
+        {depth.ready ? (() => {
+          /* Shared depth state stores BOTH sides descending (applyDepth
+           * sorts by price desc): best bid = first, best ask = LAST. Rows
+           * reshape from that validated ordering — best ask ascending. */
+          const asksAsc = [...depth.asks].reverse();
+          return <div style={domGridStyle}>
+            <div><strong style={domSideBid}>BIDS</strong>{depth.bids.slice(0, 8).reverse().map(([price, qty]) => <div key={`b${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#318f69')}>{qty}</i></div>)}</div>
+            <div><strong style={domSideAsk}>ASKS</strong>{asksAsc.slice(0, 8).map(([price, qty]) => <div key={`a${price}`} style={domRowStyle}><span>{price}</span><i style={barStyle(qty, '#b55e63')}>{qty}</i></div>)}</div>
+          </div>;
+        })() : <div style={emptyTradeStyle}>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></div>}
       </div>}
       {profileOpen && <div style={{ ...statsPanelStyle, ...panelLayout(widgets, 'volumeProfile') }}>
         <div style={tradeHeaderStyle}><b>Volume Profile · live</b><span>{Object.keys(volumeProfile).length} prices</span></div>
@@ -216,10 +233,56 @@ export default function WidgetWorkspaceControls({ symbol, timeframe }: { symbol:
         <div style={statsFootStyle}>{lastTickAgeMs == null ? 'No live tick received.' : `Last tick ${Math.round(lastTickAgeMs / 100) / 10}s ago.`}</div>
       </div>}
       {tradesOpen && <div style={{ ...tradePanelStyle, ...panelLayout(widgets, 'trades') }}>
-        <div style={tradeHeaderStyle}><b>Trades · live</b><span>{trades.length ? `${trades.length} prints` : 'Waiting'}</span></div>
-        {trades.length ? trades.map((trade, index) => <div key={`${trade.tsMs}-${index}`} style={tradeRowStyle}>
-          <time>{new Date(trade.tsMs).toLocaleTimeString()}</time><strong>{formatPrice(trade.price)}</strong><span>{trade.size == null ? '—' : trade.size}</span>
-        </div>) : <div style={emptyTradeStyle}>No verified trade prints received yet.<br /><small>The panel will populate only from the selected live provider.</small></div>}
+        <div style={tradeHeaderStyle}><b>Trades · live</b><span>{trades.length ? 'Real prints' : 'Waiting'}</span></div>
+        {trades.length ? <div style={tradeHeaderRowStyle}><span>Time</span><span>Price</span><span>Size</span><span>Side</span></div> : null}
+        {trades.length ? trades.map((trade, index) => {
+          const side = trade.side;
+          return <div key={`${trade.tsMs}-${index}`} style={{ ...tradeRowStyle, background: side === 'buy' ? '#123d2d33' : side === 'sell' ? '#562d3133' : 'transparent' }}>
+            <time>{new Date(trade.tsMs).toLocaleTimeString()}</time>
+            <strong>{formatPrice(trade.price)}</strong>
+            <span>{trade.size == null ? '—' : trade.size}</span>
+            <span style={{ color: side === 'buy' ? '#58d797' : side === 'sell' ? '#e28b91' : '#71808a' }}>{side || '—'}</span>
+          </div>;
+        }) : <div style={emptyTradeStyle}>No verified trade prints received yet.<br /><small>The panel will populate only from the selected live provider.</small></div>}
+        {(() => { const s = tapeRef.current.stats(); return <div style={tapeFooterStyle}>
+          <span>Session: <b style={{ color: '#cfe0e8' }}>{s.count}</b> prints</span>
+          <span>VWAP <b style={{ color: '#cfe0e8' }}>{s.vwap == null ? '—' : formatPrice(s.vwap)}</b></span>
+          <span style={{ color: '#58d797' }}>B {s.buyVolume.toFixed(4)}</span>
+          <span style={{ color: '#e28b91' }}>S {s.sellVolume.toFixed(4)}</span>
+        </div>; })()}
+      </div>}
+      {orderbookOpen && <div style={{ ...domPanelStyle, ...panelLayout(widgets, 'orderbook') }}>
+        <div style={tradeHeaderStyle}><b>Orderbook · Binance L2</b><span style={{ color: depth.ready ? '#58d797' : '#e1a650' }}>{depth.ready ? 'Live' : 'Syncing'}</span></div>
+        {depth.ready ? (() => {
+          /* Shared depth state stores BOTH sides descending (see applyDepth),
+           * so bids read best-first directly and asks read best-first from
+           * the tail reversed. Reshaping from the validated ordering only —
+           * no levels are estimated. */
+          const asks = [...depth.asks].reverse().slice(0, 8);
+          const bids = depth.bids.slice(0, 8);
+          let bidTotal = 0; const bidRows = bids.map(([price, qty]) => { bidTotal += Number(qty); return { price, qty, total: bidTotal }; });
+          let askTotal = 0; const askRows = asks.map(([price, qty]) => { askTotal += Number(qty); return { price, qty, total: askTotal }; });
+          const mid = bids.length && asks.length ? (Number(bids[0][0]) + Number(asks[0][0])) / 2 : null;
+          const spread = bids.length && asks.length ? Number(asks[0][0]) - Number(bids[0][0]) : null;
+          return <div>
+            <div style={obColHeadStyle}><span>Bids (total)</span><span>Price</span><span>Asks (total)</span></div>
+            {Array.from({ length: Math.max(bidRows.length, askRows.length) }, (_, i) => {
+              const b = bidRows[i]; const a = askRows[i];
+              return <div key={i} style={obRowStyle}>
+                <i style={barStyle(b?.qty ?? '0', '#318f69')}><b style={{ color: '#58d797' }}>{b ? b.qty : ''}</b></i>
+                <span style={{ color: '#b8c5cc', fontStyle: 'normal' }}>{b ? `(${b.total.toFixed(4)})` : ''}</span>
+                <span style={{ color: '#9fb2bb', fontStyle: 'normal' }}>{b?.price ?? a?.price ?? ''}</span>
+                <i style={barStyle(a?.qty ?? '0', '#b55e63')}><b style={{ color: '#e28b91' }}>{a ? a.qty : ''}</b></i>
+                <span style={{ color: '#b8c5cc', fontStyle: 'normal' }}>{a ? `(${a.total.toFixed(4)})` : ''}</span>
+              </div>;
+            })}
+            <div style={statsFootStyle}>
+              {mid != null && spread != null
+                ? <>Mid <b style={{ color: '#cfe0e8' }}>{formatPrice(mid)}</b> · Spread <b style={{ color: '#cfe0e8' }}>{formatPrice(spread)}</b> — totals from best inward.</>
+                : 'Top-of-book pending: totals will compute from real best levels.'}
+            </div>
+          </div>;
+        })() : <div style={emptyTradeStyle}>{depth.reset || 'Waiting for a validated snapshot and sequence bridge.'}<br /><small>No stale or synthetic levels are displayed.</small></div>}
       </div>}
     </div>
   );
@@ -277,7 +340,11 @@ const statValueStyle: React.CSSProperties = { display: 'block', color: '#d8e3e8'
 const statsFootStyle: React.CSSProperties = { borderTop: '1px solid #293740', color: '#71808a', fontSize: 10, padding: '8px 12px' };
 const tradePanelStyle: React.CSSProperties = { position: 'absolute', top: 42, right: 0, width: 280, maxHeight: 'calc(100% - 52px)', overflow: 'auto', pointerEvents: 'auto', background: '#10171df2', border: '1px solid #34434d', borderRadius: 5, boxShadow: '0 8px 24px #000b' };
 const tradeHeaderStyle: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', color: '#d6e0e5', fontSize: 11, padding: '9px 10px', borderBottom: '1px solid #293740' };
-const tradeRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, padding: '5px 10px', borderBottom: '1px solid #1e292f', color: '#b8c5cc', fontSize: 11 };
+const tradeRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1.1fr 1fr .8fr .5fr', gap: 6, padding: '5px 10px', borderBottom: '1px solid #1e292f', color: '#b8c5cc', fontSize: 11 };
+const tradeHeaderRowStyle: React.CSSProperties = { ...tradeRowStyle, color: '#71808a', fontSize: 9, textTransform: 'uppercase', padding: '7px 10px' };
+const tapeFooterStyle: React.CSSProperties = { position: 'sticky', bottom: 0, display: 'flex', gap: 12, background: '#0e141a', borderTop: '1px solid #293740', color: '#71808a', fontSize: 10, padding: '7px 10px' };
+const obColHeadStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.1fr 1.2fr 1fr', color: '#71808a', fontSize: 9, textTransform: 'uppercase', padding: '7px 10px 4px', gap: 6 };
+const obRowStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.1fr 1.2fr 1fr', gap: 6, padding: '3px 10px', borderBottom: '1px solid #1e292f', fontSize: 10 };
 const emptyTradeStyle: React.CSSProperties = { color: '#87949c', fontSize: 11, lineHeight: 1.5, padding: 18, textAlign: 'center' };
 const capabilityTextStyle: React.CSSProperties = { display: 'block', color: '#71808a', fontSize: 9, fontStyle: 'normal', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 };
 const menuStyle: React.CSSProperties = { position: 'absolute', right: 0, top: 32, width: 220, background: '#10171d', border: '1px solid #33414b', borderRadius: 6, boxShadow: '0 12px 28px #000b', padding: '9px 0' };
