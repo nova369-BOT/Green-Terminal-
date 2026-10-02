@@ -79,8 +79,8 @@ func (b *Bybit) HistoricalCandles(ctx context.Context, symbol string, tfSec int6
 			Vbuy:                  0,
 			Vsell:                 0,
 			TradeStatsUnavailable: true,
-			TimestampMs: k.StartTime,
-			Timeframe:   tfSec,
+			TimestampMs:           k.StartTime,
+			Timeframe:             tfSec,
 			// The final candle is still forming unless its window closed.
 			Final: k.StartTime+tfSec*1000 <= now,
 		})

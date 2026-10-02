@@ -284,13 +284,20 @@ func (x *WSPayload) GetEventTimeMs() int64 {
 }
 
 type Trade struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Price         float64                `protobuf:"fixed64,1,opt,name=price,proto3" json:"price,omitempty"`
-	Qty           float64                `protobuf:"fixed64,2,opt,name=qty,proto3" json:"qty,omitempty"`
-	IsBuy         bool                   `protobuf:"varint,3,opt,name=is_buy,json=isBuy,proto3" json:"is_buy,omitempty"`
-	TimestampMs   int64                  `protobuf:"varint,4,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Price       float64                `protobuf:"fixed64,1,opt,name=price,proto3" json:"price,omitempty"`
+	Qty         float64                `protobuf:"fixed64,2,opt,name=qty,proto3" json:"qty,omitempty"`
+	IsBuy       bool                   `protobuf:"varint,3,opt,name=is_buy,json=isBuy,proto3" json:"is_buy,omitempty"`
+	TimestampMs int64                  `protobuf:"varint,4,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
+	AggTradeId  int64                  `protobuf:"varint,5,opt,name=agg_trade_id,json=aggTradeId,proto3" json:"agg_trade_id,omitempty"`
+	// The venue's own trade identifier, verbatim (Binance aggTrade id as
+	// decimal, Hyperliquid tid as decimal, Bybit execution UUID). The
+	// terminal's RecentTradeIdentities uses it to reject replays across
+	// reconnects; empty means the venue stated none.
+	NativeTradeId  string `protobuf:"bytes,8,opt,name=native_trade_id,json=nativeTradeId,proto3" json:"native_trade_id,omitempty"`
+	SourceSequence int64  `protobuf:"varint,9,opt,name=source_sequence,json=sourceSequence,proto3" json:"source_sequence,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Trade) Reset() {
@@ -351,22 +358,48 @@ func (x *Trade) GetTimestampMs() int64 {
 	return 0
 }
 
+func (x *Trade) GetAggTradeId() int64 {
+	if x != nil {
+		return x.AggTradeId
+	}
+	return 0
+}
+
+func (x *Trade) GetNativeTradeId() string {
+	if x != nil {
+		return x.NativeTradeId
+	}
+	return ""
+}
+
+func (x *Trade) GetSourceSequence() int64 {
+	if x != nil {
+		return x.SourceSequence
+	}
+	return 0
+}
+
 type Candle struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Open          float64                `protobuf:"fixed64,1,opt,name=open,proto3" json:"open,omitempty"`
-	High          float64                `protobuf:"fixed64,2,opt,name=high,proto3" json:"high,omitempty"`
-	Low           float64                `protobuf:"fixed64,3,opt,name=low,proto3" json:"low,omitempty"`
-	Close         float64                `protobuf:"fixed64,4,opt,name=close,proto3" json:"close,omitempty"`
-	Volume        float64                `protobuf:"fixed64,5,opt,name=volume,proto3" json:"volume,omitempty"`
-	Vbuy          float64                `protobuf:"fixed64,6,opt,name=vbuy,proto3" json:"vbuy,omitempty"`
-	Vsell         float64                `protobuf:"fixed64,7,opt,name=vsell,proto3" json:"vsell,omitempty"`
-	Tbuy          int64                  `protobuf:"varint,8,opt,name=tbuy,proto3" json:"tbuy,omitempty"`
-	Tsell         int64                  `protobuf:"varint,9,opt,name=tsell,proto3" json:"tsell,omitempty"`
-	TimestampMs   int64                  `protobuf:"varint,10,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
-	Timeframe     int64                  `protobuf:"varint,11,opt,name=timeframe,proto3" json:"timeframe,omitempty"`
-	Final         bool                   `protobuf:"varint,12,opt,name=final,proto3" json:"final,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Open        float64                `protobuf:"fixed64,1,opt,name=open,proto3" json:"open,omitempty"`
+	High        float64                `protobuf:"fixed64,2,opt,name=high,proto3" json:"high,omitempty"`
+	Low         float64                `protobuf:"fixed64,3,opt,name=low,proto3" json:"low,omitempty"`
+	Close       float64                `protobuf:"fixed64,4,opt,name=close,proto3" json:"close,omitempty"`
+	Volume      float64                `protobuf:"fixed64,5,opt,name=volume,proto3" json:"volume,omitempty"`
+	Vbuy        float64                `protobuf:"fixed64,6,opt,name=vbuy,proto3" json:"vbuy,omitempty"`
+	Vsell       float64                `protobuf:"fixed64,7,opt,name=vsell,proto3" json:"vsell,omitempty"`
+	Tbuy        int64                  `protobuf:"varint,8,opt,name=tbuy,proto3" json:"tbuy,omitempty"`
+	Tsell       int64                  `protobuf:"varint,9,opt,name=tsell,proto3" json:"tsell,omitempty"`
+	TimestampMs int64                  `protobuf:"varint,10,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
+	Timeframe   int64                  `protobuf:"varint,11,opt,name=timeframe,proto3" json:"timeframe,omitempty"`
+	Final       bool                   `protobuf:"varint,12,opt,name=final,proto3" json:"final,omitempty"`
+	// True when vbuy/vsell/tbuy/tsell are UNKNOWN rather than zero - REST
+	// kline backfills on venues that publish no taker split (Hyperliquid,
+	// Bybit). The terminal renders "stats unavailable" instead of a fake
+	// delta of 0 for these candles.
+	TradeStatsUnavailable bool `protobuf:"varint,13,opt,name=trade_stats_unavailable,json=tradeStatsUnavailable,proto3" json:"trade_stats_unavailable,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Candle) Reset() {
@@ -483,6 +516,13 @@ func (x *Candle) GetFinal() bool {
 	return false
 }
 
+func (x *Candle) GetTradeStatsUnavailable() bool {
+	if x != nil {
+		return x.TradeStatsUnavailable
+	}
+	return false
+}
+
 type Candles struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Timeframe     int64                  `protobuf:"varint,1,opt,name=timeframe,proto3" json:"timeframe,omitempty"`
@@ -556,8 +596,16 @@ type Stat struct {
 	OiHigh          float64                `protobuf:"fixed64,17,opt,name=oi_high,json=oiHigh,proto3" json:"oi_high,omitempty"`
 	OiLow           float64                `protobuf:"fixed64,18,opt,name=oi_low,json=oiLow,proto3" json:"oi_low,omitempty"`
 	OiClose         float64                `protobuf:"fixed64,19,opt,name=oi_close,json=oiClose,proto3" json:"oi_close,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Per-field observation clocks (exchange ms). Zero means the publisher did
+	// not state one and the legacy carry-forward applies. A stated clock with a
+	// zero value means that field is unavailable, not zero.
+	MarkPriceMs    int64 `protobuf:"varint,20,opt,name=mark_price_ms,json=markPriceMs,proto3" json:"mark_price_ms,omitempty"`
+	FundingMs      int64 `protobuf:"varint,21,opt,name=funding_ms,json=fundingMs,proto3" json:"funding_ms,omitempty"`
+	OpenInterestMs int64 `protobuf:"varint,22,opt,name=open_interest_ms,json=openInterestMs,proto3" json:"open_interest_ms,omitempty"`
+	// Native funding cadence in minutes; 0 for contracts without funding.
+	FundingIntervalMinutes int32 `protobuf:"varint,23,opt,name=funding_interval_minutes,json=fundingIntervalMinutes,proto3" json:"funding_interval_minutes,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *Stat) Reset() {
@@ -719,6 +767,34 @@ func (x *Stat) GetOiLow() float64 {
 func (x *Stat) GetOiClose() float64 {
 	if x != nil {
 		return x.OiClose
+	}
+	return 0
+}
+
+func (x *Stat) GetMarkPriceMs() int64 {
+	if x != nil {
+		return x.MarkPriceMs
+	}
+	return 0
+}
+
+func (x *Stat) GetFundingMs() int64 {
+	if x != nil {
+		return x.FundingMs
+	}
+	return 0
+}
+
+func (x *Stat) GetOpenInterestMs() int64 {
+	if x != nil {
+		return x.OpenInterestMs
+	}
+	return 0
+}
+
+func (x *Stat) GetFundingIntervalMinutes() int32 {
+	if x != nil {
+		return x.FundingIntervalMinutes
 	}
 	return 0
 }
@@ -1592,12 +1668,16 @@ const file_edgedepth_proto_rawDesc = "" +
 	".pb.StreamR\x06stream\x12\x1c\n" +
 	"\ttimeframe\x18\x03 \x01(\x03R\ttimeframe\x12\x12\n" +
 	"\x04data\x18\x04 \x01(\fR\x04data\x12\"\n" +
-	"\revent_time_ms\x18\x05 \x01(\x03R\veventTimeMs\"i\n" +
+	"\revent_time_ms\x18\x05 \x01(\x03R\veventTimeMs\"\xdc\x01\n" +
 	"\x05Trade\x12\x14\n" +
 	"\x05price\x18\x01 \x01(\x01R\x05price\x12\x10\n" +
 	"\x03qty\x18\x02 \x01(\x01R\x03qty\x12\x15\n" +
 	"\x06is_buy\x18\x03 \x01(\bR\x05isBuy\x12!\n" +
-	"\ftimestamp_ms\x18\x04 \x01(\x03R\vtimestampMs\"\x9b\x02\n" +
+	"\ftimestamp_ms\x18\x04 \x01(\x03R\vtimestampMs\x12 \n" +
+	"\fagg_trade_id\x18\x05 \x01(\x03R\n" +
+	"aggTradeId\x12&\n" +
+	"\x0fnative_trade_id\x18\b \x01(\tR\rnativeTradeId\x12'\n" +
+	"\x0fsource_sequence\x18\t \x01(\x03R\x0esourceSequence\"\xd3\x02\n" +
 	"\x06Candle\x12\x12\n" +
 	"\x04open\x18\x01 \x01(\x01R\x04open\x12\x12\n" +
 	"\x04high\x18\x02 \x01(\x01R\x04high\x12\x10\n" +
@@ -1611,11 +1691,12 @@ const file_edgedepth_proto_rawDesc = "" +
 	"\ftimestamp_ms\x18\n" +
 	" \x01(\x03R\vtimestampMs\x12\x1c\n" +
 	"\ttimeframe\x18\v \x01(\x03R\ttimeframe\x12\x14\n" +
-	"\x05final\x18\f \x01(\bR\x05final\"K\n" +
+	"\x05final\x18\f \x01(\bR\x05final\x126\n" +
+	"\x17trade_stats_unavailable\x18\r \x01(\bR\x15tradeStatsUnavailable\"K\n" +
 	"\aCandles\x12\x1c\n" +
 	"\ttimeframe\x18\x01 \x01(\x03R\ttimeframe\x12\"\n" +
 	"\x06values\x18\x02 \x03(\v2\n" +
-	".pb.CandleR\x06values\"\xe7\x04\n" +
+	".pb.CandleR\x06values\"\x8e\x06\n" +
 	"\x04Stat\x12\x1d\n" +
 	"\n" +
 	"mark_price\x18\x01 \x01(\x01R\tmarkPrice\x12\x18\n" +
@@ -1639,7 +1720,12 @@ const file_edgedepth_proto_rawDesc = "" +
 	"\aoi_open\x18\x10 \x01(\x01R\x06oiOpen\x12\x17\n" +
 	"\aoi_high\x18\x11 \x01(\x01R\x06oiHigh\x12\x15\n" +
 	"\x06oi_low\x18\x12 \x01(\x01R\x05oiLow\x12\x19\n" +
-	"\boi_close\x18\x13 \x01(\x01R\aoiClose\"G\n" +
+	"\boi_close\x18\x13 \x01(\x01R\aoiClose\x12\"\n" +
+	"\rmark_price_ms\x18\x14 \x01(\x03R\vmarkPriceMs\x12\x1d\n" +
+	"\n" +
+	"funding_ms\x18\x15 \x01(\x03R\tfundingMs\x12(\n" +
+	"\x10open_interest_ms\x18\x16 \x01(\x03R\x0eopenInterestMs\x128\n" +
+	"\x18funding_interval_minutes\x18\x17 \x01(\x05R\x16fundingIntervalMinutes\"G\n" +
 	"\x05Stats\x12\x1c\n" +
 	"\ttimeframe\x18\x01 \x01(\x03R\ttimeframe\x12 \n" +
 	"\x06values\x18\x02 \x03(\v2\b.pb.StatR\x06values\"\x8c\x01\n" +
