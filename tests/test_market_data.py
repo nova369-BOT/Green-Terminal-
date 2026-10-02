@@ -370,18 +370,24 @@ def test_orderflow_workspace_markers():
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
 
 
-def test_gateway_serves_hyperliquid_only():
-    """Gateway registry is HL-only for now (Binance unregistered); Order Flow
-    boots hl/BTC, reachable where Binance is blocked."""
+def test_gateway_serves_all_three_venues():
+    """Gateway registry serves binancef + bybit + hl (user decision 2026-10-02:
+    all venues on). Order Flow still boots hl/BTC by default."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     main = (root / "third_party/edgedepth-gateway/cmd/edgedepth-gateway/main.go").read_text()
     assert "hyperliquid.New(log)" in main
-    assert "binance.New(log)" not in main
-    hl = root / "third_party/edgedepth-gateway/internal/hyperliquid"
-    for name in ("adapter.go", "feed.go", "rest.go", "stream.go", "ticker.go"):
-        assert (hl / name).is_file(), f"missing hyperliquid/{name}"
-    assert '"hl"' in (hl / "adapter.go").read_text()
+    assert "binance.New(log)" in main
+    assert "bybit.New(log)" in main
+    for venue, ident in (
+        ("hyperliquid", '"hl"'),
+        ("binance", '"binancef"'),
+        ("bybit", '"bybit"'),
+    ):
+        pkg = root / "third_party/edgedepth-gateway/internal" / venue
+        for name in ("adapter.go", "feed.go", "rest.go", "stream.go", "ticker.go"):
+            assert (pkg / name).is_file(), f"missing {venue}/{name}"
+        assert ident in (pkg / "adapter.go").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
     # The engine URL is built dynamically per coin but always boots the hl
     # exchange; the shell's default coin is BTC.
