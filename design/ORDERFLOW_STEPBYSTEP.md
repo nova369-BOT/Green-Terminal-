@@ -24,10 +24,14 @@ per-widget venue/product labels; no interpolation, no simulated depth.
 
 ## Steps (each = vertical: lib + renderer + wiring + tests + commit + preview check)
 
-### Step 1 — Data-plane reliability + Orderbook + tape backbone ✅ current batch
+### Step 1 — Data-plane reliability + Orderbook + tape backbone ✅ a86fc57 + follow-up
 1a. Depth stream bounded awaits (backport of the incident-proven fix:
     open/per-frame/snapshot deadlines, self-named TimeoutError→DEPTH_RESET,
     bare-exception reason fallback, cancel on timeout) + 3 pytest contracts.
+    Attribution correction: commit a86fc57 wrongly claimed this was
+    "inherited from dd07" — `3b7b6fc` does NOT contain it; it lived only
+    as an uncommitted working-tree remnant of the cancelled batch. It is
+    committed for real in the follow-up commit.
 1b. `frontend/src/lib/tape.ts` — ring-buffer tape + session stats
     (count, VWAP, buy/sell volume, open/high/low/last) + node test suite.
 1c. Trades panel → ring-backed tape (side-colored rows, stats footer,
@@ -70,4 +74,6 @@ scrub/speed) · Step 11 — Paper trading (fills at real top-of-book) ·
 Step 12 — Ledger cleanup.
 
 ## Ledger
-- 2026-10-02 Step 1 started.
+- 2026-10-02 Step 1: a86fc57 = tape backbone + Orderbook renderer + DOM
+  ask-side fix; follow-up = 1a backport (bounded awaits + contract tests)
+  with corrected attribution.
