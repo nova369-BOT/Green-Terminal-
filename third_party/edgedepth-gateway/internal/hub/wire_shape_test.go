@@ -44,6 +44,10 @@ type stubFeed struct {
 
 func (f *stubFeed) Run(ctx context.Context)  { <-ctx.Done() }
 func (f *stubFeed) Snapshot() *pb.BookUpdate { return nil }
+
+// SetTradeReset makes the stub a TradeContinuity venue, which is what causes
+// the hub to attach the tick-volume recorder - exactly like every real feed.
+func (f *stubFeed) SetTradeReset(func(int64)) {}
 func (f *stubFeed) MarkState() (float64, float64, float64, int64) {
 	return 64000, 0.0001, 1234, 0
 }

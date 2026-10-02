@@ -74,9 +74,11 @@ func (b *Bybit) HistoricalCandles(ctx context.Context, symbol string, tfSec int6
 			Volume: k.Volume,
 			// Bybit history carries total volume only, no taker buy/sell
 			// split: delta stays unknown until live trades arrive and the
-			// aggregator takes over. Same honest gap as Hyperliquid.
-			Vbuy:        0,
-			Vsell:       0,
+			// aggregator takes over. Same honest gap as Hyperliquid; the
+			// flag tells the terminal these zeros mean UNKNOWN.
+			Vbuy:                  0,
+			Vsell:                 0,
+			TradeStatsUnavailable: true,
 			TimestampMs: k.StartTime,
 			Timeframe:   tfSec,
 			// The final candle is still forming unless its window closed.

@@ -134,7 +134,11 @@ public:
     void request_historical_vpin(const Terminal::Pair& pair, int64_t start_ms,
                                  int64_t end_ms, int count) const;
 
-    void send_message(const std::string& message) const;
+    // Returns true only when the request actually left this client: handed
+    // to the pack-replay hook, or written to an OPEN websocket. Callers that
+    // track an in-flight request (FootprintManager's history loader) must not
+    // mark state on a silently dropped send.
+    bool send_message(const std::string& message) const;
     void send_subscribe(const StreamKey& key) const;
     void send_unsubscribe(const StreamKey& key) const;
 

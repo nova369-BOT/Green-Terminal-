@@ -431,6 +431,11 @@ static void on_ws_status(const std::string& status) {
         if (g_app.ob_mgr) g_app.ob_mgr->set_realtime_transport_open(false);
         g_app.stream_mgr->update_websocket_handle(0);
         if (g_app.replay_mgr) g_app.replay_mgr->on_transport_interrupted(g_app.ws_client.get());
+        // The footprint history loader tracks an in-flight batch and a
+        // covered range against THIS socket; both died with it. Without the
+        // reset a lost ts=0 sentinel pinned loading_ and the chart showed no
+        // backward footprint until the manual "Clear Cache" button.
+        if (g_app.footprint_mgr) g_app.footprint_mgr->on_transport_interrupted();
     }
     if (status == "Connected") {
         if (g_app.ob_mgr) g_app.ob_mgr->set_realtime_transport_open(true);

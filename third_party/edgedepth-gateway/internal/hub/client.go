@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/edgedepthhq/edgedepth-gateway/internal/volume"
 	"github.com/edgedepthhq/edgedepth-gateway/internal/wire"
 	"github.com/edgedepthhq/edgedepth-gateway/pkg/pb"
 )
@@ -157,6 +158,15 @@ func (r *request) key() wire.Key {
 	}
 	if wire.Timeframed(k.Stream) {
 		k.Timeframe = r.Data.Timeframe
+	}
+	// The terminal subscribes footprint minutes in SECONDS (60) while the
+	// hub broadcasts closed minutes keyed by volume.Minute (milliseconds).
+	// Without this the exact-match in broadcast() silently delivers nothing
+	// - the same unit drift statSeries absorbs for STREAM_STATS. Tick
+	// volume has exactly one grain, so collapse every spelling (60, 60000,
+	// 0) onto the canonical key.
+	if k.Stream == pb.Stream_STREAM_TICK_VOLUME {
+		k.Timeframe = volume.Minute
 	}
 	return k
 }

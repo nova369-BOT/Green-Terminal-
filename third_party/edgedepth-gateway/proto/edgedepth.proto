@@ -52,6 +52,13 @@ message Trade {
     double qty = 2;
     bool is_buy = 3;
     int64 timestamp_ms = 4;
+    int64 agg_trade_id = 5;
+    // The venue's own trade identifier, verbatim (Binance aggTrade id as
+    // decimal, Hyperliquid tid as decimal, Bybit execution UUID). The
+    // terminal's RecentTradeIdentities uses it to reject replays across
+    // reconnects; empty means the venue stated none.
+    string native_trade_id = 8;
+    int64 source_sequence = 9;
 }
 
 message Candle {
@@ -67,6 +74,11 @@ message Candle {
     int64 timestamp_ms = 10;
     int64 timeframe = 11;
     bool final = 12;
+    // True when vbuy/vsell/tbuy/tsell are UNKNOWN rather than zero - REST
+    // kline backfills on venues that publish no taker split (Hyperliquid,
+    // Bybit). The terminal renders "stats unavailable" instead of a fake
+    // delta of 0 for these candles.
+    bool trade_stats_unavailable = 13;
 }
 
 message Candles {
@@ -94,6 +106,14 @@ message Stat {
     double oi_high = 17;
     double oi_low = 18;
     double oi_close = 19;
+    // Per-field observation clocks (exchange ms). Zero means the publisher did
+    // not state one and the legacy carry-forward applies. A stated clock with a
+    // zero value means that field is unavailable, not zero.
+    int64 mark_price_ms = 20;
+    int64 funding_ms = 21;
+    int64 open_interest_ms = 22;
+    // Native funding cadence in minutes; 0 for contracts without funding.
+    int32 funding_interval_minutes = 23;
 }
 
 message Stats {

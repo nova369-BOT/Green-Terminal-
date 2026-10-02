@@ -244,12 +244,19 @@ func (f *Feed) onAggTrade(raw json.RawMessage) {
 	// Binance "m" is "was the BUYER the maker". If the buyer was the maker,
 	// the aggressor was the seller, so this is a sell. is_buy is the
 	// aggressor side, hence the negation.
-	f.emit(pb.Stream_STREAM_TRADES, 0, t.TradeTime, &pb.Trade{
+	// Identity travels with the trade so the terminal's replay guard
+	// (RecentTradeIdentities) can reject redeliveries across reconnects.
+	trade := &pb.Trade{
 		Price:       price,
 		Qty:         qty,
 		IsBuy:       !*t.Maker,
 		TimestampMs: t.TradeTime,
-	})
+		AggTradeId:  id,
+	}
+	if id > 0 {
+		trade.NativeTradeId = strconv.FormatInt(id, 10)
+	}
+	f.emit(pb.Stream_STREAM_TRADES, 0, t.TradeTime, trade)
 }
 
 func (f *Feed) onForceOrder(raw json.RawMessage) {

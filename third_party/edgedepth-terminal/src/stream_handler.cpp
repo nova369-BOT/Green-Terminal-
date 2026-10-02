@@ -9,22 +9,23 @@ using json = nlohmann::json;
 // managers before the WebSocket; see stream_handler.h.
 std::function<bool(const std::string&)> StreamManager::pack_request_hook_;
 
-void StreamManager::send_message(const std::string& message) const {
+bool StreamManager::send_message(const std::string& message) const {
     // Pack replay: the engine owns every replay-context request (candle
     // backfills etc.) - nothing may leak to the box from a pack session.
     if (replay_mode_ && pack_request_hook_ && pack_request_hook_(message)) {
-        return;
+        return true;
     }
-    if (ws_ <= 0) return;
+    if (ws_ <= 0) return false;
     // Guard: only send when socket is actually OPEN (readyState == 1)
     // is_connected_ on WebSocketClient is set in on_open, but StreamManager
     // holds the raw handle and can be called before on_open fires.
     unsigned short ready_state = 0;
     emscripten_websocket_get_ready_state(ws_, &ready_state);
     if (ready_state != 1) {  // 1 = OPEN
-        return;
+        return false;
     }
     emscripten_websocket_send_utf8_text(ws_, message.c_str());
+    return true;
 }
 // void StreamManager::send_message(const std::string& message) const {
 //     if (ws_ == 0) {

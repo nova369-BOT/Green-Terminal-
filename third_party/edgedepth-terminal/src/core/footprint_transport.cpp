@@ -4,6 +4,7 @@
 #include <pb/messages.pb.h>
 #include <zstd.h>
 #include <algorithm>
+#include <chrono>
 #include <nlohmann/json.hpp>
 
 void FootprintManager::request_history(
@@ -12,8 +13,18 @@ void FootprintManager::request_history(
 {
     if (!sm) return;
 
-    // Don't fire new requests while one is already in flight
-    if (loading_) return;
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    // Don't fire new requests while one is already in flight - unless the
+    // in-flight marker is stale. A batch whose ts=0 sentinel was lost (socket
+    // died mid-reply, server restarted) would otherwise pin loading_ forever
+    // and silently disable history for the whole session. 15s is far beyond
+    // any legitimate batch.
+    if (loading_) {
+        if (now_ms - loading_since_ms_ < 15000) return;
+        loading_ = false;
+    }
 
     // Skip if requested range is already covered by what we have
     if (market_key(pair.exchange, pair.symbol) == last_symbol_ &&
@@ -27,11 +38,6 @@ void FootprintManager::request_history(
         end_ms   = std::max(end_ms, last_end_);
     }
 
-    last_symbol_ = market_key(pair.exchange, pair.symbol);
-    last_start_ = start_ms;
-    last_end_ = end_ms;
-    loading_ = true;
-
     nlohmann::json req;
     req["method"] = "get_footprint_history";
     req["data"]["pair"]["exchange"] = pair.exchange;
@@ -39,7 +45,18 @@ void FootprintManager::request_history(
     req["data"]["start_time"] = start_ms;
     req["data"]["end_time"] = end_ms;
 
-    sm->send_message(req.dump());
+    // Commit the covered range and the in-flight flag ONLY once the request
+    // actually left. send_message drops silently while the socket is down or
+    // still connecting; recording state for a request nobody received marked
+    // the window "covered" with nothing in it and left loading_ waiting on a
+    // sentinel that could never arrive.
+    if (!sm->send_message(req.dump())) return;
+
+    last_symbol_ = market_key(pair.exchange, pair.symbol);
+    last_start_ = start_ms;
+    last_end_ = end_ms;
+    loading_ = true;
+    loading_since_ms_ = now_ms;
 }
 
 void FootprintManager::on_tick_volume_update(

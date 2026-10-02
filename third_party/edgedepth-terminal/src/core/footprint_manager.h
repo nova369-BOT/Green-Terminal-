@@ -110,6 +110,13 @@ public:
     // Clear all data for a symbol (e.g., on symbol switch).
     void clear(const std::string& symbol);
 
+    // The socket died. Any in-flight history batch died with it - its ts=0
+    // sentinel will never arrive - and every range recorded as covered was
+    // answered by a server whose bounded buffer keeps moving. Forget the
+    // request bookkeeping (cached minutes stay) so the next footprint render
+    // re-requests its window instead of staying blank until "Clear Cache".
+    void on_transport_interrupted();
+
     // ── Cached group_levels - avoids per-frame rebuild ──────────────────
     struct MergedCache {
         std::vector<GroupedLevel> levels;
@@ -168,6 +175,11 @@ private:
     const CandleFootprint* available(const std::string& market, int64_t start,
                                     int64_t as_of_ms) const;
     bool loading_ = false;
+    // Wall-clock ms when loading_ went true. A reply that never comes (lost
+    // request, server that answers without a sentinel) must not pin loading_
+    // forever; request_history treats a sufficiently stale in-flight marker
+    // as dead and retries.
+    int64_t loading_since_ms_ = 0;
 
     // Data version - incremented on every on_tick_volume_update
     uint64_t data_version_ = 0;

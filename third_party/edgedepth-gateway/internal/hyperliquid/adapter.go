@@ -70,9 +70,11 @@ func (h *Hyperliquid) HistoricalCandles(ctx context.Context, symbol string, tfSe
 			Volume: parseF(k.Volume),
 			// Hyperliquid history carries total volume only, no buy/sell
 			// split: delta stays unknown until live trades arrive and the
-			// aggregator takes over.
-			Vbuy:  0,
-			Vsell: 0,
+			// aggregator takes over. The flag tells the terminal these
+			// zeros mean UNKNOWN, not a flat delta.
+			Vbuy:                  0,
+			Vsell:                 0,
+			TradeStatsUnavailable: true,
 			// t is the OPEN time, matching what the terminal expects.
 			TimestampMs: k.OpenTime,
 			Timeframe:   tfSec,

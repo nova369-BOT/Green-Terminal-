@@ -166,12 +166,18 @@ func (f *Feed) onTrades(raw json.RawMessage) {
 			f.tradeReset(time.Now().UnixMilli())
 			f.log.Warn("trade timestamp went backwards; discarding partial volume minute")
 		}
-		f.emit(pb.Stream_STREAM_TRADES, 0, t.Time, &pb.Trade{
+		// tid is Hyperliquid's own trade id; the terminal's replay guard
+		// (RecentTradeIdentities) uses it to reject redeliveries.
+		trade := &pb.Trade{
 			Price:       price,
 			Qty:         qty,
 			IsBuy:       t.Side == "B",
 			TimestampMs: t.Time,
-		})
+		}
+		if t.Tid != 0 {
+			trade.NativeTradeId = strconv.FormatInt(t.Tid, 10)
+		}
+		f.emit(pb.Stream_STREAM_TRADES, 0, t.Time, trade)
 	}
 }
 

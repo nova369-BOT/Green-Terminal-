@@ -214,11 +214,15 @@ func (f *Feed) onTrades(env Envelope) {
 		}
 		// S is the TAKER side, so "Buy" is an aggressive buy. This is the
 		// provider's own aggressor flag, never derived from price movement.
+		// The execution UUID is Bybit's own trade id; the terminal's
+		// replay guard (RecentTradeIdentities) keys on exactly these to
+		// reject redeliveries across reconnects.
 		f.emit(pb.Stream_STREAM_TRADES, 0, t.Time, &pb.Trade{
-			Price:       price,
-			Qty:         qty,
-			IsBuy:       t.Side == "Buy",
-			TimestampMs: t.Time,
+			Price:         price,
+			Qty:           qty,
+			IsBuy:         t.Side == "Buy",
+			TimestampMs:   t.Time,
+			NativeTradeId: t.TradeID,
 		})
 	}
 }

@@ -84,6 +84,18 @@ void FootprintManager::clear(const std::string& symbol) {
     }
 }
 
+void FootprintManager::on_transport_interrupted() {
+    // Cached minutes stay - they were real when observed. Only the request
+    // bookkeeping is forgotten: the in-flight sentinel died with the socket,
+    // and a "covered" range answered before the outage says nothing about
+    // what the server can answer after it.
+    loading_ = false;
+    loading_since_ms_ = 0;
+    last_symbol_.clear();
+    last_start_ = 0;
+    last_end_ = 0;
+}
+
 const FootprintManager::MergedCache* FootprintManager::get_merged_grouped(
     const std::string& symbol, int64_t candle_ts,
     int64_t tf_sec, double tick_per_row, int64_t as_of_ms)
