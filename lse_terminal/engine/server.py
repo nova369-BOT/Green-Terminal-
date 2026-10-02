@@ -862,6 +862,63 @@ def create_app() -> FastAPI:
                 s.close()
         return body
 
+    # Public, unauthenticated, tiny endpoints — one per venue the gateway
+    # serves. Probed from THIS process because the gateway dials out from the
+    # same network namespace: if the engine host cannot reach an exchange,
+    # neither can the gateway's feeds, and no UI state can change that.
+    # (Real-world case: some ISPs block exchange domains at telecom level —
+    # e.g. Binance in Nigeria since Feb 2024 — and the only fix is a VPN on
+    # the machine running Green Terminal.)
+    _VENUE_PROBES = {
+        "hl": ("POST", "https://api.hyperliquid.xyz/info", b'{"type":"meta"}'),
+        "binancef": ("GET", "https://fapi.binance.com/fapi/v1/ping", None),
+        "bybit": ("GET", "https://api.bybit.com/v5/market/time", None),
+    }
+    _ed_venues_cache: dict = {"t": 0.0, "body": None}
+
+    @app.get("/api/edgedepth/venues")
+    def edgedepth_venue_reachability(fresh: int = 0):
+        """Measured per-venue upstream reachability — never guessed.
+
+        ok=true requires an actual 2xx from the exchange's public endpoint;
+        every failure carries the real error string (DNS failure, timeout,
+        HTTP 451 geo-block, ...). Results are cached for 30s so the UI can
+        poll freely without hammering exchanges.
+        """
+        import concurrent.futures
+        import time as _time
+        import urllib.request
+
+        now = _time.monotonic()
+        if (not fresh and _ed_venues_cache["body"] is not None
+                and now - _ed_venues_cache["t"] < 30.0):
+            return _ed_venues_cache["body"]
+
+        def probe(item):
+            venue, (method, url, payload) = item
+            req = urllib.request.Request(
+                url, data=payload, method=method,
+                headers={"Content-Type": "application/json"} if payload else {})
+            t0 = _time.monotonic()
+            try:
+                with urllib.request.urlopen(req, timeout=3.5) as r:
+                    r.read(64)
+                    return venue, {
+                        "ok": 200 <= r.status < 300, "url": url,
+                        "ms": int((_time.monotonic() - t0) * 1000)}
+            except Exception as e:  # honest failure, nothing fabricated
+                return venue, {"ok": False, "url": url, "error": str(e)[:200]}
+
+        with concurrent.futures.ThreadPoolExecutor(len(_VENUE_PROBES)) as ex:
+            venues = dict(ex.map(probe, _VENUE_PROBES.items()))
+        body = {"venues": venues, "cached_seconds": 30,
+                "note": ("probed from the GT server (same network as the "
+                         "gateway); an unreachable venue cannot stream no "
+                         "matter what the UI does")}
+        _ed_venues_cache["t"] = now
+        _ed_venues_cache["body"] = body
+        return body
+
     @app.get("/edgedepth/edgedepth-config.js")
     def edgedepth_config_js():
         """Dynamic runtime config: browser WS URL points at the managed

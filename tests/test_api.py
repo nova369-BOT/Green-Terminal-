@@ -82,6 +82,25 @@ def test_edgedepth_ws_proxy_closes_honestly_when_gateway_down(client, monkeypatc
     assert exc.value.code == 1013
 
 
+def test_edgedepth_venue_reachability_is_measured_not_guessed(client):
+    # Per-venue upstream probes: every venue the gateway serves is probed
+    # for real from the server; ok may only come from an actual 2xx, and a
+    # failure must carry the real error (that is what tells a user their
+    # ISP blocks an exchange). Shape is pinned; truth values depend on the
+    # network this test runs on, so both outcomes are legal per venue.
+    body = client.get("/api/edgedepth/venues").json()
+    assert set(body["venues"]) == {"hl", "binancef", "bybit"}
+    for venue, info in body["venues"].items():
+        assert isinstance(info["ok"], bool), venue
+        assert info["url"].startswith("https://"), venue
+        if info["ok"]:
+            assert isinstance(info["ms"], int), venue
+        else:
+            assert info["error"], f"{venue}: failure must carry the real error"
+    # 30s server-side cache: an immediate second call returns the same body.
+    assert client.get("/api/edgedepth/venues").json() == body
+
+
 def test_providers_listing(client):
     provs = {p["name"]: p for p in client.get("/api/providers").json()}
     assert provs["demo"]["configured"] is True

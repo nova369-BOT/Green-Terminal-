@@ -13518,6 +13518,8 @@ function stopOrderFlowHost() {
 async function refreshOrderFlowStatus() {
   const art = await fetch("/api/edgedepth/artifacts").then(r => r.json()).catch(() => null);
   const gw = await fetch("/api/edgedepth/status").then(r => r.json()).catch(() => null);
+  // Server-side cached 30s; polling every 5s costs nothing extra.
+  const vch = await fetch("/api/edgedepth/venues").then(r => r.json()).catch(() => null);
   const set = (id, val, cls) => {
     const el = $(id);
     if (!el) return;
@@ -13557,6 +13559,31 @@ async function refreshOrderFlowStatus() {
       dnote.dataset.kind = "";
     }
   }
+  // Honest upstream truth: if the GT SERVER cannot reach the current
+  // venue's exchange, no UI state can make data flow — say exactly that
+  // instead of leaving panels silently empty. Real-world case: some ISPs
+  // block exchange domains at telecom level (e.g. Binance in Nigeria);
+  // the only fix is a VPN on the machine running Green Terminal.
+  const curVenue = (engineRoute && OF_VENUES[engineRoute.venue])
+    ? engineRoute.venue : "hl";
+  const vinfo = vch && vch.venues && vch.venues[curVenue];
+  // Outranks the listing note ("venue"): an unreachable exchange is the
+  // harder truth. When it clears, the next follow event restores listing.
+  if (dnote && (!dnote.dataset.kind || dnote.dataset.kind === "upstream"
+                || dnote.dataset.kind === "venue")) {
+    if (ready && vinfo && vinfo.ok === false) {
+      dnote.textContent = "GT SERVER CANNOT REACH " + OF_VENUES[curVenue].label
+        + " (" + (vinfo.url || "") + ") — " + (vinfo.error || "no route")
+        + ". Live data cannot flow from a host this server cannot reach. "
+        + "If your ISP blocks the exchange, run Green Terminal behind a "
+        + "VPN. Nothing is simulated in its place.";
+      dnote.dataset.kind = "upstream";
+      dnote.classList.remove("hidden");
+    } else if (dnote.dataset.kind === "upstream") {
+      dnote.classList.add("hidden");
+      dnote.dataset.kind = "";
+    }
+  }
   const missing = art && art.present
     ? Object.entries(art.present).filter(([, ok]) => !ok).map(([k]) => k)
     : ["index.js", "index.wasm", "index.data"];
@@ -13570,6 +13597,19 @@ async function refreshOrderFlowStatus() {
         "tape, footprint). Missing: " + missing.join(", ") +
         ". Green Terminal loads the built runtime when present; no " +
         "simulated depth is substituted.";
+    } else if (vinfo && vinfo.ok === false) {
+      // Same honest upstream state on the full G-Flow page.
+      banner.classList.remove("hidden");
+      $("of-banner-title").textContent =
+        OF_VENUES[curVenue].label + " UNREACHABLE FROM THE GT SERVER";
+      $("of-banner-detail").textContent =
+        "Measured just now from the machine running Green Terminal: "
+        + (vinfo.url || "the exchange endpoint") + " — "
+        + (vinfo.error || "no route") + ". The gateway dials exchanges "
+        + "from this same network, so no live " + OF_VENUES[curVenue].label
+        + " data can arrive until it is reachable. If your ISP blocks the "
+        + "exchange, run Green Terminal behind a VPN. Nothing is simulated "
+        + "in its place.";
     } else {
       banner.classList.add("hidden");
     }
