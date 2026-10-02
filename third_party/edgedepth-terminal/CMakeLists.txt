@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(EDGEDEPTH_EXPOSURE_V2_DEV "Compile the V2 exposure chart attachment (Layers > Exposure scenarios); the runtime checkbox stays default-off" ON)
+
 include(FetchContent)
 
 # ===================================================================
@@ -330,6 +332,7 @@ set(ZSTD_SRC
 
 # Project sources
 set(PROJECT_SRC
+        src/ui/chart_widget_exposure.cpp
         # Main
         src/main.cpp
 
@@ -384,6 +387,8 @@ set(PROJECT_SRC
         src/ui/upsell_modal.cpp
         src/ui/research_moment_panel.h
         src/ui/research_moment_panel.cpp
+        src/ui/compression_overlay.cpp
+        src/ui/touch_odds_overlay.cpp
         src/ui/replay_library_widget.h
         src/ui/replay_library_widget.cpp
         src/ui/chart_widget.h
@@ -393,6 +398,7 @@ set(PROJECT_SRC
         src/ui/chart_widget.cpp
         src/ui/chart_widget_realtime.cpp
         src/ui/chart_widget_flow.cpp
+        src/ui/chart_widget_liquidity_response.cpp
         src/core/realtime_archive.cpp
         src/ui/chart_widget_scrub_preview.cpp
         src/ui/price_profile_renderer.h
@@ -405,6 +411,8 @@ set(PROJECT_SRC
         src/ui/orderbook_widget.cpp
         src/ui/dom_widget.h
         src/ui/dom_widget.cpp
+        src/ui/realtime_dom_ladder.h
+        src/ui/realtime_dom_ladder.cpp
         src/ui/stats_widget.h
         src/ui/stats_widget.cpp
 
@@ -530,15 +538,42 @@ add_executable(c_based_trader_client
         ${ZSTD_SRC}
 )
 
+if(EDGEDEPTH_EXPOSURE_V2_DEV)
+    target_compile_definitions(c_based_trader_client PRIVATE EDGEDEPTH_EXPOSURE_V2_DEV=1)
+endif()
+
 # WebGL2 supports 32-bit indices but not base-vertex drawing. Dense RT bubbles
 # can exceed 64K vertices; every ImGui consumer must use the same index layout.
 target_compile_definitions(c_based_trader_client PRIVATE "ImDrawIdx=unsigned int")
 
 # Standalone production depth regression uses the same pinned wire/runtime.
-# This vendored tree omits tests/ — only define EXCLUDE_FROM_ALL regression
-# targets when their sources are present (full upstream checkouts).
 if(EMSCRIPTEN)
-    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/pack_seek_test.cpp")
+    add_executable(census_overlay_regression EXCLUDE_FROM_ALL
+        tests/wasm/census_overlay_test.cpp
+        ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMPLOT_DIR}/implot.cpp ${IMPLOT_DIR}/implot_items.cpp)
+    target_compile_options(census_overlay_regression PRIVATE -O1)
+    target_link_options(census_overlay_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
+    set_target_properties(census_overlay_regression PROPERTIES SUFFIX ".js")
+    add_executable(indicator_continuity_regression EXCLUDE_FROM_ALL
+        tests/wasm/indicator_continuity_test.cpp
+        src/ui/indicators/volume_indicator.cpp src/ui/indicators/vpin_indicator.cpp
+        src/core/candle_manager.cpp src/stream_handler.cpp src/types/types.cpp
+        ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMPLOT_DIR}/implot.cpp ${IMPLOT_DIR}/implot_items.cpp)
+    target_compile_options(indicator_continuity_regression PRIVATE -O1 -include span)
+    target_link_options(indicator_continuity_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
+    set_target_properties(indicator_continuity_regression PROPERTIES SUFFIX ".js")
+    add_executable(cvd_availability_regression EXCLUDE_FROM_ALL
+        tests/wasm/cvd_availability_test.cpp src/ui/indicators/cvd_indicator.cpp
+        ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMPLOT_DIR}/implot.cpp ${IMPLOT_DIR}/implot_items.cpp)
+    target_compile_options(cvd_availability_regression PRIVATE -O1)
+    target_link_options(cvd_availability_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
+    set_target_properties(cvd_availability_regression PROPERTIES SUFFIX ".js")
     add_executable(pack_seek_regression EXCLUDE_FROM_ALL
         tests/wasm/pack_seek_test.cpp src/replayer/pack_replay_engine.cpp
         src/core/message_parser.cpp src/core/orderbook_manager.cpp
@@ -547,8 +582,6 @@ if(EMSCRIPTEN)
     target_compile_options(pack_seek_regression PRIVATE -O1)
     target_link_options(pack_seek_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
     set_target_properties(pack_seek_regression PROPERTIES SUFFIX ".js")
-    endif()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/realtime_mesh_test.cpp")
     add_executable(realtime_mesh_regression EXCLUDE_FROM_ALL
         tests/wasm/realtime_mesh_test.cpp ${IMGUI_DIR}/imgui.cpp
         ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp)
@@ -556,9 +589,6 @@ if(EMSCRIPTEN)
     target_compile_options(realtime_mesh_regression PRIVATE -O1)
     target_link_options(realtime_mesh_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
     set_target_properties(realtime_mesh_regression PROPERTIES SUFFIX ".js")
-    endif()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/realtime_history_test.cpp"
-       AND EXISTS "${CMAKE_SOURCE_DIR}/tests/wasm/realtime_archive_test.cpp")
     add_executable(realtime_depth_regression EXCLUDE_FROM_ALL
         tests/wasm/realtime_history_test.cpp tests/wasm/realtime_archive_test.cpp
         src/core/realtime_archive.cpp src/core/orderbook_manager.cpp
@@ -572,7 +602,6 @@ if(EMSCRIPTEN)
     target_link_options(realtime_depth_regression PRIVATE -sENVIRONMENT=node -sALLOW_MEMORY_GROWTH=1)
     target_link_options(realtime_depth_regression PRIVATE "--pre-js=${CMAKE_SOURCE_DIR}/tests/wasm/realtime_archive_bridge_fixture.js")
     set_target_properties(realtime_depth_regression PROPERTIES SUFFIX ".js")
-    endif()
 endif()
 
 # Ensure protobuf files are generated before compiling
@@ -630,6 +659,7 @@ set(WASM_EXPORTED_FUNCTIONS
         __event_cmd_set_paused
         __event_cmd_set_speed
         __event_cmd_seek
+        __event_cmd_seek_ms
         __event_cmd_skip
         __event_cmd_restart
         __replay_cmd_scrub_hover

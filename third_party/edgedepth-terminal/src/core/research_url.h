@@ -142,6 +142,14 @@ struct OutcomeHorizon {
 inline constexpr OutcomeHorizon kOutcomeHorizons[] = {{"30m", 30},   {"1h", 60},    {"4h", 240},
                                                       {"24h", 1440}, {"72h", 4320}, {"7d", 10080}};
 
+// A drag can extend into empty chart space. Export only observed time, bounded
+// by the latest loaded candle and the live/replay clock, at minute resolution.
+inline int64_t observed_move_end(int64_t requested, int64_t loaded_end, int64_t clock_ms) {
+    if (requested <= 0 || loaded_end <= 0 || clock_ms <= 0) return 0;
+    const int64_t available = loaded_end < clock_ms ? loaded_end : clock_ms;
+    return floor_minute_ms(requested < available ? requested : available);
+}
+
 // The dragged range reduced to a target the engine already counts. When ok is
 // false every other field is meaningless and the caller renders the menu item
 // disabled; direction and horizon are always readable strings, never null.
@@ -151,6 +159,7 @@ struct MoveSnap {
     double magnitude = 0.0;
     const char* horizon = "";
     int64_t start_minute_ms = 0;
+    int64_t end_minute_ms = 0;
 };
 
 // Snap a dragged range onto the outcome grammar. PURE: no ImGui, no chart, no
@@ -201,7 +210,7 @@ inline MoveSnap snap_move(int64_t start_ms, int64_t end_ms, double start_close, 
     }
     if (!horizon) return none;  // longer than the closed list's 7d
 
-    return MoveSnap{true, up ? "up" : "down", rung, horizon, floor_minute_ms(start_ms)};
+    return MoveSnap{true, up ? "up" : "down", rung, horizon, floor_minute_ms(start_ms), floor_minute_ms(end_ms)};
 }
 
 // "up 10% in 4h" - the menu shortcut column, so the snap rule is readable
@@ -228,6 +237,18 @@ inline std::string outcome_first_url(const std::string& symbol_raw, const MoveSn
     return std::string(base) + "/research/workbench?source=record&study=outcome-first&entry=terminal" +
            "&target=" + target + "&symbol=" + normalize_symbol(symbol_raw) +
            "&at=" + iso_utc(snap.start_minute_ms) + "&scope=" + scope;
+}
+
+// The selected interval stays independent of the rounded outcome target.
+// The web remeasures completed minute closes and asks for a decision clock.
+inline std::string investigation_url(const std::string& symbol_raw, const MoveSnap& selection,
+                                     const std::string& exchange = "binancef",
+                                     const char* base = "https://edgedepth.com") {
+    if (exchange != "binancef" || selection.start_minute_ms <= 0 ||
+        selection.end_minute_ms <= selection.start_minute_ms) return {};
+    return std::string(base) + "/research/investigate?symbol=" + normalize_symbol(symbol_raw) +
+           "&exchange=" + exchange + "&at=" + iso_utc(selection.start_minute_ms) +
+           "&end=" + iso_utc(selection.end_minute_ms) + "&entry=terminal";
 }
 
 }  // namespace research_url

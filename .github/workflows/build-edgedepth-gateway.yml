@@ -3,7 +3,7 @@ name: Build EdgeDepth gateway binary
 on:
   push:
     branches:
-      - arena/01a0caa0-green-terminal
+      - arena/01a0fd01-green-terminal
     paths:
       - third_party/edgedepth-gateway/**
       - bin/edgedepth-gateway
@@ -51,7 +51,7 @@ jobs:
             echo 'no logs to commit'
           else
             git commit -m "ci-logs: EdgeDepth gateway build failure logs [skip ci]"
-            git push origin HEAD:arena/01a0caa0-green-terminal || true
+            git push origin HEAD:arena/01a0fd01-green-terminal || true
           fi
 
       - name: Build linux/amd64 gateway
@@ -85,8 +85,8 @@ jobs:
           # The WASM workflow may push to this branch at the same time; rebase
           # and retry so the two commit-backs do not clobber each other.
           for i in 1 2 3 4 5; do
-            git pull --rebase origin arena/01a0caa0-green-terminal || git rebase --abort || true
-            if git push origin HEAD:arena/01a0caa0-green-terminal; then
+            git pull --rebase origin arena/01a0fd01-green-terminal || git rebase --abort || true
+            if git push origin HEAD:arena/01a0fd01-green-terminal; then
               echo "pushed on attempt $i"
               exit 0
             fi

@@ -8,6 +8,22 @@
 #include <emscripten.h>
 #endif
 
+// Route shape: /terminal/<venue>/<symbol>, where venue is one of the hub's
+// exchange ids (binancef | bybit | hl). That is the CANONICAL form and the
+// only one the builder emits. Two legacy shapes still parse, because every
+// bookmark, marketing link, lesson deep link and research report written
+// before 2026-09-19 uses them, and none of those may break:
+//
+//   /terminal/<symbol>                 -> binancef (the venue-less alias)
+//   /terminal/<symbol>?exchange=<ex>   -> the query-carried venue
+//
+// Boot normalizes an alias to the canonical path with url_push, so the
+// address bar shows one shape. The venue moved INTO the path because a query
+// param is route-owned state living outside the route: every builder that
+// only knew a symbol silently produced a Binance link, and url_navigate
+// deliberately strips ?exchange= on a symbol click. With the venue in the
+// path a symbol alone is not an address, so that class of bug cannot recur.
+//
 // Query-string discipline: neither the boot normalization (url_push) nor a
 // symbol navigation (url_navigate) may eat the user's query params. ?ws= is
 // the load-bearing one: a self-hoster pointing the terminal at their own
@@ -38,7 +54,7 @@ inline std::string url_get_current_path() {
     free(raw);
     return path;
 #else
-    return "/terminal/btcusdt";
+    return "/terminal/binancef/btcusdt";
 #endif
 }
 
@@ -60,23 +76,31 @@ inline std::string url_get_current_search() {
 }
 
 // pushState to path, merging the current query string (the path's own query
-// wins per key). Boot uses this to normalize / into /terminal/<symbol>.
+// wins per key). Boot uses this to normalize / and the legacy aliases into
+// /terminal/<venue>/<symbol>. The legacy ?exchange= is dropped here: the path
+// now carries the venue, and leaving the query copy behind would let the two
+// disagree on the next navigation.
 inline void url_push(const std::string& path) {
 #ifdef __EMSCRIPTEN__
     EM_ASM({
         var p = UTF8ToString($0);
         var qi = p.indexOf('?');
         var params = new URLSearchParams(window.location.search);
+        params.delete('exchange');
         if (qi >= 0) {
             new URLSearchParams(p.slice(qi + 1)).forEach(function(v, k) {
                 params.set(k, v);
             });
             p = p.slice(0, qi);
         }
+        var oldPath = window.location.pathname;
+        var marketChanged = (oldPath.indexOf('/terminal/binancef/') === 0 || oldPath.indexOf('/terminal/bybit/') === 0 || oldPath.indexOf('/terminal/hl/') === 0) && oldPath !== p;
+        if (marketChanged) 'compression compressionId peak touch'.split(' ').forEach(function(k) { params.delete(k); });
         var q = params.toString();
         var url = q ? p + '?' + q : p;
         if (window.location.pathname + window.location.search !== url) {
             window.history.pushState({}, "", url);
+            if (marketChanged) window.dispatchEvent(new CustomEvent("edgedepth:market-changed"));
         }
     }, path.c_str());
 #else
@@ -94,7 +118,7 @@ inline void url_navigate(const std::string& path) {
         var params = new URLSearchParams(window.location.search);
         // split(' ') instead of an array literal: EM_ASM is a C macro and the
         // preprocessor would treat the literal's commas as argument breaks.
-        'exchange pack packsym packt t lesson event'.split(' ')
+        'exchange pack packsym packt t lesson event compression compressionId peak touch'.split(' ')
             .forEach(function(k) { params.delete(k); });
         if (qi >= 0) {
             new URLSearchParams(p.slice(qi + 1)).forEach(function(v, k) {
@@ -156,8 +180,10 @@ inline std::string parse_exchange_query(const std::string& search) {
 
 // Extract a case-PRESERVED ?symbol=<sym> value from a query string (e.g.
 // "?exchange=hl&symbol=BTC"); returns "" when absent. Case is preserved here
-// because Hyperliquid coins are uppercase end-to-end; the caller lowercases
-// only for binancef, mirroring parse_route.
+// because Hyperliquid coins are uppercase end-to-end; the caller normalizes
+// per venue, mirroring parse_route. GREEN TERMINAL embed patch: the GT shell
+// boots the engine at /edgedepth/index.html?exchange=..&symbol=.. (not a
+// /terminal/ path), so the symbol must be readable from the query too.
 inline std::string parse_symbol_query(const std::string& search) {
     using size_type = std::string::size_type;
     static const std::string key = "symbol";
@@ -179,10 +205,55 @@ inline std::string parse_symbol_query(const std::string& search) {
     return "";
 }
 
-// parse_route reads the symbol from /terminal/<symbol> and the venue from an
-// optional ?exchange=<ex> query. binancef symbols are canonical lowercase; the
-// symbol case is PRESERVED for other venues (Hyperliquid coins are uppercase
-// "BTC" end-to-end), matching how the backend stores + routes them.
+// The venues the hub serves, by their exchange id. This is the ONLY list the
+// router consults: a first path segment is a venue iff it is in here, so a
+// symbol can never be mistaken for a venue and a typo'd venue never routes
+// anywhere. Mirrors markets.IsVenue in the Go backend.
+inline bool is_known_exchange(const std::string& ex) {
+    return ex == "binancef" || ex == "bybit" || ex == "hl";
+}
+
+// Symbol case is venue dependent: Binance and Bybit product symbols are
+// lowercase end-to-end (the hub lowercases both in normalizePair); Hyperliquid
+// coins keep native case ("BTC", "kPEPE") because their subjects and DB rows
+// do. One helper so boot, the studio symbol and the router agree.
+inline std::string normalize_symbol_case(const std::string& exchange, std::string symbol) {
+    if (exchange == "binancef" || exchange == "bybit") {
+        std::transform(symbol.begin(), symbol.end(), symbol.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    }
+    return symbol;
+}
+
+// Decode one path segment: percent-escapes once, malformed escapes kept
+// literally, a decoded slash never reinterpreted as routing.
+inline std::string url_decode_segment(const std::string& seg) {
+    std::string decoded;
+    const auto hex = [](unsigned char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; i < seg.size(); ++i) {
+        if (seg[i] == '%' && i + 2 < seg.size()) {
+            const int hi = hex(seg[i + 1]), lo = hex(seg[i + 2]);
+            if (hi >= 0 && lo >= 0 && (hi || lo)) {
+                decoded += static_cast<char>((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        decoded += seg[i];
+    }
+    return decoded;
+}
+
+// parse_route reads /terminal/<venue>/<symbol> (canonical), or the legacy
+// /terminal/<symbol> with the venue defaulting to binancef unless an
+// ?exchange=<ex> query names one. The exchange is resolved BEFORE the symbol
+// is cased (see normalize_symbol_case). A path-carried venue wins over the
+// query: the path is the address, the query is a leftover.
 inline Route parse_route(const std::string& path, const std::string& search = "") {
     Route r;
 
@@ -196,46 +267,32 @@ inline Route parse_route(const std::string& path, const std::string& search = ""
     if (!rest.empty() && rest.back() == '/') rest.pop_back();
     if (rest.empty()) return r;
 
-    auto slash = rest.find('/');
-    r.symbol = (slash == std::string::npos) ? rest : rest.substr(0, slash);
+    // Split the path once; decode each segment after splitting.
+    const auto slash = rest.find('/');
+    std::string first = url_decode_segment(rest.substr(0, slash));
+    std::string first_lower = first;
+    std::transform(first_lower.begin(), first_lower.end(), first_lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    // Decode the segment once, after splitting the URL. Preserve malformed
-    // escapes literally and never reinterpret a decoded slash as routing.
-    std::string decoded;
-    const auto hex = [](unsigned char c) -> int {
-        if (c >= '0' && c <= '9') return c - '0';
-        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-        return -1;
-    };
-    for (size_t i = 0; i < r.symbol.size(); ++i) {
-        if (r.symbol[i] == '%' && i + 2 < r.symbol.size()) {
-            const int hi = hex(r.symbol[i + 1]), lo = hex(r.symbol[i + 2]);
-            if (hi >= 0 && lo >= 0 && (hi || lo)) {
-                decoded += static_cast<char>((hi << 4) | lo);
-                i += 2;
-                continue;
-            }
-        }
-        decoded += r.symbol[i];
+    if (slash != std::string::npos && is_known_exchange(first_lower)) {
+        // Canonical: /terminal/<venue>/<symbol>[/ignored]
+        r.exchange = first_lower;
+        const std::string tail = rest.substr(slash + 1);
+        const auto next = tail.find('/');
+        r.symbol = url_decode_segment(tail.substr(0, next));
+    } else {
+        // Alias: /terminal/<symbol>[/ignored], venue from the query or default.
+        r.symbol = std::move(first);
     }
-    r.symbol = std::move(decoded);
-    if (r.exchange == "binancef") {
-        std::transform(r.symbol.begin(), r.symbol.end(), r.symbol.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    }
+    if (r.symbol.empty()) return r;
 
+    r.symbol = normalize_symbol_case(r.exchange, r.symbol);
     return r;
 }
 
-inline std::string build_terminal_path(const std::string& symbol) {
-    return "/terminal/" + symbol;
-}
-
-// Exchange-aware path: appends ?exchange=<ex> only for non-binancef venues, so
-// every existing binancef URL stays byte-identical.
+// Canonical terminal path: /terminal/<venue>/<symbol>. An unset venue means
+// binancef. There is deliberately no symbol-only overload any more: a symbol
+// is not an address, and the overload was how venue-less links got minted.
 inline std::string build_terminal_path(const std::string& exchange, const std::string& symbol) {
-    std::string p = "/terminal/" + symbol;
-    if (!exchange.empty() && exchange != "binancef") p += "?exchange=" + exchange;
-    return p;
+    return "/terminal/" + (exchange.empty() ? std::string("binancef") : exchange) + "/" + symbol;
 }

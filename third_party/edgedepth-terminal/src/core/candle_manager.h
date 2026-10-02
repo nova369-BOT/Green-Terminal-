@@ -55,6 +55,13 @@ public:
     void change_timeframe(int64_t new_timeframe_seconds);
     void initial_load();
     void request_historical(size_t count, int64_t end_time_ms = 0);
+    // Re-fetch the newest `count` candles and merge them in place: candles the
+    // series already holds are replaced, absent ones inserted in order, the
+    // building period left to the live feed. Used after a hub restart or a
+    // hidden window's dropped dispatches, when the live feed skipped a period
+    // and the server holds it, and to close the sub-minute startup seam.
+    // Live trades keep building candles while it is in flight.
+    void request_recent(size_t count);
 
     // ─── SoA Read Accessors (for rendering) ─────────────────────────────
 
@@ -89,6 +96,7 @@ public:
     // State queries
     bool empty() const { return candles_.empty() && !has_current_candle_; }
     size_t count() const { return candles_.size(); }
+    uint64_t history_revision() const { return history_revision_; }
     bool is_loading() const { return is_loading_; }
     bool is_initial_load_complete() const { return initial_load_complete_; }
     double last_close_price() const { return last_close_price_; }
@@ -147,7 +155,7 @@ private:
 
     void rebuild_cache() const;
     void ensure_cache() const { if (cache_dirty_) rebuild_cache(); }
-    void mark_dirty() { cache_dirty_ = true; }
+    void mark_dirty() { cache_dirty_ = true; ++history_revision_; }
 
     RealtimeTradeHistory realtime_trades_;
     Terminal::Pair pair_;
@@ -168,7 +176,30 @@ private:
     bool carried_candle_valid_ = false;
 
     bool is_loading_ = false;
+    bool recent_pending_ = false;  // next historical batch merges in place (request_recent)
+    void merge_recent(std::span<const Terminal::Candle> batch);
     bool initial_load_complete_ = false;
+
+    // Live trades that arrive while the initial batch is in flight. They used
+    // to be discarded, so the chart had no candles between the end of the
+    // history and the batch's arrival. Bounded; the oldest half goes first.
+    static constexpr size_t kMaxPendingTrades = 65536;
+    std::vector<Terminal::Trade> pending_trades_;
+    int64_t fold_pending_trades();
+
+    // Sub-minute history is rebuilt server-side from captured trades, which
+    // reach its database in 10 s buckets flushed up to 10 s later, so the
+    // initial batch ends 10-30 s before the first live trade (the startup
+    // seam). Re-request the newest candles until a batch reaches that trade:
+    // 20 s after the history lands, then 40, 80 and 160 s apart.
+    static constexpr int kSeamRetries = 4;
+    static constexpr int64_t kSeamFirstRetryMs = 20000;
+    int64_t seam_from_ms_ = 0;  // newest candle the history held; 0 = no seam
+    int64_t live_from_ms_ = 0;  // period of the first candle built from live trades
+    int seam_attempts_ = 0;
+    std::chrono::steady_clock::time_point seam_retry_at_;
+    void open_seam(int64_t history_end_ms, int64_t live_from_ms);
+    void note_seam_batch(std::span<const Terminal::Candle> batch);
     int64_t oldest_candle_timestamp_ = 0;
     // Flat bar-count paging (Binance klines / TradingView datafeed convention:
     // page by a fixed number of bars, not a calendar span). 10080 is chosen to
@@ -201,6 +232,7 @@ private:
     void clear_ticks();
 
     // SoA cache - mutable for lazy const rebuild
+    uint64_t history_revision_ = 1;
     mutable bool cache_dirty_ = true;
     mutable std::vector<double> cached_timestamps_;
     mutable std::vector<double> cached_opens_;
