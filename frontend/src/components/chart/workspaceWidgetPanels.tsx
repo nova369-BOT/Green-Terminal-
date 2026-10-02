@@ -103,11 +103,12 @@ export function TradesPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
     const provider = flow.flow.source.provider;
     const bus = getBus();
     const stop = bus.stream([stream], provider);
+    noteFlowVenueEvent(provider, 'subscribe', undefined, 'trades');
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream) return;
       if (trade.side !== 'buy' && trade.side !== 'sell') return;
       if (trade.size == null) return;
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'trades');
       if (tapeRef.current.add(trade.tsMs, trade.price, trade.size, trade.side === 'buy')) {
         setTapeRev(tapeRef.current.revision());
       }
@@ -189,11 +190,12 @@ export function MarketStatsPanel({ widget, symbol }: WidgetPanelProps): JSX.Elem
     if (!resolved) return undefined;
     const provider = resolved.provider;
     const bus = getBus();
+    noteFlowVenueEvent(provider, 'subscribe', undefined, 'trades');
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== resolved.stream) return;
       if (trade.side !== 'buy' && trade.side !== 'sell') return;
       if (trade.size == null) return;
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'trades');
       if (tapeRef.current.add(trade.tsMs, trade.price, trade.size, trade.side === 'buy')) {
         setTapeRev(tapeRef.current.revision());
       }
@@ -274,7 +276,7 @@ interface DepthBookState { bids: Array<[string, string]>; asks: Array<[string, s
  * resolve the venue stream, subscribe, apply sequence-safe updates, and
  * expose the freshness timestamp the UI turns into Live/Stale. */
 function useResolvedDepth(widget: WorkspaceWidget, symbol: string): { flow: AdaptiveFlow; depth: DepthBookState; lastEventAt: number } {
-  const flow = useAdaptiveFlowSource(widget.symbol || symbol);
+  const flow = useAdaptiveFlowSource(widget.symbol || symbol, 'depth');
   const [depth, setDepth] = useState<DepthBookState>({ bids: [], asks: [], ready: false });
   const [lastEventAt, setLastEventAt] = useState(0);
   useEffect(() => {
@@ -285,15 +287,19 @@ function useResolvedDepth(widget: WorkspaceWidget, symbol: string): { flow: Adap
     setLastEventAt(0);
     const bus = getBus();
     const stop = bus.stream([stream], provider);
+    /* Depth channel only: trades from the same venue must NOT count as
+     * health here — Binance trades stream fine while its depth snapshot
+     * never lands, and that must still drive the DOM to the other venue. */
+    noteFlowVenueEvent(provider, 'subscribe', undefined, 'depth');
     const off = bus.subscribeDepth((event: BusDepth) => {
       if (event.symbol !== stream) return;
       setLastEventAt(Date.now());
       if (event.type === 'DEPTH_RESET') {
-        noteFlowVenueEvent(provider, 'reset', String(event.reason || 'depth reset'));
+        noteFlowVenueEvent(provider, 'reset', String(event.reason || 'depth reset'), 'depth');
         setDepth({ bids: [], asks: [], ready: false, reset: String(event.reason || 'depth reset') });
         return;
       }
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'depth');
       const bids = Array.isArray(event.bids || event.b) ? (event.bids || event.b) as Array<[string, string]> : [];
       const asks = Array.isArray(event.asks || event.a) ? (event.asks || event.a) as Array<[string, string]> : [];
       setDepth(previous => event.type === 'ORDER_BOOK_SNAPSHOT'
@@ -429,7 +435,7 @@ export function DomPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
       if (accRef.current.addTrade(trade.price, trade.size, trade.side === 'buy')) {
         setAccRev(accRef.current.revision());
       }
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'trades');
     });
     return off;
   }, [resolved]);
@@ -874,9 +880,10 @@ export function FootprintPanel({ widget, symbol, timeframe }: WidgetPanelProps):
     const provider = flow.flow.source.provider;
     const bus = getBus();
     const stop = bus.stream([stream], provider);
+    noteFlowVenueEvent(provider, 'subscribe', undefined, 'trades');
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream || typeof trade.price !== 'number') return;
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'trades');
       printsRef.current.push({ tsMs: trade.tsMs, price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -937,9 +944,10 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
     const provider = flow.flow.source.provider;
     const bus = getBus();
     const stop = bus.stream([stream], provider);
+    noteFlowVenueEvent(provider, 'subscribe', undefined, 'trades');
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream) return;
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'trades');
       printsRef.current.push({ tsMs: trade.tsMs, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;
@@ -986,7 +994,7 @@ export function CvdPanel({ widget, symbol, timeframe }: WidgetPanelProps): JSX.E
 /* ----------------------------------- Heatmap ----------------------------------- */
 
 export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element {
-  const flow = useAdaptiveFlowSource(widget.symbol || symbol);
+  const flow = useAdaptiveFlowSource(widget.symbol || symbol, 'depth');
   const historyRef = useRef<DepthHeatmapHistory | null>(null);
   const [frames, setFrames] = useState<HeatmapFrame[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -1000,14 +1008,15 @@ export function HeatmapPanel({ widget, symbol }: WidgetPanelProps): JSX.Element 
     setFrames([]);
     const bus = getBus();
     const stop = bus.stream([stream], provider);
+    noteFlowVenueEvent(provider, 'subscribe', undefined, 'depth');
     const off = bus.subscribeDepth((event: BusDepth) => {
       if (event.symbol !== stream) return;
       if (event.type === 'DEPTH_RESET') {
-        noteFlowVenueEvent(provider, 'reset', String(event.reason || 'depth reset'));
+        noteFlowVenueEvent(provider, 'reset', String(event.reason || 'depth reset'), 'depth');
         setFrames([]);
         return;
       }
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'depth');
       const frame = history.apply(event);
       if (frame) setFrames(history.snapshot());
     });
@@ -1055,9 +1064,10 @@ export function VolumeProfilePanel({ widget, symbol }: WidgetPanelProps): JSX.El
     const provider = flow.flow.source.provider;
     const bus = getBus();
     const stop = bus.stream([stream], provider);
+    noteFlowVenueEvent(provider, 'subscribe', undefined, 'trades');
     const off = bus.subscribeTrade((trade) => {
       if (trade.symbol !== stream || typeof trade.price !== 'number') return;
-      noteFlowVenueEvent(provider, 'data');
+      noteFlowVenueEvent(provider, 'data', undefined, 'trades');
       printsRef.current.push({ price: trade.price, size: typeof trade.size === 'number' ? trade.size : 0, side: trade.side === 'buy' || trade.side === 'sell' ? trade.side : null });
       if (printsRef.current.length > MAX_RETAINED_PRINTS) printsRef.current.splice(0, printsRef.current.length - MAX_RETAINED_PRINTS);
       dirtyRef.current = true;

@@ -44,17 +44,37 @@ class BinanceDepthStream:
         while True:
             book = LocalOrderBook(self.symbol)
             try:
-                async with websockets.connect(self.ws_url, ping_interval=20, close_timeout=5) as socket:
+                async with websockets.connect(self.ws_url, ping_interval=20,
+                                              close_timeout=5, open_timeout=10) as socket:
                     # Binance's documented order is snapshot then buffered
                     # diffs. The socket is opened first so updates are not
                     # missed while the REST snapshot is requested.
                     buffered: list[dict] = []
                     snapshot_task = asyncio.create_task(self._snapshot())
-                    while not snapshot_task.done():
-                        raw = json.loads(await socket.recv())
-                        if raw.get("s", "").upper() == self.symbol:
-                            buffered.append(raw)
-                    snapshot = parse_snapshot(await snapshot_task)
+                    try:
+                        while not snapshot_task.done():
+                            # The 100ms stream is never quiet: a recv silent for
+                            # this long means the connection is dead to us no
+                            # matter what ping/pong claims (middleboxes ping
+                            # back while dropping application frames).
+                            raw = json.loads(await asyncio.wait_for(socket.recv(), timeout=25.0))
+                            if raw.get("s", "").upper() == self.symbol:
+                                buffered.append(raw)
+                    except asyncio.TimeoutError:
+                        # Do not leak the urllib job between reconnects.
+                        snapshot_task.cancel()
+                        raise TimeoutError("depth stream silent while waiting for REST snapshot")
+                    try:
+                        snapshot = await asyncio.wait_for(snapshot_task, timeout=30.0)
+                    except asyncio.TimeoutError:
+                        # A REST fetch may hang forever behind a DNS stall or
+                        # a byte-trickling blackholed connection — per-op
+                        # timeouts inside urllib do not bound that. Without a
+                        # hard deadline the generator would hang without ever
+                        # yielding, leaving every consumer permanently
+                        # "syncing" with no reset reason.
+                        raise TimeoutError("depth snapshot fetch hung past 30s — venue blocked or unreachable")
+                    snapshot = parse_snapshot(snapshot)
                     book.apply_snapshot(snapshot)
                     yield {"type": "ORDER_BOOK_SNAPSHOT", "symbol": self.symbol,
                            "lastUpdateId": snapshot.last_update_id,
@@ -69,7 +89,16 @@ class BinanceDepthStream:
                             raise
                         yield self._update_payload(update)
                     backoff = 1.0
-                    async for raw_text in socket:
+                    while True:
+                        # The 100ms depth feed is never quiet; 30s without an
+                        # application frame means a middlebox answering pings
+                        # while dropping traffic. Without this deadline the
+                        # generator hangs forever and every widget shows
+                        # "Syncing" with no DEPTH_RESET to drive failover.
+                        try:
+                            raw_text = await asyncio.wait_for(socket.recv(), timeout=30.0)
+                        except asyncio.TimeoutError:
+                            raise TimeoutError("depth stream silent after snapshot — middlebox alive but frames dropped")
                         update = parse_update(json.loads(raw_text))
                         book.apply_update(update)
                         yield self._update_payload(update)

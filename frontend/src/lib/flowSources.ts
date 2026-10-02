@@ -216,48 +216,35 @@ export function resolveFlowVenue(symbol: string, venue: 'binance' | 'hyperliquid
 /* Venue health + adaptive failover (user directive: "use any available  */
 /* data be it binance or hyperliquid").                                  */
 /*                                                                      */
-/* Health is measured from REAL bus events only: every widget notes every */
-/* snapshot/update/tick (`data`) and every DEPTH_RESET (`reset`) it      */
-/* sees. A venue is DOWN when its resets keep arriving and no data has   */
-/* landed within DATA_DOWN_MS. Panels then swap to the next venue, the   */
-/* status chip swaps with them, and a banner states the reason. When    */
-/* the primary venue delivers again, resolution snaps back on the next  */
-/* health tick.                                                        */
+/* Health is measured from REAL bus events only, per channel (depth vs  */
+/* trades — a venue multiplexes both and they fail independently; see  */
+/* lib/venueHealth.ts). Down per channel = resets with no data, or a    */
+/* subscription that has never delivered after its grace window (covers */
+/* silent hangs that emit no reset to key on). Panels then swap to the  */
+/* next venue per channel, the status chip swaps with them, and a       */
+/* banner states the reason. Data arrival clears the verdict.           */
 /* ------------------------------------------------------------------ */
 
-interface VenueHealth { lastDataMs: number; lastResetMs: number; lastReason: string }
-const venueHealth: Record<string, VenueHealth> = {};
-const healthListeners = new Set<() => void>();
-let healthVersion = 0;
+export type { FlowChannel } from './venueHealth';
+import type { FlowChannel } from './venueHealth';
+import {
+  recordVenueEvent,
+  queryVenueDown,
+  subscribeVenueHealth,
+  getVenueHealthVersion,
+  type VenueDownVerdict,
+} from './venueHealth';
 
-/** Down-window: resets with no data longer than this ⇒ try the next venue. */
-const DATA_DOWN_MS = 15_000;
-/** Reset older than this stops mattering (avoids sticky-down on a quiet book). */
-const RESET_FRESH_MS = 45_000;
+export function noteFlowVenueEvent(provider: string, kind: 'data' | 'reset' | 'subscribe', reason?: string, channel: FlowChannel = 'trades'): void {
+  recordVenueEvent(provider, kind, reason, channel);
+}
 
-export function noteFlowVenueEvent(provider: string, kind: 'data' | 'reset', reason?: string): void {
-  const h = venueHealth[provider] ?? (venueHealth[provider] = { lastDataMs: 0, lastResetMs: 0, lastReason: '' });
-  const now = Date.now();
-  if (kind === 'data') h.lastDataMs = now;
-  else { h.lastResetMs = now; if (reason) h.lastReason = String(reason); }
-  healthVersion += 1;
-  healthListeners.forEach(listener => listener());
+export function venueIsDown(provider: string, channel: FlowChannel = 'trades'): VenueDownVerdict {
+  return queryVenueDown(provider, channel);
 }
 
 export function useFlowVenueHealthVersion(): number {
-  return useSyncExternalStore(
-    (listener) => { healthListeners.add(listener); return () => { healthListeners.delete(listener); }; },
-    () => healthVersion,
-  );
-}
-
-function venueIsDown(provider: string): { down: boolean; reason: string } {
-  const h = venueHealth[provider];
-  if (!h || !h.lastResetMs) return { down: false, reason: '' };
-  const now = Date.now();
-  const hasData = h.lastDataMs > 0 && now - h.lastDataMs <= DATA_DOWN_MS;
-  const freshReset = now - h.lastResetMs < RESET_FRESH_MS;
-  return { down: !hasData && freshReset, reason: h.lastReason };
+  return useSyncExternalStore(subscribeVenueHealth, getVenueHealthVersion);
 }
 
 export interface AdaptiveFlow {
@@ -271,7 +258,7 @@ export interface AdaptiveFlow {
 
 /** The symbol's flow source with venue failover: Binance Spot primary,
  * Hyperliquid Perp when Binance is measurably unreachable. */
-export function useAdaptiveFlowSource(symbol: string): AdaptiveFlow {
+export function useAdaptiveFlowSource(symbol: string, channel: FlowChannel = 'trades'): AdaptiveFlow {
   const catalogVersion = useFlowCatalogVersion();
   const healthV = useFlowVenueHealthVersion();
   return useMemo(() => {
@@ -279,12 +266,12 @@ export function useAdaptiveFlowSource(symbol: string): AdaptiveFlow {
     if (primary.status !== 'resolved') return { flow: primary, swapped: false, swapReason: '' };
     const alt = resolveFlowVenue(symbol, 'hyperliquid');
     if (alt.status !== 'resolved') return { flow: primary, swapped: false, swapReason: '' };
-    const health = venueIsDown(primary.source.provider);
+    const health = venueIsDown(primary.source.provider, channel);
     if (!health.down) return { flow: primary, swapped: false, swapReason: '' };
     return {
       flow: alt,
       swapped: true,
-      swapReason: `Binance unreachable (${health.reason || 'no data'}) — showing Hyperliquid Perp.`,
+      swapReason: `Binance ${channel} unreachable (${health.reason || 'no data'}) — showing Hyperliquid Perp.`,
     };
-  }, [symbol, catalogVersion, healthV]);
+  }, [symbol, catalogVersion, healthV, channel]);
 }
