@@ -51,6 +51,37 @@ def test_terminal_prefix_serves_edgedepth_spa(client):
         assert "ws://" in r.text, base
 
 
+def test_edgedepth_config_is_same_origin_not_loopback(client):
+    # ws://127.0.0.1:8080 is the ENGINE's localhost, not the viewer's: a
+    # browser on any other machine (Docker on a server, a preview proxy)
+    # dials its own loopback and finds nothing — dead socket, every panel
+    # honestly "Unavailable". The config must resolve against the origin
+    # the page was loaded from and ride the engine's /edgedepth/ws bridge.
+    r = client.get("/edgedepth/edgedepth-config.js")
+    assert r.status_code == 200
+    assert "location.host" in r.text
+    assert "/edgedepth/ws" in r.text
+    assert "127.0.0.1" not in r.text
+
+
+def test_edgedepth_ws_proxy_closes_honestly_when_gateway_down(client, monkeypatch):
+    # The bridge must never pretend: gateway unreachable ⇒ immediate close
+    # (1013 try-again-later), so the terminal shows reconnecting instead of
+    # a UI claiming LIVE on a dead feed.
+    import pytest as _pytest
+    from starlette.websockets import WebSocketDisconnect
+
+    monkeypatch.setenv("EDGEDEPTH_PORT", "59999")  # nothing listens here
+    # websocket_connect ignores base_url ("testserver" host), and the
+    # loopback guard rightly refuses that handshake; present the Host a
+    # real local browser sends.
+    with client.websocket_connect("/edgedepth/ws",
+                                  headers={"host": "127.0.0.1"}) as ws:
+        with _pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 1013
+
+
 def test_providers_listing(client):
     provs = {p["name"]: p for p in client.get("/api/providers").json()}
     assert provs["demo"]["configured"] is True

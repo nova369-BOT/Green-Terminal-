@@ -360,8 +360,9 @@ def test_orderflow_workspace_markers():
     assert 'id="of-dock"' in html
     assert 'id="ofd-stage"' in html
     assert 'id="of-dock-toggle"' in html
-    for marker in ("ofActiveHost", "ofSyncPortal", "ofVenueRoute",
-                   "ofFollowChartSymbol", "ofPushTimeframe"):
+    for marker in ("ofActiveHost", "ofSyncPortal", "ofEngineRoute",
+                   "ofUpdateFlowChip", "ofFollowChartSymbol",
+                   "ofPushTimeframe"):
         assert marker in app, f"missing unified-chart glue: {marker}"
     # Vendored authoritative EdgeDepth source present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
@@ -389,7 +390,13 @@ def test_gateway_serves_all_three_venues():
             assert (pkg / name).is_file(), f"missing {venue}/{name}"
         assert ident in (pkg / "adapter.go").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
-    # The engine URL is built dynamically per coin but always boots the hl
-    # exchange; the shell's default coin is BTC.
-    assert '"/edgedepth/index.html?exchange=hl&symbol=" + encodeURIComponent(coin)' in app
+    # The shell retargets symbols ONTO THE ENGINE'S CURRENT VENUE via the
+    # canonical /terminal/<venue>/<symbol> route — it must never force the
+    # venue back (user report 2026-10-02: "isn't switching, sticks at
+    # hyperliquid"). First boot defaults to hl; the default coin is BTC.
+    assert '"/terminal/" + venue + "/" + encodeURIComponent(vsym)' in app
+    assert "exchange=hl" not in app
+    for venue_key in ("hl:", "binancef:", "bybit:"):
+        assert venue_key in app, f"OF_VENUES missing {venue_key}"
+    assert 'cur.venue : "hl"' in app  # boot default before a route exists
     assert 'symbol: "BTC"' in app

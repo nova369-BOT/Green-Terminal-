@@ -869,6 +869,75 @@ def create_app() -> FastAPI:
         from lse_terminal.engine.edgedepth_gateway import config_js
         return Response(config_js(), media_type="application/javascript")
 
+    @app.websocket("/edgedepth/ws")
+    async def edgedepth_ws_proxy(websocket: WebSocket):
+        """Same-origin bridge to the internal EdgeDepth gateway WS.
+
+        The browser must never dial the gateway's loopback address itself:
+        ws://127.0.0.1:8080 is the ENGINE's localhost, not the viewer's.
+        Anyone loading GT from a different machine than the one running it
+        (Docker on a server, a tunnel, a preview proxy) got a dead socket
+        and honest-but-empty panels. The engine does sit next to the
+        gateway, so it carries the frames: text client→gateway (subscribe
+        JSON), binary gateway→client (protobuf envelopes), both verbatim.
+        Honest failure: gateway down ⇒ close 1013 (try again later)
+        immediately — the terminal owns reconnect/backoff, and no retry
+        theater here may let the UI claim LIVE on a dead feed.
+        """
+        import asyncio
+
+        import websockets as _ws
+
+        from lse_terminal.engine.edgedepth_gateway import get_supervisor
+
+        await websocket.accept()
+        try:
+            upstream = await _ws.connect(get_supervisor().ws_url(),
+                                         max_size=None, open_timeout=4)
+        except Exception:
+            try:
+                await websocket.close(code=1013)
+            except Exception:
+                pass
+            return
+
+        async def client_to_gateway():
+            while True:
+                msg = await websocket.receive()
+                if msg["type"] == "websocket.disconnect":
+                    return
+                if msg.get("text") is not None:
+                    await upstream.send(msg["text"])
+                elif msg.get("bytes") is not None:
+                    await upstream.send(msg["bytes"])
+
+        async def gateway_to_client():
+            async for frame in upstream:
+                if isinstance(frame, (bytes, bytearray)):
+                    await websocket.send_bytes(bytes(frame))
+                else:
+                    await websocket.send_text(frame)
+
+        tasks = [asyncio.create_task(client_to_gateway()),
+                 asyncio.create_task(gateway_to_client())]
+        try:
+            _, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+        finally:
+            for t in tasks:
+                t.cancel()
+            try:
+                await upstream.close()
+            except Exception:
+                pass
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+
     @app.on_event("startup")
     def _edgedepth_gateway_startup():
         # Internal service: initialize + connect attempt. Never raises —

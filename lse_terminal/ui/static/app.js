@@ -13154,8 +13154,8 @@ const ofState = {
 };
 
 // Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
-// The gateway is HL-only for now; these are the deepest, most-traded coins.
-// The input is a free-text datalist, so anything HL lists can still be typed.
+// These are the deepest, most-traded coins; the input is a free-text
+// datalist, so anything a venue lists can still be typed.
 const OF_HL_PRESETS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "AVAX",
   "LINK", "SUI", "LTC", "ARB", "OP", "APT", "TON", "PEPE",
@@ -13173,18 +13173,52 @@ function ofNormalizeSymbol(raw) {
 }
 
 /* ── Symbol → order-flow venue routing ─────────────────────────────────
-   One place decides whether a charted instrument has a REAL order-flow
-   feed and on which venue. Today the gateway registers Hyperliquid perps
-   only; adding a venue (e.g. re-registering Binance) extends THIS function,
-   not the call sites. Returns null when no verified flow exists — callers
-   must then show an honest state, never substitute depth. */
-function ofVenueRoute(sym) {
-  const coin = ofNormalizeSymbol(sym);
-  if (!coin) return null;
-  if (OF_HL_PRESETS.includes(coin)) {
-    return { exchange: "hl", coin, venue: "HYPERLIQUID", instrument: coin + " PERP" };
-  }
+   The gateway serves THREE venues (hl, binancef, bybit) and the ENGINE
+   owns which one is active: its own market picker navigates the iframe
+   to /terminal/<venue>/<symbol>. GT never forces a venue — it only
+   retargets SYMBOLS onto whatever venue the engine is on, spelled the
+   way that venue expects. HL lists a limited perp set, so auto-follow
+   onto HL only retargets known-listed coins; binancef/bybit list every
+   USDT-margined major GT charts, and an unlisted symbol still fails
+   honestly inside the engine (empty panels, never substituted depth). */
+const OF_VENUES = {
+  hl:       { label: "HYPERLIQUID", mapCoin: (c) => c,
+              listed: (c) => OF_HL_PRESETS.includes(c) },
+  binancef: { label: "BINANCE FUTURES", mapCoin: (c) => (c + "USDT").toLowerCase(),
+              listed: () => true },
+  bybit:    { label: "BYBIT", mapCoin: (c) => c + "USDT",
+              listed: () => true },
+};
+
+// The engine's CURRENT market, read from the iframe's own route (same
+// origin, so the pathname is readable). The WASM client pushState's
+// /terminal/<venue>/<symbol> shortly after boot and on every market
+// switch, making the URL the one source of truth for venue + symbol.
+// Returns null while the engine is still booting or on the bare boot URL.
+function ofEngineRoute() {
+  const fr = $("of-frame");
+  try {
+    const p = fr && fr.contentWindow && fr.contentWindow.location.pathname;
+    const m = p && p.match(/^\/terminal\/(binancef|bybit|hl)\/([^/?#]+)/);
+    if (m) return { venue: m[1], symbol: decodeURIComponent(m[2]) };
+  } catch (e) { /* mid-boot / detached frame: no claim */ }
   return null;
+}
+
+// Dock chip = the engine's REAL market. Called from the status poll so a
+// venue switch made inside the terminal shows up here too, instead of the
+// label sticking on whatever GT booted. With explicit args it previews an
+// intended navigation; with none it reports the engine's route verbatim.
+function ofUpdateFlowChip(venue, symbol) {
+  const flowChip = $("ofd-flow");
+  if (!flowChip) return;
+  const r = (venue && symbol) ? { venue, symbol } : ofEngineRoute();
+  if (r && OF_VENUES[r.venue]) {
+    flowChip.textContent = OF_VENUES[r.venue].label + " "
+      + String(r.symbol).toUpperCase() + " PERP";
+  }
+  // No route readable (engine still booting): keep the last truthful
+  // label rather than inventing one.
 }
 
 /* ── G-Flow portal: ONE engine, two surfaces ───────────────────────────
@@ -13341,27 +13375,32 @@ function ofBindDock() {
    Hyperliquid feed; otherwise leaves the engine on its last coin and says
    so in the dock note — an honest state, never substituted depth. */
 function ofFollowChartSymbol(sym) {
-  const route = ofVenueRoute(sym);
+  const coin = ofNormalizeSymbol(sym);
   const note = $("ofd-note");
-  const flowChip = $("ofd-flow");
-  if (route) {
+  if (!coin) return;
+  // Follow onto the venue the ENGINE is on — never force one. Before the
+  // engine's route is readable (mid-boot) HL is the boot default.
+  const cur = ofEngineRoute();
+  const venue = (cur && OF_VENUES[cur.venue]) ? cur.venue : "hl";
+  if (OF_VENUES[venue].listed(coin)) {
     if (note && note.dataset.kind === "venue") { note.classList.add("hidden"); note.dataset.kind = ""; }
-    if (flowChip) flowChip.textContent = route.venue + " " + route.instrument;
-    if (ofActiveHost() && route.coin !== ofState.symbol) {
-      ofState.symbol = route.coin;
-      if (ofState.ready) loadOrderFlowSymbol(route.coin);
-    } else if (route.coin === ofState.symbol) {
-      // already on it
+    if (ofActiveHost() && coin !== ofState.symbol) {
+      ofState.symbol = coin;
+      if (ofState.ready) loadOrderFlowSymbol(coin);
+    } else if (coin === ofState.symbol) {
+      ofUpdateFlowChip(); // already on it — chip still mirrors the engine
     } else {
       // No surface on screen: remember the coin so the next open lands on it.
-      ofState.symbol = route.coin;
+      ofState.symbol = coin;
     }
-  } else if (sym) {
-    if (flowChip) flowChip.textContent = "HYPERLIQUID " + (ofState.symbol || "—") + " PERP";
+  } else {
+    // Honest state: the coin is not in the known list for this venue.
     if (note) {
-      note.textContent = "NO ORDER-FLOW VENUE FOR " + String(sym).toUpperCase()
-        + " — the engine stays on " + (ofState.symbol || "—")
-        + " (Hyperliquid). Real L2 flow only; nothing is simulated.";
+      note.textContent = "NO VERIFIED " + OF_VENUES[venue].label + " LISTING FOR "
+        + String(sym).toUpperCase() + " — the engine stays on "
+        + (ofState.symbol || "—") + ". Switch venue in the terminal's own "
+        + "market picker to chart it elsewhere. Real L2 flow only; nothing "
+        + "is simulated.";
       note.dataset.kind = "venue";
       note.classList.remove("hidden");
     }
@@ -13411,9 +13450,12 @@ function ofPushTimeframe(force) {
   }
 }
 
-// Point the warm G-Flow iframe at a new Hyperliquid symbol. Reloading the
-// engine's URL is the supported switch path: the WASM client reads
-// ?exchange= and ?symbol= on boot and resubscribes through the gateway.
+// Point the warm G-Flow iframe at a new symbol ON THE ENGINE'S CURRENT
+// VENUE. Reloading the engine's URL is the supported switch path: the
+// WASM client is router-based on /terminal/<venue>/<symbol> and boots
+// onto that market — the same navigation its own picker performs. The
+// venue is never reset here; the terminal owns venue choice, GT only
+// retargets the symbol (spelled the way that venue expects).
 function loadOrderFlowSymbol(sym) {
   const coin = ofNormalizeSymbol(sym) || "BTC";
   ofState.symbol = coin;
@@ -13421,18 +13463,22 @@ function loadOrderFlowSymbol(sym) {
   if (inp && inp.value.toUpperCase() !== coin) inp.value = coin;
   const label = $("of-sym");
   if (label) label.textContent = coin;
+  const cur = ofEngineRoute();
+  const venue = (cur && OF_VENUES[cur.venue]) ? cur.venue : "hl";
+  const vsym = OF_VENUES[venue].mapCoin(coin);
   const fr = $("of-frame");
   // Only (re)load when the runtime is ready; refreshOrderFlowStatus boots
   // the first frame once artifacts are present.
   if (fr && ofState.ready) {
-    fr.src = "/edgedepth/index.html?exchange=hl&symbol=" + encodeURIComponent(coin);
-    // Fresh boot: the engine starts on its own default timeframe, so the
-    // bridge pushes the chart's timeframe once the runtime is up.
-    ofState.lastTfSec = 0;
-    ofPushTimeframe(true);
+    if (!cur || cur.symbol !== vsym) {
+      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym);
+      // Fresh boot: the engine starts on its own default timeframe, so the
+      // bridge pushes the chart's timeframe once the runtime is up.
+      ofState.lastTfSec = 0;
+      ofPushTimeframe(true);
+    }
   }
-  const flowChip = $("ofd-flow");
-  if (flowChip) flowChip.textContent = "HYPERLIQUID " + coin + " PERP";
+  ofUpdateFlowChip(venue, vsym);
 }
 
 // Wire the switcher controls once (idempotent — the page can re-enter).
@@ -13485,6 +13531,14 @@ async function refreshOrderFlowStatus() {
   set("of-gw", gwOn ? "LIVE" : ((gw && gw.state) || "OFFLINE"), gwOn ? "on" : "off");
   set("of-art", ready ? "RUNTIME READY" : "RUNTIME ARTIFACTS MISSING",
       ready ? "on" : "off");
+  // The engine's route is the source of truth for venue + symbol: a switch
+  // made inside the terminal (its market picker) must be reflected here,
+  // not overwritten by GT's last idea of the market.
+  const engineRoute = ofEngineRoute();
+  if (engineRoute) {
+    ofState.symbol = ofNormalizeSymbol(engineRoute.symbol) || ofState.symbol;
+  }
+  ofUpdateFlowChip();
   set("of-sym", ofState.symbol || "—");
   // The Price & Chart dock mirrors the same honest state (one truth, two
   // surfaces — both describe the single engine instance in #of-portal).
@@ -13522,9 +13576,9 @@ async function refreshOrderFlowStatus() {
   }
   const fr = $("of-frame");
   if (fr && ready && !fr.getAttribute("src")) {
-    // Real EdgeDepth client inside Green Terminal (same origin /edgedepth).
-    // Boots the selected Hyperliquid perp (HL-only gateway for now; Binance
-    // is unregistered server-side until it is reachable again).
+    // Real EdgeDepth client inside Green Terminal (same origin). First boot
+    // lands on Hyperliquid; after that the terminal's own market picker
+    // owns the venue (binancef / bybit / hl) and GT follows its route.
     ofState.ready = true;
     loadOrderFlowSymbol(ofState.symbol);
   }
