@@ -2,15 +2,15 @@
 
 A small Go binary that bridges public futures streams into the
 [EdgeDepth Terminal](https://github.com/edgedepthhq/edgedepth-terminal) wire
-format, on localhost. One venue is served for now: `hl` (Hyperliquid
-perpetuals). The Binance adapter stays in the tree, unregistered.
+format, on localhost. Three venues are served: `binancef` (Binance USD-M
+futures), `bybit` (Bybit linear perpetuals) and `hl` (Hyperliquid perpetuals).
 
 The terminal is a client. It speaks protobuf over WebSocket and connects to
 whatever feed you point it at. This is a feed you can run yourself, with one
 command, using no API key and no account.
 
 ```
-Binance public streams  ->  edgedepth-gateway  ->  ws://localhost:8080/ws  ->  terminal
+Binance / Bybit / Hyperliquid public streams  ->  edgedepth-gateway  ->  ws://localhost:8080/ws  ->  terminal
 ```
 
 ## Quick start

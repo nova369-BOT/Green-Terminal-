@@ -29,8 +29,8 @@ namespace Menu {
         enum class SortMode { Symbol, Score, VPIN, Price, Change24h, Volume } sort_mode = SortMode::Symbol;
         bool sort_ascending = true; // true = ascending, false = descending
 
-        // Exchange the picker list is filtered to (venue toggle). "hl" only for
-        // now; Binance/Bybit are unregistered on the GT gateway.
+        // Exchange the picker list is filtered to (venue toggle).
+        // "binancef" | "hl" | "bybit". GT boots on Hyperliquid by default.
         std::string selected_exchange = "hl";
         std::string prev_exchange     = "hl";
         int exchange_total = 0; // count of listed symbols for selected_exchange (header)
