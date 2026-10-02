@@ -21,6 +21,36 @@ def test_health(client):
     assert body["ok"] is True
 
 
+def test_terminal_prefix_serves_edgedepth_spa(client):
+    # The EdgeDepth WASM client is router-based on /terminal/<venue>/<symbol>:
+    # picking another venue or pair does a FULL navigation there
+    # (url_navigate in src/core/url_router.h). Upstream covers the prefix
+    # with a scoped nginx SPA fallback; the engine must do the same or the
+    # G-Flow dock lands on {"detail":"Not Found"} on every market switch.
+    for path in ("/terminal/binancef/btcusdt", "/terminal/bybit/BTCUSDT",
+                 "/terminal/hl/BTC", "/terminal/btcusdt", "/terminal"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers["content-type"].startswith("text/html"), path
+        assert "edgedepth-config.js" in r.text, path  # the real app shell
+
+    # Document-relative scripts requested from inside the prefix resolve to
+    # the real artifacts, at both depths the router can produce.
+    for base in ("/terminal", "/terminal/binancef"):
+        r = client.get(f"{base}/index.js")
+        assert r.status_code == 200, base
+        assert "javascript" in r.headers["content-type"], base
+        r = client.get(f"{base}/coi-serviceworker.js")
+        assert r.status_code == 200, base
+
+        # The config MUST be the dynamic one carrying the local gateway WS
+        # URL — a static copy would silently point at the hosted feed.
+        r = client.get(f"{base}/edgedepth-config.js")
+        assert r.status_code == 200, base
+        assert "__EDGEDEPTH_WS_URL__" in r.text, base
+        assert "ws://" in r.text, base
+
+
 def test_providers_listing(client):
     provs = {p["name"]: p for p in client.get("/api/providers").json()}
     assert provs["demo"]["configured"] is True

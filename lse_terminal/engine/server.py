@@ -8391,6 +8391,55 @@ def create_app() -> FastAPI:
     app.mount("/edgedepth", StaticFiles(directory=str(_EDGE_DIR), html=True),
               name="edgedepth")
 
+    # ── /terminal/<venue>/<symbol> — the WASM client's own router prefix ──
+    # The terminal is router-based on exactly one prefix: a few seconds
+    # after boot it pushState's /terminal/<venue>/<symbol>, and picking a
+    # different market does a FULL navigation there (url_navigate in
+    # src/core/url_router.h). Upstream hosts the app behind nginx with a
+    # scoped SPA fallback for that prefix (docker/nginx.conf); without the
+    # same counterpart here, switching venue or pair inside the G-Flow dock
+    # landed the iframe on FastAPI's {"detail":"Not Found"}.
+    #
+    # Scoped exactly like upstream's nginx rule. The shell loads index.js,
+    # coi-serviceworker.js and edgedepth-config.js with DOCUMENT-RELATIVE
+    # srcs, so from /terminal/binancef/btcusdt the browser asks for
+    # /terminal/binancef/<script>: those three resolve to the real files.
+    # edgedepth-config.js MUST resolve to the dynamic route above — that is
+    # where __EDGEDEPTH_WS_URL__ lives, and a stale static copy would point
+    # the terminal at the hosted feed instead of the local gateway. Every
+    # other path under the prefix returns the app shell. index.wasm and
+    # index.data are unaffected either way: Module.locateFile already
+    # returns /edgedepth/-absolute paths.
+    _EDGE_NO_CACHE = {"Cache-Control": "max-age=0, must-revalidate"}
+
+    def _edgedepth_spa(rest: str):
+        from fastapi.responses import FileResponse
+        segs = [s for s in rest.split("/") if s]
+        leaf = segs[-1] if segs else ""
+        if len(segs) <= 2:
+            if leaf == "edgedepth-config.js":
+                return edgedepth_config_js()
+            if leaf in ("index.js", "coi-serviceworker.js"):
+                f = _EDGE_DIR / leaf
+                if not f.is_file():
+                    raise HTTPException(404, f"{leaf} not built")
+                return FileResponse(str(f),
+                                    media_type="application/javascript",
+                                    headers=_EDGE_NO_CACHE)
+        shell = _EDGE_DIR / "index.html"
+        if not shell.is_file():
+            raise HTTPException(404, "EdgeDepth artifacts not built")
+        return FileResponse(str(shell), media_type="text/html",
+                            headers=_EDGE_NO_CACHE)
+
+    @app.get("/terminal")
+    def edgedepth_terminal_root():
+        return _edgedepth_spa("")
+
+    @app.get("/terminal/{rest:path}")
+    def edgedepth_terminal_spa(rest: str):
+        return _edgedepth_spa(rest)
+
     @app.get("/api/edgedepth/artifacts")
     def edgedepth_artifacts():
         """Which real EdgeDepth build outputs are present. No fabrication."""
