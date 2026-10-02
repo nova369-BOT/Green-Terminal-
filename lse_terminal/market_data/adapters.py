@@ -83,14 +83,20 @@ class MarketDataProvider:
                 "demo", "spread", "userdata",
             )
         timeframes = list(getattr(self.provider, "timeframes", []) or [])
+        formal = formal_capabilities(self.provider)
+        # Depth flags are the TRUTH of the formal capability list, never a
+        # promise: formal only carries L2/L3_MBO when a provider explicitly
+        # declares a verified implementation (e.g. binance-depth's
+        # sequence-validated local book in engine/feeds/binance_depth.py).
+        # Hardcoding False here contradicted the provider's own declaration.
         return ProviderCapabilities(
             provider=self.name,
-            formal=formal_capabilities(self.provider),
+            formal=formal,
             legacy=legacy,
             timeframes=timeframes,
             configured=configured,
-            l2=False,
-            l3=False,
+            l2="L2" in formal,
+            l3="L3_MBO" in formal,
         )
 
     def health_check(self) -> dict:

@@ -4963,6 +4963,20 @@ body { padding-bottom: 22px; padding-left: 62px; }
   position: relative;
   background: #05080a;
 }
+
+/* ── G-Flow portal: the single engine iframe, glued over the active host
+   rect by app.js (dock on Price & Chart, or the full G-Flow page). Fixed
+   position so a DOM reparent (which would reboot the WASM engine) is never
+   needed. z-index sits above section content but below menus/dialogs. ── */
+#of-portal {
+  position: fixed;
+  left: 0; top: 0;
+  width: 0; height: 0;
+  z-index: 45;
+  background: #05080a;
+  overflow: hidden;
+}
+#of-portal.hidden { display: none !important; }
 #of-frame {
   position: absolute;
   inset: 0;
@@ -4972,6 +4986,98 @@ body { padding-bottom: 22px; padding-left: 62px; }
   display: block;
   background: #05080a;
 }
+
+/* ── G-Flow dock inside Price & Chart: LSE chart stays the left pane,
+   the complete order-flow engine rides the right pane. Same racing-green
+   + brass chrome as the full G-Flow page (reuses .of-k/.of-v/.of-link). ── */
+#of-dock {
+  display: flex;
+  flex-direction: row;
+  flex: 0 0 var(--ofd-w, 46%);
+  min-width: 320px;
+  max-width: 78%;
+  min-height: 0;
+  background: #05080a;
+  border-left: 1px solid #2c3b32;
+}
+#of-dock.hidden { display: none !important; }
+#ofd-resize {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid #1c2620;
+}
+#ofd-resize:hover, #ofd-resize.drag { background: #b08d57; }
+#ofd-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+#ofd-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  background: #0a0f0c;
+  border-bottom: 1px solid #b08d57;
+  font: 10px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  color: #9aa79d;
+  flex: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#ofd-bar .of-k { font-size: 9px; letter-spacing: 0.12em; opacity: 0.7; flex: none; }
+#ofd-bar > .of-k:first-child { color: #b08d57; opacity: 1; font-weight: 700; }
+#ofd-bar .of-v { color: #f4f1e8; flex: none; }
+/* The venue/instrument chip is the longest text: let it give way first. */
+#ofd-bar #ofd-flow {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#ofd-bar .of-v.on { color: #34c77b; }
+#ofd-bar .of-v.warn { color: #b08d57; }
+#ofd-bar .of-v.off { color: #9aa79d; }
+#ofd-bar .of-sep { width: 1px; height: 12px; background: #2c3b32; flex: none; }
+#ofd-bar .of-flex { flex: 1 1 0; min-width: 4px; }
+#ofd-bar .of-link {
+  color: #9aa79d;
+  background: transparent;
+  border: 1px solid #2c3b32;
+  padding: 2px 5px;
+  border-radius: 2px;
+  font: 9px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  flex: none;
+}
+#ofd-bar .of-link:hover { color: #f4f1e8; border-color: #b08d57; }
+#ofd-note {
+  flex: none;
+  padding: 6px 10px;
+  background: #0a0f0c;
+  border-bottom: 1px solid #2c3b32;
+  font: 10px/1.5 var(--mono, ui-monospace, monospace);
+  color: #b08d57;
+}
+#ofd-note.hidden { display: none !important; }
+#ofd-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #05080a;
+}
+/* Maximise: the dock takes the whole stage; the chart column and the info
+   rail step aside until restored. Chart state is untouched (display only). */
+#chart-stage.ofd-max > #chart-col,
+#chart-stage.ofd-max > #info-rail { display: none !important; }
+#chart-stage.ofd-max > #of-dock { flex: 1 1 auto; max-width: none; border-left: 0; }
+/* Toolbar toggle carries an "on" state like other latching chrome. */
+#of-dock-toggle.on { color: #f4f1e8; border-color: #b08d57; }
 
 /* ============================================================================
    Item 3: DISPLAY settings modal — interface scale, density, panel visibility.

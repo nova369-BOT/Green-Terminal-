@@ -48,13 +48,20 @@ class MarketDataService:
 
     def capabilities_payload(self) -> dict:
         providers = [ad.get_capabilities().to_dict() for _, ad in sorted(self.adapters.items())]
+        # Aggregate depth honestly from per-provider truth: a flag flips only
+        # when at least one registered provider declares a verified feed
+        # (today: binance-depth's sequence-validated L2 book). Nothing here is
+        # ever derived from wishful constants.
+        any_l2 = any(p.get("l2") for p in providers)
+        any_l3 = any(p.get("l3") for p in providers)
         return {
             "providers": providers,
             "event_types": [e.value for e in EventType],
             "depth": {
-                "l2": False,
-                "l3": False,
-                "note": "no L2/L3 source wired; flags stay false until a verified feed exists",
+                "l2": any_l2,
+                "l3": any_l3,
+                "note": ("flags mirror registered providers; a flag is true only "
+                         "when a provider ships a verified depth implementation"),
             },
             "models": ["NormalizedQuote", "NormalizedTrade", "NormalizedCandle", "MarketStatus"],
         }

@@ -29,18 +29,33 @@ def client():
 
 
 def test_capabilities_never_fake_depth(client: TestClient):
+    """Depth flags mirror provider truth, never wishful constants.
+
+    The only provider allowed to declare L2 is binance-depth, whose local
+    order book is a real sequence-validated implementation
+    (lse_terminal/engine/feeds/binance_depth.py, covered by
+    tests/test_binance_depth*.py). Everybody else must stay depth-free, and
+    nobody may claim L3/MBO.
+    """
     body = client.get("/api/market-data/capabilities").json()
-    assert body["depth"]["l2"] is False
-    assert body["depth"]["l3"] is False
     providers = {p["provider"]: p for p in body["providers"]}
-    assert set(providers) >= {"demo", "lse", "userdata"}
+    assert set(providers) >= {"demo", "lse", "userdata", "binance-depth"}
     # Formal caps: demo streams, userdata is history-only.
     assert "WEBSOCKET" in providers["demo"]["formal"]
     assert "WEBSOCKET" not in providers["userdata"]["formal"]
-    for p in providers.values():
-        assert p["l2"] is False and p["l3"] is False
-        assert "L2" not in p["formal"]
+    for name, p in providers.items():
+        if name == "binance-depth":
+            assert p["l2"] is True
+            assert "L2" in p["formal"]
+        else:
+            assert p["l2"] is False
+            assert "L2" not in p["formal"]
+        # No registered provider has a verified L3/MBO feed.
+        assert p["l3"] is False
         assert "L3_MBO" not in p["formal"]
+    # Aggregate flags are derived from the providers above — nothing else.
+    assert body["depth"]["l2"] is True      # binance-depth and only it
+    assert body["depth"]["l3"] is False
     # Reserved event types are listed for future consumers.
     assert "ORDER_BOOK_UPDATE" in body["event_types"]
     assert "MBO_EVENT" in body["event_types"]
@@ -337,6 +352,17 @@ def test_orderflow_workspace_markers():
     assert "sub-mk-flow" in app
     # No lookalike DOM ladder in the shell (real engine lives in the iframe).
     assert "of-ladder" not in html
+    # Unified chart: the single engine iframe lives in the body-level portal
+    # and is surfaced BOTH on the full G-Flow page (#of-stage host) and in
+    # the Price & Chart dock (#of-dock / #ofd-stage host) — one engine, one
+    # socket, no duplicate books.
+    assert 'id="of-portal"' in html
+    assert 'id="of-dock"' in html
+    assert 'id="ofd-stage"' in html
+    assert 'id="of-dock-toggle"' in html
+    for marker in ("ofActiveHost", "ofSyncPortal", "ofVenueRoute",
+                   "ofFollowChartSymbol", "ofPushTimeframe"):
+        assert marker in app, f"missing unified-chart glue: {marker}"
     # Vendored authoritative EdgeDepth source present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
     assert (root / "third_party/edgedepth-terminal/src/core/heatmap_manager.cpp").is_file()
@@ -357,4 +383,7 @@ def test_gateway_serves_hyperliquid_only():
         assert (hl / name).is_file(), f"missing hyperliquid/{name}"
     assert '"hl"' in (hl / "adapter.go").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
-    assert "/edgedepth/index.html?exchange=hl&symbol=BTC" in app
+    # The engine URL is built dynamically per coin but always boots the hl
+    # exchange; the shell's default coin is BTC.
+    assert '"/edgedepth/index.html?exchange=hl&symbol=" + encodeURIComponent(coin)' in app
+    assert 'symbol: "BTC"' in app

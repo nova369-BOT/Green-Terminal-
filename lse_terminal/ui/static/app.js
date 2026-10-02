@@ -907,6 +907,11 @@ async function loadChart() {
   // Any explicit (re)load returns us to the live tail: drop the History
   // Navigator's history pin so streaming resumes normally.
   state.historyPinned = false;
+  // One chart experience: the docked order-flow engine follows the shell's
+  // timeframe through every path that lands here (toolbar click, workspace
+  // restore, mega-selector). No-ops when the dock is closed, TF-sync is off,
+  // the engine is cold, or the timeframe did not actually change.
+  if (typeof ofPushTimeframe === "function") ofPushTimeframe(false);
   if (!state.provider || !state.symbol) {
     // Keyless / no instrument: stay in the honest waiting state.
     if (!state.provider || state.dataWaiting) {
@@ -4314,18 +4319,12 @@ function setSymbol(symbol) {
   // One pick, both surfaces: on a venue's own source the sidebar row IS the
   // instrument choice, so the ticket takes it too (see tpbFollowChart).
   if (typeof tpbFollowChart === "function") tpbFollowChart(symbol);
-  // Unified watchlist → G-Flow: one watchlist drives everything. When the
-  // G-Flow page is on screen, clicking any watchlist row retargets the live
-  // order-flow engine instantly (crypto with real Hyperliquid depth only; a
-  // symbol without flow leaves the engine on its last coin — no fake depth).
-  const ofPageOpen = $("orderflow") && !$("orderflow").classList.contains("hidden");
-  if (ofPageOpen && typeof ofNormalizeSymbol === "function") {
-    const ofCoin = ofNormalizeSymbol(symbol);
-    if (OF_HL_PRESETS.includes(ofCoin)) {
-      ofState.symbol = ofCoin;
-      if (ofState.ready) loadOrderFlowSymbol(ofCoin);
-    }
-  }
+  // Unified symbol routing → G-Flow: one pick drives every surface. Whether
+  // the engine is docked beside this chart or on its full page, the charted
+  // instrument retargets the warm engine when it has a real Hyperliquid
+  // feed; a symbol without flow leaves the engine on its last coin and the
+  // dock says so honestly — no fake depth, ever.
+  if (typeof ofFollowChartSymbol === "function") ofFollowChartSymbol(symbol);
 }
 
 function renderTimeframes() {
@@ -13146,7 +13145,13 @@ function showOptionsPage() {
    edgedepth-terminal). DOM / heatmap / tape / footprint all run inside
    that engine. This shell only provides GREEN TERMINAL navigation, status
    (gateway reachability + artifact readiness), and layout. */
-const ofState = { poll: 0, ready: false, symbol: "BTC", bound: false };
+const ofState = {
+  poll: 0, ready: false, symbol: "BTC", bound: false,
+  // Timeframe bridge into the engine (Module.__set_chart_timeframe):
+  // last seconds pushed, and the retry timer that waits for the WASM
+  // runtime to finish booting after a (re)load.
+  lastTfSec: 0, tfTimer: 0,
+};
 
 // Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
 // The gateway is HL-only for now; these are the deepest, most-traded coins.
@@ -13167,6 +13172,245 @@ function ofNormalizeSymbol(raw) {
   return s || String(raw || "").trim().toUpperCase();
 }
 
+/* ── Symbol → order-flow venue routing ─────────────────────────────────
+   One place decides whether a charted instrument has a REAL order-flow
+   feed and on which venue. Today the gateway registers Hyperliquid perps
+   only; adding a venue (e.g. re-registering Binance) extends THIS function,
+   not the call sites. Returns null when no verified flow exists — callers
+   must then show an honest state, never substitute depth. */
+function ofVenueRoute(sym) {
+  const coin = ofNormalizeSymbol(sym);
+  if (!coin) return null;
+  if (OF_HL_PRESETS.includes(coin)) {
+    return { exchange: "hl", coin, venue: "HYPERLIQUID", instrument: coin + " PERP" };
+  }
+  return null;
+}
+
+/* ── G-Flow portal: ONE engine, two surfaces ───────────────────────────
+   The EdgeDepth WASM engine lives in a single iframe (#of-frame inside
+   #of-portal at body level). Reparenting an iframe reloads it — that would
+   reboot the engine and drop its warm gateway socket — so the frame never
+   moves. Instead this manager glues the fixed-position portal over the
+   active HOST RECT: #of-stage (full G-Flow page) wins when that page is
+   open, else #ofd-stage (the Price & Chart dock). With no host on screen
+   the portal hides, exactly like the old in-section frame did. */
+const ofPortal = { timer: 0, host: null };
+
+function ofActiveHost() {
+  const page = $("orderflow");
+  if (page && !page.classList.contains("hidden")) return $("of-stage");
+  const dock = $("of-dock"), charts = $("charts");
+  if (dock && charts && !dock.classList.contains("hidden")
+      && !charts.classList.contains("hidden")) return $("ofd-stage");
+  return null;
+}
+
+function ofSyncPortal() {
+  const portal = $("of-portal");
+  if (!portal) return;
+  // Fullscreen Expand hands the rect to the browser; do not fight it.
+  if (document.fullscreenElement === portal) return;
+  const host = ofActiveHost();
+  let r = null;
+  if (host && host.offsetParent !== null) r = host.getBoundingClientRect();
+  if (!r || r.width < 40 || r.height < 40) {
+    if (!portal.classList.contains("hidden")) portal.classList.add("hidden");
+    ofPortal.host = null;
+  } else {
+    portal.classList.remove("hidden");
+    const st = portal.style;
+    st.left = Math.round(r.left) + "px";
+    st.top = Math.round(r.top) + "px";
+    st.width = Math.round(r.width) + "px";
+    st.height = Math.round(r.height) + "px";
+    ofPortal.host = host;
+  }
+  // Status poll runs exactly while an engine surface is on screen.
+  if (ofPortal.host && !ofState.poll) {
+    refreshOrderFlowStatus();
+    ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
+  } else if (!ofPortal.host && ofState.poll) {
+    clearInterval(ofState.poll); ofState.poll = 0;
+  }
+}
+
+function ofStartPortal() {
+  if (ofPortal.timer) return;
+  const tick = () => ofSyncPortal();
+  // 200 ms keeps the frame glued through layout changes no event covers
+  // (flex reflows, fonts, section swaps); the direct calls below make the
+  // interactive paths (resize drag, page swaps) feel instant.
+  ofPortal.timer = setInterval(tick, 200);
+  window.addEventListener("resize", tick);
+  window.addEventListener("scroll", tick, true);
+  document.addEventListener("fullscreenchange", tick);
+  tick();
+}
+
+/* ── G-Flow dock on Price & Chart ──────────────────────────────────────
+   The complete engine (its own chart, DOM, heatmap, tape, footprint,
+   replay, workspaces — everything the WASM terminal ships) docked beside
+   the LSE chart. Open state / width / TF-sync persist per browser. */
+const ofDock = { open: true, w: 0, max: false, tfSync: true, bound: false };
+
+function ofDockLoadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem("gt-ofdock") || "{}");
+    if (typeof p.open === "boolean") ofDock.open = p.open;
+    if (typeof p.w === "number" && p.w >= 0) ofDock.w = p.w;
+    if (typeof p.max === "boolean") ofDock.max = p.max;
+    if (typeof p.tfSync === "boolean") ofDock.tfSync = p.tfSync;
+  } catch (e) { /* first run */ }
+}
+
+function ofDockSavePrefs() {
+  try {
+    localStorage.setItem("gt-ofdock", JSON.stringify({
+      open: ofDock.open, w: ofDock.w, max: ofDock.max, tfSync: ofDock.tfSync,
+    }));
+  } catch (e) { /* storage unavailable */ }
+}
+
+function ofDockApply() {
+  const d = $("of-dock");
+  if (!d) return;
+  d.classList.toggle("hidden", !ofDock.open);
+  if (ofDock.w > 0) d.style.flexBasis = ofDock.w + "px";
+  const stage = $("chart-stage");
+  if (stage) stage.classList.toggle("ofd-max", !!(ofDock.open && ofDock.max));
+  const t = $("of-dock-toggle");
+  if (t) t.classList.toggle("on", !!ofDock.open);
+  const mx = $("ofd-max");
+  if (mx) mx.textContent = ofDock.max ? "Restore" : "Max";
+  const tf = $("ofd-tfsync");
+  if (tf) tf.textContent = "TF: " + (ofDock.tfSync ? "on" : "off");
+  ofSyncPortal();
+  if (ofDock.open) {
+    refreshOrderFlowStatus();
+    ofFollowChartSymbol(state.symbol);
+  }
+  // The LSE chart shares the stage: kick a resize so it reflows its canvas.
+  window.dispatchEvent(new Event("resize"));
+}
+
+function ofBindDock() {
+  if (ofDock.bound) return;
+  const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
+  on("of-dock-toggle", () => { ofDock.open = !ofDock.open; ofDockSavePrefs(); ofDockApply(); });
+  on("ofd-close", () => { ofDock.open = false; ofDockSavePrefs(); ofDockApply(); });
+  on("ofd-max", () => { ofDock.max = !ofDock.max; ofDockSavePrefs(); ofDockApply(); });
+  on("ofd-tfsync", () => {
+    ofDock.tfSync = !ofDock.tfSync; ofDockSavePrefs(); ofDockApply();
+    if (ofDock.tfSync) ofPushTimeframe(true);
+  });
+  on("ofd-page", () => { showOrderFlowPage(); });
+  // Width drag: the handle rides the dock's left edge.
+  const grip = $("ofd-resize");
+  if (grip) {
+    grip.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      grip.classList.add("drag");
+      grip.setPointerCapture(e.pointerId);
+      const stage = $("chart-stage");
+      const move = (ev) => {
+        if (!stage) return;
+        const r = stage.getBoundingClientRect();
+        const w = Math.max(320, Math.min(r.right - ev.clientX, r.width * 0.78));
+        ofDock.w = Math.round(w);
+        const d = $("of-dock");
+        if (d) d.style.flexBasis = ofDock.w + "px";
+        ofSyncPortal();
+      };
+      const up = () => {
+        grip.classList.remove("drag");
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", up);
+        ofDockSavePrefs();
+        window.dispatchEvent(new Event("resize"));
+      };
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", up);
+    });
+  }
+  ofDock.bound = true;
+}
+
+/* Chart symbol → engine symbol. Called from setSymbol (and dock open):
+   retargets the warm engine when the charted instrument has a real
+   Hyperliquid feed; otherwise leaves the engine on its last coin and says
+   so in the dock note — an honest state, never substituted depth. */
+function ofFollowChartSymbol(sym) {
+  const route = ofVenueRoute(sym);
+  const note = $("ofd-note");
+  const flowChip = $("ofd-flow");
+  if (route) {
+    if (note && note.dataset.kind === "venue") { note.classList.add("hidden"); note.dataset.kind = ""; }
+    if (flowChip) flowChip.textContent = route.venue + " " + route.instrument;
+    if (ofActiveHost() && route.coin !== ofState.symbol) {
+      ofState.symbol = route.coin;
+      if (ofState.ready) loadOrderFlowSymbol(route.coin);
+    } else if (route.coin === ofState.symbol) {
+      // already on it
+    } else {
+      // No surface on screen: remember the coin so the next open lands on it.
+      ofState.symbol = route.coin;
+    }
+  } else if (sym) {
+    if (flowChip) flowChip.textContent = "HYPERLIQUID " + (ofState.symbol || "—") + " PERP";
+    if (note) {
+      note.textContent = "NO ORDER-FLOW VENUE FOR " + String(sym).toUpperCase()
+        + " — the engine stays on " + (ofState.symbol || "—")
+        + " (Hyperliquid). Real L2 flow only; nothing is simulated.";
+      note.dataset.kind = "venue";
+      note.classList.remove("hidden");
+    }
+  }
+}
+
+/* ── Timeframe bridge ──────────────────────────────────────────────────
+   The engine exports Module.__set_chart_timeframe(sec) (main.cpp, the same
+   change_timeframe path its own topbar uses). Push the shell timeframe when
+   it maps onto a resolution the gateway serves; seconds/tick/range charts
+   stay LSE-only and the engine keeps its own setting. After an engine
+   (re)boot the export appears only once the runtime is up, so a short retry
+   timer waits for it. */
+function ofTfSeconds(tf) {
+  const m = typeof tfMinutes === "function" ? tfMinutes(tf) : 0;
+  if (!m || m <= 0) return 0;
+  const sec = Math.round(m * 60);
+  return [60, 180, 300, 900, 1800, 3600, 7200, 14400, 86400].includes(sec) ? sec : 0;
+}
+
+function ofPushTimeframe(force) {
+  if (!ofDock.tfSync) return;
+  const fr = $("of-frame");
+  if (!fr || !fr.getAttribute("src")) return;
+  const sec = ofTfSeconds(state.timeframe);
+  if (!sec) return;
+  if (!force && sec === ofState.lastTfSec) return;
+  if (ofState.tfTimer) { clearInterval(ofState.tfTimer); ofState.tfTimer = 0; }
+  let tries = 0;
+  const attempt = () => {
+    tries += 1;
+    let f = null;
+    try {
+      const M = fr.contentWindow && fr.contentWindow.Module;
+      f = M && (M.__set_chart_timeframe || M._set_chart_timeframe);
+    } catch (e) { f = null; }
+    if (typeof f === "function") {
+      try { f(sec); ofState.lastTfSec = sec; } catch (e) { /* engine mid-boot */ }
+      if (ofState.tfTimer) { clearInterval(ofState.tfTimer); ofState.tfTimer = 0; }
+      return;
+    }
+    if (tries > 90 && ofState.tfTimer) { clearInterval(ofState.tfTimer); ofState.tfTimer = 0; }
+  };
+  attempt();
+  if (ofState.lastTfSec !== sec && !ofState.tfTimer) {
+    ofState.tfTimer = setInterval(attempt, 700);
+  }
+}
+
 // Point the warm G-Flow iframe at a new Hyperliquid symbol. Reloading the
 // engine's URL is the supported switch path: the WASM client reads
 // ?exchange= and ?symbol= on boot and resubscribes through the gateway.
@@ -13182,7 +13426,13 @@ function loadOrderFlowSymbol(sym) {
   // the first frame once artifacts are present.
   if (fr && ofState.ready) {
     fr.src = "/edgedepth/index.html?exchange=hl&symbol=" + encodeURIComponent(coin);
+    // Fresh boot: the engine starts on its own default timeframe, so the
+    // bridge pushes the chart's timeframe once the runtime is up.
+    ofState.lastTfSec = 0;
+    ofPushTimeframe(true);
   }
+  const flowChip = $("ofd-flow");
+  if (flowChip) flowChip.textContent = "HYPERLIQUID " + coin + " PERP";
 }
 
 // Wire the switcher controls once (idempotent — the page can re-enter).
@@ -13236,6 +13486,23 @@ async function refreshOrderFlowStatus() {
   set("of-art", ready ? "RUNTIME READY" : "RUNTIME ARTIFACTS MISSING",
       ready ? "on" : "off");
   set("of-sym", ofState.symbol || "—");
+  // The Price & Chart dock mirrors the same honest state (one truth, two
+  // surfaces — both describe the single engine instance in #of-portal).
+  set("ofd-gw", gwOn ? "LIVE" : ((gw && gw.state) || "OFFLINE"), gwOn ? "on" : "off");
+  set("ofd-art", ready ? "READY" : "MISSING", ready ? "on" : "off");
+  const dnote = $("ofd-note");
+  if (dnote && (!dnote.dataset.kind || dnote.dataset.kind === "runtime")) {
+    if (!ready) {
+      dnote.textContent = "ORDER-FLOW RUNTIME NOT LOADED — the engine build "
+        + "(index.js / index.wasm / index.data) is missing. Nothing is "
+        + "simulated in its place.";
+      dnote.dataset.kind = "runtime";
+      dnote.classList.remove("hidden");
+    } else if (dnote.dataset.kind === "runtime") {
+      dnote.classList.add("hidden");
+      dnote.dataset.kind = "";
+    }
+  }
   const missing = art && art.present
     ? Object.entries(art.present).filter(([, ok]) => !ok).map(([k]) => k)
     : ["index.js", "index.wasm", "index.data"];
@@ -13267,10 +13534,15 @@ async function refreshOrderFlowStatus() {
   if (fsBtn && !fsBtn.dataset.bound) {
     fsBtn.dataset.bound = "1";
     fsBtn.addEventListener("click", () => {
-      const stage = $("of-stage");
-      if (!stage) return;
+      // Fullscreen must target the PORTAL: the engine iframe lives there,
+      // and the browser's top layer would otherwise cover it.
+      const portal = $("of-portal");
+      if (!portal) return;
       if (document.fullscreenElement) document.exitFullscreen();
-      else if (stage.requestFullscreen) stage.requestFullscreen();
+      else if (portal.requestFullscreen) {
+        portal.classList.remove("hidden");
+        portal.requestFullscreen();
+      }
     });
   }
 }
@@ -13303,6 +13575,19 @@ function showOrderFlowPage() {
   if (!ofState.poll) ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
   // Reuse instrument header for L1 context above the EdgeDepth surface.
   refreshInstrumentBarSoon();
+}
+
+/* G-Flow boot: restore the dock (open by default — Price & Chart IS the
+   order-flow environment), bind its controls once, and start the portal
+   loop that keeps the single engine frame glued to the active surface.
+   Runs at script evaluation (app.js loads at the end of <body>, DOM ready). */
+try {
+  ofDockLoadPrefs();
+  ofBindDock();
+  ofDockApply();
+  ofStartPortal();
+} catch (e) {
+  console.error("G-Flow dock boot failed:", e);
 }
 
 /* ---------- MARKETS > NEWS: the globe ---------------------------------

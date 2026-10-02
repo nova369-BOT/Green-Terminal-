@@ -379,6 +379,11 @@ def my_ind(df, length=20):
        an instant dossier of the real candles inside. Same ids the boot path
        binds; the layer + card live at body level below. -->
   <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
+  <!-- G-Flow dock toggle: surfaces the SAME warm EdgeDepth engine (one WASM
+       instance, one gateway socket — see #of-portal) beside this chart, so
+       DOM / heatmap / tape / footprint / replay live in the Price & Chart
+       workspace instead of a separate page. -->
+  <button id="of-dock-toggle" title="Dock the live order-flow engine (DOM, liquidity heatmap, tape, footprint, replay) beside this chart">Order flow</button>
   <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
        prefixes read as decoration, not chrome.
        The &#402; on Indicators stays: it is the recognised
@@ -546,6 +551,35 @@ def my_ind(df, length=20):
       </div>
     </div>
     </div><!-- /#chart-col -->
+    <!-- G-Flow dock: the Price & Chart surface of the order-flow engine.
+         #ofd-stage is only a HOST RECT — the engine itself is the single
+         warm iframe living in #of-portal (body level), which app.js keeps
+         glued over whichever host is on screen (this dock, or the full
+         G-Flow page). One engine, one socket, zero duplicate books.
+         Chips are honest state: gateway reachability, runtime artifacts,
+         and the exact venue instrument the flow comes from. -->
+    <div id="of-dock" class="hidden" aria-label="Order-flow dock">
+      <div id="ofd-resize" title="Drag to resize the order-flow dock"></div>
+      <div id="ofd-col">
+        <div id="ofd-bar">
+          <span class="of-k">G-FLOW</span>
+          <span class="of-sep"></span>
+          <span class="of-k">FLOW</span><span id="ofd-flow" class="of-v">—</span>
+          <span class="of-k">GW</span><span id="ofd-gw" class="of-v off" title="EdgeDepth gateway reachability">—</span>
+          <span class="of-k">RT</span><span id="ofd-art" class="of-v off" title="Engine runtime artifacts">—</span>
+          <span class="of-flex"></span>
+          <button type="button" class="of-link" id="ofd-tfsync"
+                  title="Follow the chart timeframe inside the engine">TF: on</button>
+          <button type="button" class="of-link" id="ofd-max"
+                  title="Give the engine the whole stage (chart hides until restored)">Max</button>
+          <button type="button" class="of-link" id="ofd-page"
+                  title="Open the full G-Flow workspace page">Page</button>
+          <button type="button" class="of-link" id="ofd-close" title="Close the dock">✕</button>
+        </div>
+        <div id="ofd-note" class="hidden" role="status"></div>
+        <div id="ofd-stage" aria-label="Order-flow engine host"></div>
+      </div>
+    </div>
     <!-- Phase 3-UI right rail: dense OHLC / market / session / technical
          facts. Every cell is filled from the active series or quote —
          never a placeholder card, empty cells stay —. -->
@@ -638,10 +672,9 @@ def my_ind(df, length=20):
       <div id="of-banner-title" class="of-bt">G-FLOW RUNTIME NOT LOADED</div>
       <div id="of-banner-detail" class="of-bd"></div>
     </div>
-    <div id="of-stage">
-      <iframe id="of-frame" title="Green Terminal G-Flow engine" allow="cross-origin-isolated"
-              referrerpolicy="no-referrer"></iframe>
-    </div>
+    <!-- Host rect only: the engine iframe lives once in #of-portal (end of
+         body) and is positioned over this stage whenever the page is open. -->
+    <div id="of-stage"></div>
   </section>
   <!-- Host for the ported manual backtester (mounted on demand). -->
   <section id="manual-backtest" class="hidden"></section>
@@ -1511,6 +1544,17 @@ def my_ind(df, length=20):
   <span class="ts-cell"><span class="ts-k">BUILD</span><span class="ts-v">75-allsymbols-fast</span></span>
   <span class="ts-cell ts-right"><span class="ts-k">WORKSPACE</span><span id="ts-ws" class="ts-v">Price &amp; Chart</span></span>
 </footer>
+<!-- G-Flow portal: the ONE EdgeDepth engine instance for the whole app.
+     The iframe is never reparented (a DOM move would reboot the WASM engine
+     and drop its warm gateway socket/book). Instead app.js positions this
+     fixed container over the active host rect: #ofd-stage when the dock is
+     open on Price & Chart, #of-stage on the full G-Flow page. Hidden (and
+     therefore paused by the browser) when neither host is on screen —
+     exactly the warm-iframe behaviour the old in-section frame had. -->
+<div id="of-portal" class="hidden">
+  <iframe id="of-frame" title="Green Terminal G-Flow engine" allow="cross-origin-isolated"
+          referrerpolicy="no-referrer"></iframe>
+</div>
 <script src="./app.js"></script>
 </body>
 </html>
