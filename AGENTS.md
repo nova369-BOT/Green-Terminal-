@@ -77,3 +77,46 @@ Read this first, every session. The user is a beginner; clarity beats cleverness
   direction is emerald/gold, NOT lime.
 - Mockups (workspace root, NOT in git): `gt-green-mockup*.png`,
   `gt-palette-*.png`.
+
+## 6. MANDATORY DESIGN PROPOSAL & APPROVAL RULE (user decree 2026-10-03 — overrides normal implementation workflow)
+
+NO visual, layout, UX, navigation, or structural UI change may be implemented
+without the user's explicit prior approval. Permanent workflow for every major
+UI/UX change:
+
+INSPECT → THINK → RECOMMEND → VISUALIZE → EXPLAIN → ASK FOR APPROVAL → WAIT
+→ IMPLEMENT → TEST → SHOW RESULT → ASK WHAT AREA IS NEXT.
+
+1. INSPECT first: current GT + EdgeDepth UI, layout, components, data flow,
+   styling, design language. Never guess.
+2. THINK and state "WHAT I THINK SHOULD BE DONE": what is wrong, why change,
+   proposed solution, what stays unchanged, affected components, visual goal,
+   risks/trade-offs. Be specific.
+3. SHOW the proposed design BEFORE implementing: mockup / high-fidelity image /
+   wireframe / before-after visual that represents the ACTUAL proposed GT
+   change (not a lookalike reference). Use a real current screenshot as the
+   CURRENT side when available.
+4. STOP at the approval gate. Do not edit files, CSS, layout, or components
+   until the user explicitly approves. Ask: "Do you approve this direction,
+   or would you like me to change anything before implementation?" Then WAIT.
+5. Approval = implement THAT EXACT direction, nothing extra. Significant
+   deviations discovered mid-implementation must be explained first.
+6. Rejection = do not implement; ask what to change or propose a revision;
+   repeat the loop.
+7. Multiple legitimate approaches → show the options (visuals where practical),
+   explain differences, let the USER choose.
+8. Approval is never a formality: no "propose, code immediately, ask later".
+9. Functionality changes: state WHAT CHANGES / WHAT STAYS / WHAT MAY BE
+   AFFECTED / HOW TESTED. Pure UI changes must say "UI-only, functionality
+   untouched."
+10. No surprise redesigns beyond approved scope; one approval ≠ license to
+    touch unrelated areas.
+11. Keep one coherent design direction; every proposal honors previously
+    approved decisions.
+12. Agent must give MY RECOMMENDATION (an opinion) but the user decides.
+13. Professionalism check before presenting (density, hierarchy, readability,
+    alignment, consistency, trading usability, GT identity).
+14. Never present a design that cannot actually be implemented in this repo;
+    flag conceptual elements explicitly.
+15. After implementation: show result, compare against approved design, report
+    deviations, then ASK what area is next — never auto-continue redesigning.
