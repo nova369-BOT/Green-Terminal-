@@ -7,6 +7,10 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Slow/flaky connections (mobile data, congested ISPs): give each
+    # download 120s instead of 15s and retry 10 times before giving up.
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10 \
     # Browser-facing app (published to the host).
     LSE_HOST=0.0.0.0 \
     LSE_PORT=7787 \
