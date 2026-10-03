@@ -296,3 +296,21 @@ inline Route parse_route(const std::string& path, const std::string& search = ""
 inline std::string build_terminal_path(const std::string& exchange, const std::string& symbol) {
     return "/terminal/" + (exchange.empty() ? std::string("binancef") : exchange) + "/" + symbol;
 }
+
+// Embed flag: ?watchlist=0 boots the terminal WITHOUT the Watchlist rail.
+// Green Terminal's G-Flow dock sets it because GT already owns the market
+// list; a second in-frame watchlist would be a competing source of truth
+// for "what can I click" (unification: one watchlist). Non-route-owned, so
+// url_push/url_navigate carry it across boots and symbol switches and the
+// rail stays hidden for the whole embedded session. Nothing is removed from
+// the terminal itself: standalone boots are unaffected and the +Widget menu
+// can still add a Watchlist explicitly even when this flag is present.
+inline bool url_watchlist_disabled() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]watchlist=0(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;  // native builds (the unit tests) always keep the rail
+#endif
+}

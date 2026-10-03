@@ -13471,7 +13471,10 @@ function loadOrderFlowSymbol(sym) {
   // the first frame once artifacts are present.
   if (fr && ofState.ready) {
     if (!cur || cur.symbol !== vsym) {
-      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym);
+      // ?watchlist=0 — GT owns the watchlist (unified market list in the
+      // sidebar); the embedded terminal must not show a second one. The
+      // engine carries the flag across its own symbol/venue navigations.
+      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0";
       // Fresh boot: the engine starts on its own default timeframe, so the
       // bridge pushes the chart's timeframe once the runtime is up.
       ofState.lastTfSec = 0;

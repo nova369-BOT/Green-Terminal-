@@ -777,9 +777,16 @@ void check_initialization() {
                 g_app.widgets.push_back(std::make_unique<TradesWidget>(
                     pair, g_app.app_ctx, fmt
                 ));
-                g_app.widgets.push_back(std::make_unique<WatchlistWidget>(
-                    pair, g_app.app_ctx
-                ));
+                // ?watchlist=0 (Green Terminal dock embed): the host app owns
+                // the market list, so don't create the in-frame rail. Same
+                // mechanism as the lesson/pack focused set above - the widget
+                // is simply never built and its dock node collapses, giving
+                // the chart the width. +Widget can still add one on demand.
+                if (!url_watchlist_disabled()) {
+                    g_app.widgets.push_back(std::make_unique<WatchlistWidget>(
+                        pair, g_app.app_ctx
+                    ));
+                }
             }
             widgets_created = true;
             initialization_complete = true;

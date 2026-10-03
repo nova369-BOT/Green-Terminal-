@@ -3,6 +3,7 @@
 #include "workspace_document.h"
 #include "core/symbol_metadata.h"
 #include "core/education_boot.h"
+#include "core/url_router.h"
 #include "core/recorder_glue.h"
 #include "replayer/replay_manager.h"
 #include "rendering/layout.h"
@@ -154,7 +155,10 @@ void apply(const Json& doc) {
         else if (type == "trades") w = std::make_unique<TradesWidget>(active_pair,*context,fmt);
         else if (type == "depth") w = std::make_unique<OrderbookWidget>(active_pair,*context,fmt);
         else if (type == "stats") w = std::make_unique<StatsWidget>(active_pair,*context,fmt);
-        else if (type == "watchlist") w = std::make_unique<WatchlistWidget>(active_pair,*context);
+        // A saved workspace may carry a watchlist, but the ?watchlist=0 embed
+        // (Green Terminal dock) suppresses the rail: the host owns the market
+        // list. Skipping here keeps one saved document valid in both contexts.
+        else if (type == "watchlist") { if (!url_watchlist_disabled()) w = std::make_unique<WatchlistWidget>(active_pair,*context); }
         else if (type == "library") w = std::make_unique<ReplayLibraryWidget>(*context);
         else if (type == "paper") w = std::make_unique<PositionsPanel>(*context);
         if (!w) continue;
