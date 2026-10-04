@@ -1,0 +1,91 @@
+"""Verified Binance diff-depth stream.
+
+The stream emits normalized dictionaries consumed by MarketData's depth route:
+ORDER_BOOK_SNAPSHOT, ORDER_BOOK_UPDATE, and DEPTH_RESET. It never emits a
+partial book as ready data; sequence gaps force a reset signal.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from typing import AsyncIterator
+
+from .binance import REST_BASE, WS_BASE, normalise_symbol
+from .binance_depth import DepthSequenceError, LocalOrderBook, parse_snapshot, parse_update
+
+log = logging.getLogger(__name__)
+
+
+class BinanceDepthStream:
+    def __init__(self, symbol: str, *, levels: int = 1000):
+        self.symbol = normalise_symbol(symbol)
+        if not self.symbol:
+            raise ValueError("a symbol is required")
+        self.levels = max(5, min(int(levels), 5000))
+        self.snapshot_url = f"{REST_BASE}/api/v3/depth?symbol={self.symbol}&limit={self.levels}"
+        self.ws_url = f"{WS_BASE}/{self.symbol.lower()}@depth@100ms"
+
+    async def _snapshot(self) -> dict:
+        import urllib.request
+        def get() -> dict:
+            req = urllib.request.Request(self.snapshot_url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=15) as response:
+                return json.loads(response.read().decode("utf-8"))
+        return await asyncio.to_thread(get)
+
+    async def events(self) -> AsyncIterator[dict]:
+        """Yield depth events forever, reconnecting after a reset or failure."""
+        try:
+            import websockets
+        except ImportError as exc:
+            raise RuntimeError("websockets package is required for Binance depth") from exc
+        backoff = 1.0
+        while True:
+            book = LocalOrderBook(self.symbol)
+            try:
+                async with websockets.connect(self.ws_url, ping_interval=20, close_timeout=5) as socket:
+                    # Binance's documented order is snapshot then buffered
+                    # diffs. The socket is opened first so updates are not
+                    # missed while the REST snapshot is requested.
+                    buffered: list[dict] = []
+                    snapshot_task = asyncio.create_task(self._snapshot())
+                    while not snapshot_task.done():
+                        raw = json.loads(await socket.recv())
+                        if raw.get("s", "").upper() == self.symbol:
+                            buffered.append(raw)
+                    snapshot = parse_snapshot(await snapshot_task)
+                    book.apply_snapshot(snapshot)
+                    yield {"type": "ORDER_BOOK_SNAPSHOT", "symbol": self.symbol,
+                           "lastUpdateId": snapshot.last_update_id,
+                           "bids": [[str(x.price), str(x.quantity)] for x in snapshot.bids],
+                           "asks": [[str(x.price), str(x.quantity)] for x in snapshot.asks],
+                           "E": snapshot.event_time_ms}
+                    for raw in buffered:
+                        update = parse_update(raw)
+                        try:
+                            book.apply_update(update)
+                        except DepthSequenceError:
+                            raise
+                        yield self._update_payload(update)
+                    backoff = 1.0
+                    async for raw_text in socket:
+                        update = parse_update(json.loads(raw_text))
+                        book.apply_update(update)
+                        yield self._update_payload(update)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("binance depth %s reset: %s", self.symbol, exc)
+                yield {"type": "DEPTH_RESET", "symbol": self.symbol, "reason": str(exc)[:240]}
+                await asyncio.sleep(backoff)
+                backoff = min(30.0, backoff * 2)
+
+    def _update_payload(self, update) -> dict:
+        return {
+            "type": "ORDER_BOOK_UPDATE", "symbol": self.symbol,
+            "U": update.first_update_id, "u": update.final_update_id,
+            "b": [[str(x.price), str(x.quantity)] for x in update.bids],
+            "a": [[str(x.price), str(x.quantity)] for x in update.asks],
+            "E": update.event_time_ms,
+        }

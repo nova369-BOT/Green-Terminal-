@@ -1,0 +1,7681 @@
+import React, { useState, useEffect, useRef, memo, useCallback, useId, Fragment } from 'react';
+import { flushSync } from 'react-dom';
+import { emojiSelection } from './emojiStore';
+
+export type DrawingTool = 'trend' | 'trendRay' | 'parallelChannel' | 'line' | 'horizontal' | 'horizontalRay' | 'straightArrow' | 'vertical' | 'extendedLine' | 'infoLine' | 'trendAngle' | 'crossline' | 'pitchfork' | 'schiff' | 'modifiedSchiff' | 'flatChannel' | 'text' | 'fibonacci' | 'fibExtension' | 'fibFan' | 'fibTimeZones' | 'fibChannel' | 'fibCircles' | 'fibSpiral' | 'fibArcs' | 'fibWedge' | 'fibPitchfan' | 'trendBasedFibTime' | 'gannFan' | 'gannBox' | 'gannSquare' | 'gannSquareFixed' | 'rectangle' | 'square' | 'circle' | 'oval' | 'triangle' | 'freeTriangle' | 'parallelogram' | 'octagon' | 'diamond' | 'pentagon' | 'hexagon' | 'star' | 'cross' | 'arrowBlock' | 'wedge' | 'heart' | 'xabcd' | 'cypher' | 'abcd' | 'headShoulders' | 'trianglePattern' | 'threeDrives' | 'elliottImpulse' | 'elliottCorrection' | 'elliottTriangle' | 'elliottCombo' | 'brush' | 'highlighter' | 'arrow' | 'long' | 'short' | 'measure' | 'markerArrowUp' | 'markerArrowDown' | 'markerCircle' | 'markerSquare' | 'markerDiamond' | 'markerStar' | 'markerTriangleUp' | 'markerTriangleDown' | 'emoji' | 'note' | 'callout' | 'priceLabel' | 'signpost' | 'anchoredVwap' | 'fixedVolumeProfile' | 'anchoredVolumeProfile' | 'regressionTrend' | 'cyclicLines' | 'sineLine' | 'innerFork' | 'splitChannel' | 'timeArcs' | 'eraser' | null;
+
+const ERASER_CURSOR = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%232dd4bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M20 20H8.5L3 14.5a2 2 0 0 1 0-3l9-9 7 7-7 7'/></svg>") 3 19, auto`;
+
+// Multi-point pattern & Elliott tools: shared config (point count, node labels, connector lines, fill triangles)
+const MULTIPOINT_TOOLS: Record<string, { n: number; labels: string[]; connectors: [number, number][]; fillTris: [number, number, number][] }> = {
+  xabcd: { n: 5, labels: ['X', 'A', 'B', 'C', 'D'], connectors: [[0, 2], [2, 4], [1, 3]], fillTris: [[0, 1, 2], [2, 3, 4]] },
+  cypher: { n: 5, labels: ['X', 'A', 'B', 'C', 'D'], connectors: [[0, 2], [2, 4], [1, 3]], fillTris: [[0, 1, 2], [2, 3, 4]] },
+  abcd: { n: 4, labels: ['A', 'B', 'C', 'D'], connectors: [[0, 3]], fillTris: [] },
+  headShoulders: { n: 7, labels: ['', 'LS', '', 'H', '', 'RS', ''], connectors: [[2, 4]], fillTris: [] },
+  trianglePattern: { n: 5, labels: ['1', '2', '3', '4', '5'], connectors: [[0, 2], [1, 3]], fillTris: [] },
+  threeDrives: { n: 7, labels: ['', '1', '', '2', '', '3', ''], connectors: [], fillTris: [] },
+  elliottImpulse: { n: 6, labels: ['0', '1', '2', '3', '4', '5'], connectors: [], fillTris: [] },
+  elliottCorrection: { n: 4, labels: ['0', 'A', 'B', 'C'], connectors: [], fillTris: [] },
+  elliottTriangle: { n: 6, labels: ['0', 'A', 'B', 'C', 'D', 'E'], connectors: [], fillTris: [] },
+  elliottCombo: { n: 4, labels: ['0', 'W', 'X', 'Y'], connectors: [], fillTris: [] },
+};
+
+// Brush-like tools that share the same freehand drawing behavior
+const BRUSH_TOOLS: DrawingTool[] = ['brush', 'highlighter', 'arrow'];
+const isBrushTool = (tool: DrawingTool): boolean => BRUSH_TOOLS.includes(tool);
+
+// Single-click marker tools (one anchor point, fixed-size icon)
+const MARKER_TOOLS: DrawingTool[] = ['markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown'];
+const isMarkerTool = (tool: DrawingTool): boolean => MARKER_TOOLS.includes(tool);
+
+// Get default color for brush tools
+const getBrushToolColor = (tool: DrawingTool): string => {
+  switch (tool) {
+    case 'highlighter': return '#FBBF24'; // Yellow
+    default: return '#000000'; // Default black
+  }
+};
+
+// Get default opacity for brush tools
+const getBrushToolOpacity = (tool: DrawingTool): number => {
+  switch (tool) {
+    case 'highlighter': return 40; // Semi-transparent
+    default: return 100;
+  }
+};
+
+// Get default stroke width for brush tools
+const getBrushToolStrokeWidth = (tool: DrawingTool): number => {
+  switch (tool) {
+    case 'highlighter': return 12; // Thick like a highlighter
+    default: return 2;
+  }
+};
+
+// Default drawing color and stroke width
+const DEFAULT_DRAWING_COLOR = '#000000';
+const DEFAULT_STROKE_WIDTH = 2;
+
+// Point in price/time coordinates (anchored to chart data)
+export type ChartPoint = {
+  time: number;  // timestamp in milliseconds
+  price: number; // price value
+};
+
+// Point in pixel coordinates (for rendering)
+export type PixelPoint = {
+  x: number;
+  y: number;
+};
+
+export type Drawing = {
+  id: string;
+  type: DrawingTool;
+  points: ChartPoint[];  // Now stores price/time coordinates
+  text?: string;
+  color?: string;
+  opacity?: number;  // 0-100, default 100
+  fillColor?: string;  // Fill color for shapes like rectangles (null/undefined = transparent)
+  fillOpacity?: number;  // 0-100, default 100
+  borderColor?: string; // Border color for long/short positions
+  entryLineColor?: string; // Long/short position: entry line colour
+  accountSize?: number;    // Long/short position sizing: account balance
+  riskPercent?: number;    // Long/short position sizing: risk % of account
+  feesPercent?: number;    // Long/short: round-trip fees as % of notional (net P&L / break-even)
+  // Long/short multi-target scale-out: the primary target (points[1]) is TP1,
+  // closing tp1SizePct of the position; `takeProfits` holds any extra levels.
+  tp1SizePct?: number;
+  takeProfits?: Array<{ price: number; sizePct: number }>;
+  showProjection?: boolean; // Long/short: ATR volatility projection cone
+  fibLevels?: number[];
+  stopLoss?: ChartPoint;  // Also price/time coordinates
+  stopLossPointIndex?: number;
+  // Volume / statistics tool options (all optional; sensible defaults in engine)
+  vwapSource?: 'hlc3' | 'hl2' | 'close' | 'ohlc4';
+  showBands?: boolean;
+  band1?: number;
+  band2?: number;
+  vpRows?: number;
+  valueAreaPct?: number;
+  upColor?: string;
+  downColor?: string;
+  showPOC?: boolean;
+  showVA?: boolean;
+  strokeWidth?: number;
+  lineStyle?: 'solid' | 'dashed' | 'dotted';
+  locked?: boolean;  // Per-object lock: prevents moving/resizing this drawing
+  // Per-level customization for level tools (Gann Box, Fibonacci). Parallel to the level values.
+  levelStyles?: { value: number; visible: boolean; color: string }[];
+  useOneColor?: boolean; // Level tools: paint every level with the base `color`.
+  showLabels?: boolean;  // Level tools: show/hide level labels (default true).
+  reverse?: boolean;      // Fib/Gann: flip level order.
+  extendLeft?: boolean;   // Lines/Fib: extend to the left edge.
+  extendRight?: boolean;  // Lines/Fib: extend to the right edge.
+  topLabels?: boolean;    // Gann Box: labels along the top edge (default true).
+  bottomLabels?: boolean; // Gann Box: labels along the bottom edge (default true).
+  gannAngles?: boolean;   // Gann Box: draw diagonal angle lines.
+  fibLabelMode?: 'percent' | 'price' | 'both'; // Fib label content.
+  showMiddleLine?: boolean; // Parallel channel: show/hide the median dashed line (default true).
+  // Inline text-label styling for drawings that carry a `text` payload (trend, line, rectangle). Separate from the type='text' drawing, which reuses strokeWidth as fontSize.
+  textFontSize?: number;
+  textBold?: boolean;
+  textItalic?: boolean;
+  textColor?: string; // Defaults to drawing.color when unset.
+  // For brush drawings: store pixel offsets relative to anchor point for smooth lines (legacy)
+  pixelOffsets?: PixelPoint[];
+  // For brush drawings: store all points in chart coordinates for proper zoom scaling
+  brushChartPoints?: ChartPoint[]; // All brush points in chart coordinates (time/price)
+  // For brush drawings: store original pixel points for smooth rendering
+  brushPixelPoints?: PixelPoint[]; // Original pixel coordinates for smooth curve preservation
+  // For brush drawings: store pixel offsets from anchor (scales with zoom)
+  brushPixelOffsets?: PixelPoint[]; // Pixel offsets from first point - preserves curve shape
+};
+
+export type CoordinateConverter = {
+  timeToX: (time: number) => number | null;
+  xToTime: (x: number) => number | null;
+  priceToY: (price: number) => number;
+  yToPrice: (y: number) => number;
+  priceAxisWidth?: number; // Exact value from ProChart canvas
+};
+
+type Props = {
+  activeTool: DrawingTool;
+  drawings: Drawing[];
+  onDrawingsChange: (drawings: Drawing[]) => void;
+  onToolSelect?: (tool: DrawingTool) => void;
+  className?: string;
+  converter: CoordinateConverter;
+  selectedDrawingId?: string | null;
+  onSelectDrawing?: (id: string | null, position?: { x: number; y: number }) => void;
+  // Callback when drawing dragging starts/stops, used to pause parent canvas rasterization
+  onDraggingStateChange?: (isDragging: boolean) => void;
+  chartBounds?: { priceAxisWidth: number; timeAxisHeight: number; indicatorHeight?: number };
+  scrollSyncRef?: React.MutableRefObject<() => void>; // Ref-based scroll sync (no re-renders)
+  scrollOffsetRef?: React.MutableRefObject<number>; // Scroll offset in pixels for CSS transform sync
+  isLocked?: boolean; // When true, drawings cannot be moved
+  isHidden?: boolean; // When true, drawings are not rendered
+  currentSymbol?: string; // For measure tool calculations
+  timeframeMs?: number; // Timeframe in milliseconds for candle counting
+  currentPrice?: number; // Live price for badge collision avoidance
+  candles?: { time: number; open: number; high: number; low: number; close: number; volume?: number }[]; // For long/short TP/SL hit detection + volume tools
+  // Pre-placement tool settings from the settings bar (color, strokeWidth, lineStyle, etc.)
+  // When provided, new drawings use these instead of hardcoded defaults
+  toolSettings?: { color: string; strokeWidth: number; lineStyle: 'solid' | 'dashed' | 'dotted'; opacity: number; fillColor?: string; fillOpacity?: number };
+  // Ref-based cursor signal for the chart canvas to render TradingView-style blue
+  // price/time badges on the axes during drawing preview. The overlay writes to this
+  // ref on every pointer move (no React re-renders), and the chart's RAF loop reads
+  // it to draw the badge on the canvas in the same frame.
+  // Array of badge points: [anchor, cursor] or [cursor] before first click.
+  drawingCursorRef?: React.MutableRefObject<Array<{ price: number | null; time: number | null; x: number | null }>>;
+  // Ref populated by the chart with its drawChart function. Called after writing to
+  // drawingCursorRef to trigger a canvas repaint so the cursor badges actually render.
+  requestRedrawRef?: React.MutableRefObject<(() => void) | null>;
+  // Opaque version counter from MultiPanelChartGrid: bumped when the underlying
+  // converter updates after an overlay render. Accepted purely so React.memo's
+  // shallow compare detects the change and allows a re-render, which forces SVG
+  // drawing positions to recompute via the now-correct proxy converter.
+  converterVersion?: number;
+};
+
+const ChartDrawingOverlayComponent = ({
+  activeTool,
+  drawings,
+  onDrawingsChange,
+  onToolSelect,
+  className,
+  converter,
+  selectedDrawingId,
+  onSelectDrawing,
+  chartBounds = { priceAxisWidth: 70, timeAxisHeight: 30 },
+  scrollSyncRef,
+  scrollOffsetRef,
+  isLocked = false,
+  isHidden = false,
+  currentSymbol,
+  timeframeMs = 3600000, // Default 1H
+  currentPrice,
+  candles: candlesProp,
+  toolSettings,
+  drawingCursorRef,
+  requestRedrawRef,
+  onDraggingStateChange,
+}: Props) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const clipId = useId().replace(/:/g, '_'); // Unique clip ID per overlay instance
+  // Stable ref so all callbacks (scrollSync, RAF, event handlers) always have access
+  // to the unique instance prefix without stale-closure issues across re-renders.
+  // Critical for multi-panel layouts: each panel renders the same drawings with the
+  // same drawing IDs. Without a per-instance prefix every getElementById call returns
+  // panel 0's element (first match in DOM), so dragging on panels 1+ moves the wrong
+  // SVG group and the crosshair lands on the wrong overlay.
+  const clipIdRef = useRef(clipId);
+  const [tempPoints, setTempPoints] = useState<PixelPoint[]>([]);
+  const [previewPoint, setPreviewPoint] = useState<PixelPoint | null>(null);
+  const [textInput, setTextInput] = useState<{ x: number; y: number; value: string; kind?: 'text' | 'note' | 'signpost' | 'callout'; anchor?: PixelPoint } | null>(null);
+  const [hoveredDrawingId, setHoveredDrawingId] = useState<string | null>(null);
+  // Inline text label editor state for trend, line, and rectangle drawings. labelDraft holds the current text until Enter or blur commits it.
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [labelDraft, setLabelDraft] = useState('');
+  // Ref-based focus on the inline label input. autoFocus on inputs mounted inside foreignObject is flaky in React; if the input is not focused, the user's keystrokes bubble to ChartPage's window keydown handler and open the symbol search.
+  const labelInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editingLabelId && labelInputRef.current) {
+      labelInputRef.current.focus();
+      labelInputRef.current.select();
+    }
+  }, [editingLabelId]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
+  const [dragPointIndex, setDragPointIndex] = useState<number | null>(null);
+  const [brushPath, setBrushPath] = useState<PixelPoint[]>([]);
+  // Ref to track active brush drawing - true only while actively drawing NEW brush
+  const isDrawingBrushRef = useRef(false);
+  const [measureState, setMeasureState] = useState<{
+    start: PixelPoint;
+    current: PixelPoint;
+    frozen: boolean;
+  } | null>(null);
+  const justFinishedDragging = useRef(false);
+  const isDraggingRef = useRef(false); // Synchronous tracking of dragging state
+  const isErasingRef = useRef(false); // Eraser held down: swipe to erase multiple drawings
+  const [cursorPosition, setCursorPosition] = useState<PixelPoint | null>(null); // Track cursor for crosshair
+
+  // Helper: get drawing properties from the pre-placement settings bar if available,
+  // otherwise fall back to the hardcoded defaults. This lets users configure color,
+  // stroke width, line style, etc. BEFORE placing a drawing (like TradingView).
+  const getNewDrawingColor = () => toolSettings?.color ?? DEFAULT_DRAWING_COLOR;
+  const getNewDrawingStrokeWidth = () => toolSettings?.strokeWidth ?? DEFAULT_STROKE_WIDTH;
+  const getNewDrawingLineStyle = () => toolSettings?.lineStyle ?? 'solid';
+  const getNewDrawingOpacity = () => toolSettings?.opacity ?? 100;
+  const getNewDrawingFillColor = (fallback?: string) => toolSettings?.fillColor ?? fallback;
+  const getNewDrawingFillOpacity = () => toolSettings?.fillOpacity ?? 100;
+
+  // ── Perf cache ─────────────────────────────────────────────────────────
+  // VWAP / Volume Profile / Regression each scan hundreds–thousands of candles.
+  // renderDrawing runs for EVERY drawing on EVERY hover/selection re-render, so
+  // without memoing these, moving the mouse over a chart that has a few
+  // analytics drawings re-scans all candles many times per second. We cache by
+  // an input signature: params + candle-set signature (+ view transform for
+  // results expressed in pixels). The map is capped so it can't grow unbounded.
+  const computeCacheRef = useRef<Map<string, any>>(new Map());
+  const candleSig = (): string => {
+    const cs = candlesProp;
+    if (!cs || cs.length === 0) return '0';
+    const f = cs[0], l = cs[cs.length - 1];
+    return `${cs.length}|${f.time}|${l.time}|${l.close}|${l.volume ?? 0}`;
+  };
+  const viewSig = (): string =>
+    `${converter.timeToX(0)}|${converter.timeToX(1e9)}|${converter.priceToY(0)}|${converter.priceToY(1e6)}`;
+  const memoCompute = <T,>(key: string, fn: () => T): T => {
+    const cache = computeCacheRef.current;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit as T;
+    const val = fn();
+    if (cache.size > 240) cache.clear();
+    cache.set(key, val);
+    return val;
+  };
+
+  // Anchored VWAP: cumulative volume-weighted average price from an anchor bar to
+  // the latest bar, with running standard-deviation bands (±1σ/±2σ). Uses REAL
+  // candle volume only; returns null when no volume is available in range.
+  const computeAnchoredVwapImpl = (anchorTime: number, source: string = 'hlc3', m1: number = 1, m2: number = 2) => {
+    const cs = candlesProp;
+    if (!cs || cs.length === 0) return null;
+    let startIdx = cs.findIndex((c) => c.time >= anchorTime);
+    if (startIdx < 0) startIdx = cs.length - 1;
+    let cumPV = 0, cumV = 0, cumPV2 = 0, lastVwap = 0;
+    const line: PixelPoint[] = [], u1: PixelPoint[] = [], l1: PixelPoint[] = [], u2: PixelPoint[] = [], l2: PixelPoint[] = [];
+    for (let i = startIdx; i < cs.length; i++) {
+      const c = cs[i];
+      const tp = source === 'close' ? c.close : source === 'hl2' ? (c.high + c.low) / 2 : source === 'ohlc4' ? (c.open + c.high + c.low + c.close) / 4 : (c.high + c.low + c.close) / 3;
+      const v = c.volume ?? 0;
+      cumPV += tp * v; cumV += v; cumPV2 += tp * tp * v;
+      if (cumV <= 0) continue;
+      const vwap = cumPV / cumV;
+      lastVwap = vwap;
+      const sd = Math.sqrt(Math.max(0, cumPV2 / cumV - vwap * vwap));
+      const x = converter.timeToX(c.time);
+      line.push({ x, y: converter.priceToY(vwap) });
+      u1.push({ x, y: converter.priceToY(vwap + m1 * sd) });
+      l1.push({ x, y: converter.priceToY(vwap - m1 * sd) });
+      u2.push({ x, y: converter.priceToY(vwap + m2 * sd) });
+      l2.push({ x, y: converter.priceToY(vwap - m2 * sd) });
+    }
+    if (line.length === 0) return null;
+    return { line, u1, l1, u2, l2, lastVwap };
+  };
+  // Cached wrapper: pixel output → key includes the view transform.
+  const computeAnchoredVwap = (anchorTime: number, source: string = 'hlc3', m1: number = 1, m2: number = 2) =>
+    memoCompute(`vwap|${anchorTime}|${source}|${m1}|${m2}|${candleSig()}|${viewSig()}`,
+      () => computeAnchoredVwapImpl(anchorTime, source, m1, m2));
+
+  // Fixed-Range Volume Profile: bins REAL volume of candles inside a time range
+  // across the price axis, splitting up/down volume, and finds POC + 70% value area.
+  const computeVolumeProfileImpl = (t1: number, t2: number, rows: number = 24, vaPct: number = 0.7) => {
+    const cs = candlesProp;
+    if (!cs || cs.length === 0) return null;
+    const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
+    const win = cs.filter((c) => c.time >= lo && c.time <= hi);
+    if (win.length === 0) return null;
+    let priceLo = Infinity, priceHi = -Infinity;
+    for (const c of win) { if (c.low < priceLo) priceLo = c.low; if (c.high > priceHi) priceHi = c.high; }
+    if (!(priceHi > priceLo)) return null;
+    const N = Math.max(8, Math.min(80, Math.round(rows)));
+    const rowH = (priceHi - priceLo) / N;
+    const up = new Array(N).fill(0), down = new Array(N).fill(0);
+    for (const c of win) {
+      const v = c.volume ?? 0;
+      if (v <= 0) continue;
+      const r0 = Math.max(0, Math.floor((c.low - priceLo) / rowH));
+      const r1 = Math.min(N - 1, Math.floor((c.high - priceLo) / rowH));
+      const rows = Math.max(1, r1 - r0 + 1);
+      const share = v / rows;
+      const isUp = c.close >= c.open;
+      for (let r = r0; r <= r1; r++) { if (isUp) up[r] += share; else down[r] += share; }
+    }
+    const totals = up.map((u: number, i: number) => u + down[i]);
+    const totalVol = totals.reduce((a: number, b: number) => a + b, 0);
+    if (totalVol <= 0) return null;
+    const maxVol = Math.max(...totals);
+    let pocIdx = 0;
+    for (let i = 1; i < N; i++) if (totals[i] > totals[pocIdx]) pocIdx = i;
+    let vaLo = pocIdx, vaHi = pocIdx, vaSum = totals[pocIdx];
+    const target = totalVol * Math.max(0.3, Math.min(0.95, vaPct));
+    while (vaSum < target && (vaLo > 0 || vaHi < N - 1)) {
+      const below = vaLo > 0 ? totals[vaLo - 1] : -1;
+      const above = vaHi < N - 1 ? totals[vaHi + 1] : -1;
+      if (above >= below) { vaHi++; vaSum += totals[vaHi]; } else { vaLo--; vaSum += totals[vaLo]; }
+    }
+    return { N, rowH, up, down, totals, priceLo, priceHi, maxVol, totalVol, pocIdx, vaLo, vaHi };
+  };
+  // Cached wrapper: result is in price/volume space (no view transform needed).
+  const computeVolumeProfile = (t1: number, t2: number, rows: number = 24, vaPct: number = 0.7) =>
+    memoCompute(`vp|${t1}|${t2}|${rows}|${vaPct}|${candleSig()}`,
+      () => computeVolumeProfileImpl(t1, t2, rows, vaPct));
+
+  // Linear Regression Trend: least-squares fit of REAL closes over a bar range,
+  // with ±1σ/±2σ residual channel and Pearson R² (goodness of fit).
+  const computeRegressionImpl = (t1: number, t2: number) => {
+    const cs = candlesProp;
+    if (!cs || cs.length === 0) return null;
+    const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
+    const win = cs.filter((c) => c.time >= lo && c.time <= hi);
+    if (win.length < 2) return null;
+    const n = win.length;
+    let sx = 0, sy = 0, sxy = 0, sxx = 0, syy = 0;
+    for (let i = 0; i < n; i++) { const yv = win[i].close; sx += i; sy += yv; sxy += i * yv; sxx += i * i; syy += yv * yv; }
+    const denom = n * sxx - sx * sx;
+    if (denom === 0) return null;
+    const b = (n * sxy - sx * sy) / denom;
+    const a = (sy - b * sx) / n;
+    let ss = 0;
+    for (let i = 0; i < n; i++) { const pred = a + b * i; ss += (win[i].close - pred) ** 2; }
+    const sigma = Math.sqrt(ss / n);
+    const rDen = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+    const r = rDen === 0 ? 0 : (n * sxy - sx * sy) / rDen;
+    const line: PixelPoint[] = [], u1: PixelPoint[] = [], l1: PixelPoint[] = [], u2: PixelPoint[] = [], l2: PixelPoint[] = [];
+    for (let i = 0; i < n; i++) {
+      const price = a + b * i;
+      const x = converter.timeToX(win[i].time);
+      line.push({ x, y: converter.priceToY(price) });
+      u1.push({ x, y: converter.priceToY(price + sigma) });
+      l1.push({ x, y: converter.priceToY(price - sigma) });
+      u2.push({ x, y: converter.priceToY(price + 2 * sigma) });
+      l2.push({ x, y: converter.priceToY(price - 2 * sigma) });
+    }
+    return { line, u1, l1, u2, l2, r2: r * r };
+  };
+  // Cached wrapper: pixel output → key includes the view transform.
+  const computeRegression = (t1: number, t2: number) =>
+    memoCompute(`reg|${t1}|${t2}|${candleSig()}|${viewSig()}`,
+      () => computeRegressionImpl(t1, t2));
+
+  // Performance optimization: Use refs for smooth dragging without React re-renders
+  const rafIdRef = useRef<number | null>(null);
+  const pendingDrawingUpdateRef = useRef<Drawing[] | null>(null);
+  const lastPointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  // Live drag transform - applied directly to DOM via CSS transform3d for GPU-accelerated, instant visual feedback
+  const dragTransformRef = useRef<{ deltaX: number; deltaY: number }>({ deltaX: 0, deltaY: 0 });
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  // Chart coordinates at drag start, captured ONCE to avoid drift from
+  // auto-scroll or live price changes shifting the coordinate mapping
+  const dragStartChartRef = useRef<ChartPoint | null>(null);
+  // Scroll offset at drag start: if chart auto-scrolls during drag, we
+  // adjust the final pixel position by the scroll delta so the commit
+  // produces the correct chart-coordinate delta
+  const dragStartScrollOffsetRef = useRef<number>(0);
+  // Cached bounding rect to avoid layout thrashing during dragging
+  const cachedRectRef = useRef<DOMRect | null>(null);
+  // RAF ID for crosshair updates (separate from drawing updates to avoid conflicts)
+  const crosshairRafRef = useRef<number | null>(null);
+  // Drawing-preview rAF throttle: setCursorPosition + setPreviewPoint fire on every
+  // mousemove (~120 Hz), each triggering a full overlay re-render that diffs every
+  // existing drawing. Throttling to one React commit per frame collapses 2 mouse
+  // events that fall in the same frame into a single render.
+  const previewRafRef = useRef<number | null>(null);
+  const pendingPreviewPtRef = useRef<PixelPoint | null>(null);
+  // Touch device detection: used to show midpoint grab dot on selected drawings.
+  // Mobile has no hover cursor so the dot provides visual feedback for drag affordance.
+  const isTouchDeviceRef = useRef(typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+
+  // Container dimensions for clipping
+  const [containerDims, setContainerDims] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  // Force update mechanism for scroll sync (avoids parent re-renders)
+  const [, forceUpdate] = useState(0);
+
+  // Live refs for drag state, used inside the scroll-sync callback so the
+  // closure always sees current values without having to re-register on every
+  // drag state change.
+  const draggingIdLiveRef = useRef(draggingId);
+  const dragPointIndexLiveRef = useRef(dragPointIndex);
+  const drawingsLiveRef = useRef(drawings);
+  const onDrawingsChangeLiveRef = useRef(onDrawingsChange);
+  draggingIdLiveRef.current = draggingId;
+  dragPointIndexLiveRef.current = dragPointIndex;
+  drawingsLiveRef.current = drawings;
+  onDrawingsChangeLiveRef.current = onDrawingsChange;
+
+  // Register the scroll sync callback - uses flushSync for zero-lag drawing updates.
+  // Drawings MUST update in the exact same frame as the chart canvas to prevent
+  // visible drift during horizontal panning. Any RAF or throttle delay causes
+  // drawings to visibly slide relative to candles.
+  useEffect(() => {
+    if (scrollSyncRef) {
+      scrollSyncRef.current = () => {
+        const dId = draggingIdLiveRef.current;
+        // Skip entirely if no drawings AND no active drag, a major optimization
+        // for the common case. During a drag we must run even with 0 drawings
+        // (defensive; drawings always includes the dragged one in practice).
+        if (drawings.length === 0 && !dId) return;
+
+        // flushSync forces React to process this state update synchronously,
+        // so the drawing overlay re-renders in the same frame as the chart canvas.
+        flushSync(() => {
+          // During scroll-zoom with an active drag, re-sync the dragged state
+          // to the live cursor position using the live converter. The canvas
+          // repaints at 60fps via paintedScrollStateRef; timeToX/xToTime read
+          // that state live inside their bodies. Without this sync, the dragged
+          // point's chart coord is frozen at the last mousemove value and drifts
+          // off-cursor as zoom changes the pixel↔chart mapping.
+          const pos = lastPointerPosRef.current;
+          if (dId && pos) {
+            const dIdx = dragPointIndexLiveRef.current;
+            if (dIdx !== null && dIdx >= 0 && dIdx <= 99) {
+              // Endpoint drag: recompute cursor's chart coord and overwrite the
+              // dragged point. Indices 980+ are bespoke long/short corner handles
+              // with their own constraint math; don't bypass them.
+              const chartPoint = pixelToChart(pos);
+              const d = drawingsLiveRef.current.find(dd => dd.id === dId);
+              if (chartPoint && d && dIdx < d.points.length) {
+                const cur = d.points[dIdx];
+                if (cur && (cur.time !== chartPoint.time || cur.price !== chartPoint.price)) {
+                  const updatedPoints = d.points.map((p, i) => i === dIdx ? chartPoint : p);
+                  onDrawingsChangeLiveRef.current(
+                    drawingsLiveRef.current.map(dd => dd.id === dId ? { ...dd, points: updatedPoints } : dd)
+                  );
+                }
+              }
+            } else if (dIdx === null && dragStartChartRef.current) {
+              // Whole-drawing drag (CSS translate3d): re-anchor dragStartPosRef
+              // to the live pixel of the original drag-start chart coord, then
+              // reapply the transform so the drawing keeps following the cursor.
+              const newPixel = chartToPixel(dragStartChartRef.current);
+              if (newPixel) {
+                const prev = dragStartPosRef.current;
+                if (!prev || prev.x !== newPixel.x || prev.y !== newPixel.y) {
+                  dragStartPosRef.current = newPixel;
+                  const deltaX = pos.x - newPixel.x;
+                  const deltaY = pos.y - newPixel.y;
+                  const dr = drawingsLiveRef.current.find(dd => dd.id === dId);
+                  const effectiveDeltaX = dr?.type === 'horizontal' ? 0 : deltaX;
+                  const el = document.getElementById(`${clipIdRef.current}_drawing-${dId}`);
+                  if (el) el.style.transform = `translate3d(${effectiveDeltaX}px, ${deltaY}px, 0)`;
+                }
+              }
+            }
+          }
+
+          forceUpdate(v => v + 1);
+        });
+      };
+    }
+  }, [scrollSyncRef, drawings.length]);
+
+  // Touch drawing state - for tap-hold-drag behavior
+  const [touchDrawing, setTouchDrawing] = useState<{ startPoint: PixelPoint; currentPoint: PixelPoint } | null>(null);
+  const touchHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPointRef = useRef<PixelPoint | null>(null);
+
+  // Locate the actual chart canvas (ProChart's crosshair overlay canvas). It is
+  // the GROUND TRUTH for where candles/grid are painted. The drawing overlay's
+  // own element can end up narrower than the canvas (a wrapper's box, a stale
+  // layout read), which made the clip <div> and the crosshair/line right edge
+  // stop short of the real price axis — the "gap" users reported. Measuring the
+  // canvas instead guarantees the drawing plane spans exactly the painted chart.
+  const findChartCanvas = (): HTMLCanvasElement | null => {
+    let root: HTMLElement | null = containerRef.current?.parentElement ?? null;
+    for (let i = 0; i < 5 && root; i++) {
+      const c = root.querySelector('canvas.cursor-crosshair') as HTMLCanvasElement | null;
+      if (c) return c;
+      root = root.parentElement;
+    }
+    return null;
+  };
+
+  // ─── CSS `zoom` (density presets) coordinate reconciliation ────────────────
+  // The shell applies `zoom` to the whole document for the Compact/Dense display
+  // presets (and interface scale). Under CSS zoom, getBoundingClientRect() and
+  // pointer clientX/clientY are in VISUAL pixels, but clientWidth/clientHeight —
+  // and ProChart's ResizeObserver contentRect that the converter is built from —
+  // are in unzoomed LAYOUT pixels. Every drawing is rendered in that layout
+  // space, so the overlay MUST size and hit-test in layout space too. At
+  // "comfortable" (zoom = 1) the two are identical; at other densities they
+  // diverged, which caused the right-side clip gap and made clicks miss.
+  //
+  // layoutSizeOf: the element's box in unzoomed layout px (matches the converter).
+  const layoutSizeOf = (el: HTMLElement | null): { width: number; height: number } => {
+    if (!el) return { width: 0, height: 0 };
+    const rect = el.getBoundingClientRect();
+    return { width: el.clientWidth || rect.width, height: el.clientHeight || rect.height };
+  };
+  // localFromEvent: convert a viewport pointer (clientX/Y, visual px) into
+  // overlay-local coordinates in unzoomed layout px. `rect` is the overlay's
+  // getBoundingClientRect (visual); dividing the visual offset by the zoom ratio
+  // (visual/layout) yields the layout-space point the drawings live in.
+  const localFromEvent = (clientX: number, clientY: number, rect: DOMRect): { x: number; y: number } => {
+    const el = containerRef.current;
+    const cw = el?.clientWidth || rect.width;
+    const ch = el?.clientHeight || rect.height;
+    const zx = cw ? rect.width / cw : 1;
+    const zy = ch ? rect.height / ch : 1;
+    return { x: (clientX - rect.left) / zx, y: (clientY - rect.top) / zy };
+  };
+
+  const measureDims = () => {
+    if (!containerRef.current) return;
+    const canvas = findChartCanvas();
+    // Use the LAYOUT (unzoomed) box so the drawing plane matches ProChart's
+    // converter under any density/scale. Prefer the canvas (ground truth for
+    // where candles paint); fall back to the overlay's own box.
+    const { width, height } = layoutSizeOf((canvas as HTMLElement | null) ?? containerRef.current);
+    setContainerDims((prev) =>
+      Math.abs(prev.width - width) > 0.5 || Math.abs(prev.height - height) > 0.5
+        ? { width, height }
+        : prev
+    );
+  };
+
+
+  // Track chart size for clipping. Observe BOTH the overlay and the chart canvas
+  // so any resize of the painted area updates the drawing plane immediately.
+  useEffect(() => {
+    if (!containerRef.current) return;
+    measureDims();
+
+    const resizeObserver = new ResizeObserver(() => measureDims());
+    resizeObserver.observe(containerRef.current);
+    const canvas = findChartCanvas();
+    if (canvas) resizeObserver.observe(canvas);
+    // A window resize is a belt-and-suspenders backup for the observer.
+    window.addEventListener('resize', measureDims);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', measureDims);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-measure whenever ProChart emits a fresh converter. ProChart rebuilds its
+  // converter from `dimensions`, so a new converter means the chart just changed
+  // size (e.g. a side panel / watchlist opened, the canvas mounted after us).
+  // The ResizeObserver can lag by a frame in that case; this locks the drawing
+  // plane to the real chart width. The change-guard prevents any render loop.
+  useEffect(() => {
+    measureDims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [converter]);
+
+  // iOS Safari fix: Attach non-passive touch event listener to prevent scroll during drawing
+  // React's touch handlers are passive by default, so preventDefault() doesn't work on iOS
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const preventTouchScroll = (e: TouchEvent) => {
+      // Only prevent scrolling when actively drawing/dragging
+      if (activeTool !== null || draggingId !== null || touchDrawing !== null || isDrawingBrushRef.current || measureState !== null) {
+        e.preventDefault();
+      }
+    };
+
+    // Add with { passive: false } to allow preventDefault() on iOS Safari
+    container.addEventListener('touchmove', preventTouchScroll, { passive: false });
+    container.addEventListener('touchstart', preventTouchScroll, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchmove', preventTouchScroll);
+      container.removeEventListener('touchstart', preventTouchScroll);
+    };
+  }, [activeTool, draggingId, touchDrawing, measureState]);
+
+  // iOS Safari: Add class to html element to prevent body scroll during drawing
+  useEffect(() => {
+    const isActivelyDrawing = activeTool !== null || draggingId !== null || touchDrawing !== null || isDrawingBrushRef.current || measureState !== null;
+
+    if (isActivelyDrawing) {
+      document.documentElement.classList.add('chart-drawing-active');
+    } else {
+      document.documentElement.classList.remove('chart-drawing-active');
+    }
+
+    return () => {
+      document.documentElement.classList.remove('chart-drawing-active');
+    };
+  }, [activeTool, draggingId, touchDrawing, measureState]);
+
+  // Desktop ESC key handler: cancel in-progress drawings or delete selected drawings
+  useEffect(() => {
+    // Only for desktop (no touch devices)
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'Backspace') return;
+
+      // Don't interfere with text input fields
+      if (textInput) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+      // Priority 1: Cancel in-progress drawing
+      if (tempPoints.length > 0 || brushPath.length > 0 || touchDrawing) {
+        e.preventDefault();
+        setTempPoints([]);
+        setPreviewPoint(null);
+        setBrushPath([]);
+        setTouchDrawing(null);
+        setMeasureState(null);
+        // Clear the tool after canceling
+        onToolSelect?.(null);
+        return;
+      }
+
+      // Priority 2: Delete selected drawing
+      if (selectedDrawingId) {
+        e.preventDefault();
+        const newDrawings = drawings.filter(d => d.id !== selectedDrawingId);
+        onDrawingsChange(newDrawings);
+        onSelectDrawing?.(null);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [tempPoints, brushPath, touchDrawing, textInput, selectedDrawingId, drawings, onDrawingsChange, onSelectDrawing, onToolSelect]);
+
+  // Helper: Check if a point is within the chart drawing area (excludes axis and indicator panels)
+  const isPointInChartArea = useCallback((x: number, y: number): boolean => {
+    if (!containerRef.current) return true;
+    const { width, height } = layoutSizeOf(containerRef.current);
+    const chartWidth = width - chartBounds.priceAxisWidth;
+    // Exclude indicator panel area at the bottom
+    const indicatorHeight = chartBounds.indicatorHeight ?? 0;
+    const drawableHeight = height - chartBounds.timeAxisHeight - indicatorHeight;
+    return x >= 0 && x <= chartWidth && y >= 0 && y <= drawableHeight;
+  }, [chartBounds]);
+
+  // Helper: Clamp a point to the main chart area (excludes indicator panels)
+  const clampToChartArea = useCallback((point: PixelPoint): PixelPoint => {
+    if (!containerRef.current) return point;
+    const { width, height } = layoutSizeOf(containerRef.current);
+    const chartWidth = width - chartBounds.priceAxisWidth;
+    // Exclude indicator panel area at the bottom
+    const indicatorHeight = chartBounds.indicatorHeight ?? 0;
+    const drawableHeight = height - chartBounds.timeAxisHeight - indicatorHeight;
+    return {
+      x: Math.max(0, Math.min(chartWidth, point.x)),
+      y: Math.max(0, Math.min(drawableHeight, point.y))
+    };
+  }, [chartBounds]);
+
+  // Helper: Convert pixel point to chart point
+  const pixelToChart = (pixel: PixelPoint): ChartPoint | null => {
+    const time = converter.xToTime(pixel.x);
+    if (time === null) return null;
+    const price = converter.yToPrice(pixel.y);
+    return { time, price };
+  };
+
+  // Helper: Convert chart point to pixel point
+  const chartToPixel = (chart: ChartPoint): PixelPoint | null => {
+    const x = converter.timeToX(chart.time);
+    if (x === null) return null;
+    const y = converter.priceToY(chart.price);
+    return { x, y };
+  };
+
+  // Helper function to get stroke dash array from lineStyle
+  const getStrokeDashArray = (style?: 'solid' | 'dashed' | 'dotted'): string | undefined => {
+    switch (style) {
+      case 'dashed': return '8,4';
+      case 'dotted': return '2,4';
+      default: return undefined;
+    }
+  };
+
+  // Helper to start dragging
+  const startDragging = (id: string) => {
+    // Per-object lock: a locked drawing can still be selected (to unlock it)
+    // but must not start a move/resize drag.
+    const target = drawings.find((d) => d.id === id);
+    if (target?.locked) return;
+    isDraggingRef.current = true; // Set synchronously to prevent brush additions
+    setDraggingId(id);
+    onDraggingStateChange?.(true);
+  };
+
+  useEffect(() => {
+    setTempPoints([]);
+    setPreviewPoint(null);
+    setCursorPosition(null); // Clear crosshair when tool changes
+    setTextInput(null);
+    setBrushPath([]);
+    isDrawingBrushRef.current = false;
+    setTouchDrawing(null);
+    // Clear any pending touch timer
+    if (touchHoldTimerRef.current) {
+      clearTimeout(touchHoldTimerRef.current);
+      touchHoldTimerRef.current = null;
+    }
+  }, [activeTool]);
+
+  // RAF-based update for silky smooth dragging - processes pending updates at 60fps
+  const processRAFUpdate = useCallback(() => {
+    if (pendingDrawingUpdateRef.current) {
+      onDrawingsChange(pendingDrawingUpdateRef.current);
+      pendingDrawingUpdateRef.current = null;
+    }
+    rafIdRef.current = null;
+  }, [onDrawingsChange]);
+
+  // Schedule a RAF update if not already scheduled
+  const scheduleRAFUpdate = useCallback((updatedDrawings: Drawing[]) => {
+    pendingDrawingUpdateRef.current = updatedDrawings;
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(processRAFUpdate);
+    }
+  }, [processRAFUpdate]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+      if (crosshairRafRef.current !== null) {
+        cancelAnimationFrame(crosshairRafRef.current);
+      }
+      if (previewRafRef.current !== null) {
+        cancelAnimationFrame(previewRafRef.current);
+      }
+    };
+  }, []);
+
+  // Global mouseup safety net: catches mouseUp events that miss the SVG overlay
+  // (e.g., double-click, mouse leaving overlay during brush draw)
+  useEffect(() => {
+    const globalMouseUp = () => {
+      isErasingRef.current = false;
+      if (isDrawingBrushRef.current) {
+        setBrushPath([]);
+        isDrawingBrushRef.current = false;
+      }
+    };
+    window.addEventListener('mouseup', globalMouseUp);
+    return () => window.removeEventListener('mouseup', globalMouseUp);
+  }, []);
+
+  const hideCrosshair = () => {
+    const hLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-h`);
+    const vLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-v`);
+    if (hLine) hLine.style.display = 'none';
+    if (vLine) vLine.style.display = 'none';
+    // Clear canvas cursor badges by emptying the array and triggering redraw.
+    // The canvas checks drawingCursorRef.current.length during drawChart()
+    // and skips badge rendering when the array is empty.
+    if (drawingCursorRef) {
+      drawingCursorRef.current = [];
+    }
+    for (let i = 0; i < 4; i++) {
+        const priceBadge = document.getElementById(`${clipIdRef.current}_dom-price-badge-${i}`);
+        const timeBadge = document.getElementById(`${clipIdRef.current}_dom-time-badge-${i}`);
+        if (priceBadge) priceBadge.style.display = 'none';
+        if (timeBadge) timeBadge.style.display = 'none';
+    }
+  };
+
+  // Write cursor position to the shared ref so the chart renders blue preview
+  // badges on the canvas axes during drawing. Also triggers a fast chart redraw
+  // so the badges appear on the same frame as the pointer move.
+  // Optional `allPoints` param: when dragging, pass all drawing points (displaced
+  // by drag delta) so every point gets axis badges, not just the cursor.
+  const updateCursorBadges = (pt: PixelPoint, allPoints?: PixelPoint[]) => {
+    if (!drawingCursorRef) return;
+    const badges: Array<{ price: number | null; time: number | null; x: number | null; y: number | null }> = [];
+
+    if (allPoints && allPoints.length > 0) {
+      // Drag mode: show badges for every provided point (all displaced drawing points)
+      for (const p of allPoints) {
+        const pPrice = converter.yToPrice(p.y);
+        const pTime = converter.xToTime(p.x);
+        badges.push({ price: pPrice ?? null, time: pTime ?? null, x: p.x, y: p.y });
+      }
+    } else {
+      // Drawing/preview mode: anchor points (already-clicked tempPoints) + live cursor
+      for (const tp of tempPoints) {
+        const tpPrice = converter.yToPrice(tp.y);
+        const tpTime = converter.xToTime(tp.x);
+        badges.push({ price: tpPrice ?? null, time: tpTime ?? null, x: tp.x, y: tp.y });
+      }
+      const price = converter.yToPrice(pt.y);
+      const time = converter.xToTime(pt.x);
+      badges.push({ price: price ?? null, time: time ?? null, x: pt.x, y: pt.y });
+    }
+
+    drawingCursorRef.current = badges;
+    
+    // Update up to 4 DOM badges for zero-latency dragging overhead
+    for (let i = 0; i < 4; i++) {
+        const bdg = badges[i];
+        const priceBadge = document.getElementById(`${clipIdRef.current}_dom-price-badge-${i}`);
+        const timeBadge = document.getElementById(`${clipIdRef.current}_dom-time-badge-${i}`);
+        
+        if (bdg && bdg.price !== null && bdg.y !== null && priceBadge) {
+            priceBadge.textContent = bdg.price.toFixed(5);
+            priceBadge.style.top = `${bdg.y}px`;
+            priceBadge.style.display = 'block';
+        } else if (priceBadge) {
+            priceBadge.style.display = 'none';
+        }
+
+        if (bdg && bdg.time !== null && bdg.x !== null && timeBadge) {
+            const date = new Date(bdg.time);
+            const str = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+            timeBadge.textContent = str;
+            timeBadge.style.left = `${bdg.x}px`;
+            timeBadge.style.display = 'block';
+        } else if (timeBadge) {
+            timeBadge.style.display = 'none';
+        }
+    }
+  };
+
+  // Unified pointer handler for both mouse and touch
+  const handlePointerMove = (x: number, y: number) => {
+    if (!containerRef.current) return;
+
+    // Store last pointer position for smooth tracking
+    lastPointerPosRef.current = { x, y };
+
+    // Eraser swipe: while held down, erase everything the cursor passes over.
+    if (activeTool === 'eraser' && isErasingRef.current) {
+      eraseAtPixel(x, y);
+      return;
+    }
+
+    // Handle measure tool dragging - only update if not frozen
+    if (activeTool === 'measure' && measureState && !measureState.frozen) {
+      const clampedPoint = clampToChartArea({ x, y });
+      setMeasureState(prev => prev ? { ...prev, current: clampedPoint } : null);
+      updateCursorBadges(clampedPoint);
+      return;
+    }
+
+    if (draggingId && dragOffset && dragPointIndex === null) {
+      // SILKY SMOOTH DRAGGING: Use CSS transform3d ONLY during drag
+      // No React state updates = no lag, instant visual feedback
+
+      // Track drag start position + scroll offset. If the chart auto-scrolls
+      // during drag, the scroll delta is added to the final position so both
+      // start and end are in the same coordinate frame.
+      if (!dragStartPosRef.current) {
+        dragStartPosRef.current = { x, y };
+        dragStartChartRef.current = pixelToChart({ x, y });
+        dragStartScrollOffsetRef.current = scrollOffsetRef?.current ?? 0;
+      }
+
+      // Store current cursor position for commit on mouse up
+      lastPointerPosRef.current = { x, y };
+
+      // Calculate delta from drag start
+      const deltaX = x - dragStartPosRef.current.x;
+      const deltaY = y - dragStartPosRef.current.y;
+
+      // Apply CSS transform directly to DOM - GPU accelerated, instant visual feedback
+      // For 'horizontal' type: only allow vertical movement (lock deltaX to 0, line is edge-to-edge)
+      // All other line types (including 'line'/straight line) allow free movement in both axes
+      const draggedDrawing = drawings.find(d => d.id === draggingId);
+      const effectiveDeltaX = draggedDrawing?.type === 'horizontal' ? 0 : deltaX;
+      const effectiveDeltaY = deltaY;
+      const svgGroup = document.getElementById(`${clipIdRef.current}_drawing-${draggingId}`);
+      if (svgGroup) {
+        svgGroup.style.transform = `translate3d(${effectiveDeltaX}px, ${effectiveDeltaY}px, 0)`;
+      }
+      // Update crosshair via direct DOM manipulation, ZERO React re-renders
+      const clampedPoint = clampToChartArea({ x, y });
+      const hLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-h`);
+      const vLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-v`);
+      if (hLine && vLine) {
+        hLine.setAttribute('y1', String(clampedPoint.y));
+        hLine.setAttribute('y2', String(clampedPoint.y));
+        vLine.setAttribute('x1', String(clampedPoint.x));
+        vLine.setAttribute('x2', String(clampedPoint.x));
+        hLine.style.display = '';
+        vLine.style.display = '';
+      }
+      // Compute all drawing points displaced by the drag delta so each
+      // point gets its own blue badge on both axes during the drag.
+      if (draggedDrawing?.points) {
+        const displacedPoints = draggedDrawing.points.map(pt => {
+          const origX = converter.timeToX(pt.time);
+          const origY = converter.priceToY(pt.price);
+          if (origX === null || origY === undefined) return null;
+          return { x: origX + effectiveDeltaX, y: origY + effectiveDeltaY };
+        }).filter((p): p is PixelPoint => p !== null);
+        updateCursorBadges(clampedPoint, displacedPoints);
+      } else {
+        updateCursorBadges(clampedPoint);
+      }
+      if (!hLine || !vLine) {
+        // Fallback: update React state but only once per frame
+        if (!crosshairRafRef.current) {
+          crosshairRafRef.current = requestAnimationFrame(() => {
+            crosshairRafRef.current = null;
+            setCursorPosition(clampedPoint);
+          });
+        }
+      }
+
+      return;
+    }
+
+    if (draggingId && dragPointIndex !== null) {
+      // Update crosshair via direct DOM during point dragging, no React re-renders
+      const clampedPoint = clampToChartArea({ x, y });
+      // Emoji (970) / marker (971) resize is a SIZE gesture, not a coordinate
+      // placement. The full-chart crosshair guide + price/time badges belong to
+      // point placement only — during a resize they render as a stray "unending
+      // line" across the chart, so suppress them entirely for these handles.
+      const isResizeHandle = dragPointIndex === 970 || dragPointIndex === 971;
+      const hLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-h`);
+      const vLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-v`);
+      if (hLine && vLine) {
+        if (isResizeHandle) {
+          hLine.style.display = 'none';
+          vLine.style.display = 'none';
+        } else {
+          hLine.setAttribute('y1', String(clampedPoint.y));
+          hLine.setAttribute('y2', String(clampedPoint.y));
+          vLine.setAttribute('x1', String(clampedPoint.x));
+          vLine.setAttribute('x2', String(clampedPoint.x));
+          hLine.style.display = '';
+          vLine.style.display = '';
+        }
+      }
+      if (isResizeHandle) {
+        // Clear any lingering placement badges, then run the resize update below.
+        updateCursorBadges({ x: -9999, y: -9999 }, []);
+        // fall through to the drawing-update logic (dragPointIndex 970/971)
+      } else {
+      // Show badges for all drawing points: the dragged point at cursor position,
+      // other points at their original (undragged) positions.
+      const pointDragDrawing = drawings.find(d => d.id === draggingId);
+      if (pointDragDrawing?.points) {
+        const allPts = pointDragDrawing.points.map((pt, idx) => {
+          if (idx === dragPointIndex) {
+            // This is the point being dragged, use cursor position
+            return clampedPoint;
+          }
+          // Other points stay at their original pixel positions
+          const origX = converter.timeToX(pt.time);
+          const origY = converter.priceToY(pt.price);
+          if (origX === null || origY === undefined) return null;
+          return { x: origX, y: origY };
+        }).filter((p): p is PixelPoint => p !== null);
+        updateCursorBadges(clampedPoint, allPts);
+      } else {
+        updateCursorBadges(clampedPoint);
+      }
+      }
+
+      const drawing = drawings.find((d) => d.id === draggingId);
+
+      // iOS Safari magnetic snap: when dragging position corner handles near the
+      // price axis edge (within 30px), snap X to the chart boundary. On real iOS
+      // Safari, touch coordinates can never physically reach the rightmost pixels
+      // because the finger is too wide, so this lets users drag to the edge.
+      let snapX = x;
+      if (containerRef.current && dragPointIndex >= 980 && dragPointIndex <= 985) {
+        const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
+        const SNAP_DISTANCE = 30; // px, snap zone near price axis
+        if (x >= chartWidth - SNAP_DISTANCE) {
+          snapX = chartWidth;
+        }
+        // Also snap to left edge
+        if (x <= SNAP_DISTANCE) {
+          snapX = 0;
+        }
+      }
+
+      const chartPoint = pixelToChart({ x: snapX, y });
+      if (!drawing || !chartPoint) return;
+
+      if (dragPointIndex === 999 && drawing.stopLoss) {
+        // This shouldn't be reached anymore since we use 997/998 for stop loss corners
+        const updatedDrawings = drawings.map((d) =>
+          d.id === draggingId ? { ...d, stopLoss: chartPoint } : d
+        );
+        scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex === 970) {
+        // Emoji resize: scale glyph size (stored in strokeWidth) from the anchor centre
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || d.type !== 'emoji') return d;
+          const center = chartToPixel(d.points[0]);
+          if (!center) return d;
+          const half = Math.max(Math.abs(x - center.x), Math.abs(y - center.y));
+          const newFs = Math.round(Math.max(12, Math.min(200, half * 2)));
+          return { ...d, strokeWidth: newFs };
+        });
+        scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex === 971) {
+        // Marker resize: scale icon size (strokeWidth) from the anchor centre
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || !isMarkerTool(d.type)) return d;
+          const center = chartToPixel(d.points[0]);
+          if (!center) return d;
+          const half = Math.max(Math.abs(x - center.x), Math.abs(y - center.y));
+          const newSize = Math.round(Math.max(10, Math.min(120, (half / 12) * 16)));
+          return { ...d, strokeWidth: newSize };
+        });
+        scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex >= 980 && dragPointIndex <= 988) {
+        // Long/short position corner handles and line drags
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || (d.type !== 'long' && d.type !== 'short')) return d;
+
+          const [p0, p1] = d.points;
+          const minTimePoint = p0.time < p1.time ? 0 : 1;
+          const maxTimePoint = p0.time < p1.time ? 1 : 0;
+
+          if (dragPointIndex === 980) {
+            // Entry left handle - adjust left edge time AND entry price
+            const updatedPoints = d.points.map((p, i) =>
+              i === minTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            updatedPoints[0] = { ...updatedPoints[0], price: chartPoint.price };
+            // Keep stopLoss aligned with left edge
+            if (d.stopLoss) {
+              return { ...d, points: updatedPoints, stopLoss: { ...d.stopLoss, time: chartPoint.time } };
+            }
+            return { ...d, points: updatedPoints };
+          } else if (dragPointIndex === 981) {
+            // Entry right handle - adjust right edge time AND entry price
+            const updatedPoints = d.points.map((p, i) =>
+              i === maxTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            updatedPoints[0] = { ...updatedPoints[0], price: chartPoint.price };
+            // Keep stopLoss aligned with right edge
+            if (d.stopLoss) {
+              return { ...d, points: updatedPoints, stopLoss: { ...d.stopLoss, time: chartPoint.time } };
+            }
+            return { ...d, points: updatedPoints };
+          } else if (dragPointIndex === 982) {
+            // Top-left corner - adjust left time and target price
+            const updatedPoints = d.points.map((p, i) =>
+              i === minTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            // Clamp TP so it can never cross entry price. For longs TP must
+            // stay above entry; for shorts TP must stay below entry. Without
+            // this clamp, dragging TP past entry inverts the green/red zones
+            // and glitches the chart rendering.
+            const entryPrice982 = d.points[0].price;
+            const clampedTP982 = d.type === 'long'
+              ? Math.max(chartPoint.price, entryPrice982)
+              : Math.min(chartPoint.price, entryPrice982);
+            updatedPoints[1] = { ...updatedPoints[1], price: clampedTP982 };
+            // Also update stopLoss time to keep box aligned
+            if (d.stopLoss) {
+              const updatedSL = { ...d.stopLoss, time: Math.min(d.stopLoss.time, chartPoint.time) };
+              return { ...d, points: updatedPoints, stopLoss: updatedSL };
+            }
+            return { ...d, points: updatedPoints };
+          } else if (dragPointIndex === 983) {
+            // Top-right corner - adjust right time and target price
+            const updatedPoints = d.points.map((p, i) =>
+              i === maxTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            // Clamp TP so it can never cross entry (same logic as 982)
+            const entryPrice983 = d.points[0].price;
+            const clampedTP983 = d.type === 'long'
+              ? Math.max(chartPoint.price, entryPrice983)
+              : Math.min(chartPoint.price, entryPrice983);
+            updatedPoints[1] = { ...updatedPoints[1], price: clampedTP983 };
+            // Also update stopLoss time to keep box aligned
+            if (d.stopLoss) {
+              const updatedSL = { ...d.stopLoss, time: Math.max(d.stopLoss.time, chartPoint.time) };
+              return { ...d, points: updatedPoints, stopLoss: updatedSL };
+            }
+            return { ...d, points: updatedPoints };
+          } else if (dragPointIndex === 984 && d.stopLoss) {
+            // Bottom-left corner - adjust left time and stop loss price.
+            // Clamp SL so it can never cross entry price. For longs SL must
+            // stay at or below entry; for shorts SL must stay at or above
+            // entry. This prevents the red/green zones from inverting.
+            const entryPrice984 = d.points[0].price;
+            const clampedSL984 = d.type === 'long'
+              ? Math.min(chartPoint.price, entryPrice984)
+              : Math.max(chartPoint.price, entryPrice984);
+            const updatedPoints = d.points.map((p, i) =>
+              i === minTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            return { ...d, points: updatedPoints, stopLoss: { ...d.stopLoss, time: chartPoint.time, price: clampedSL984 } };
+          } else if (dragPointIndex === 985 && d.stopLoss) {
+            // Bottom-right corner - adjust right time and stop loss price.
+            // Clamp SL so it can never cross entry (same logic as 984)
+            const entryPrice985 = d.points[0].price;
+            const clampedSL985 = d.type === 'long'
+              ? Math.min(chartPoint.price, entryPrice985)
+              : Math.max(chartPoint.price, entryPrice985);
+            const updatedPoints = d.points.map((p, i) =>
+              i === maxTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            return { ...d, points: updatedPoints, stopLoss: { ...d.stopLoss, time: chartPoint.time, price: clampedSL985 } };
+          } else if (dragPointIndex === 986) {
+            // Dragging the TARGET LINE - only adjust target price (vertical).
+            // Clamp so TP can never cross entry price and invert the position
+            const entryPrice986 = d.points[0].price;
+            const clampedTP986 = d.type === 'long'
+              ? Math.max(chartPoint.price, entryPrice986)
+              : Math.min(chartPoint.price, entryPrice986);
+            const updatedPoints = [...d.points];
+            updatedPoints[1] = { ...updatedPoints[1], price: clampedTP986 };
+            return { ...d, points: updatedPoints };
+          } else if (dragPointIndex === 987 && d.stopLoss) {
+            // Dragging the STOP LOSS LINE - only adjust stop loss price (vertical).
+            // Clamp so SL can never cross entry price and invert the position
+            const entryPrice987 = d.points[0].price;
+            const clampedSL987 = d.type === 'long'
+              ? Math.min(chartPoint.price, entryPrice987)
+              : Math.max(chartPoint.price, entryPrice987);
+            return { ...d, stopLoss: { ...d.stopLoss, price: clampedSL987 } };
+          } else if (dragPointIndex === 988) {
+            // Dragging the ENTRY LINE - only adjust entry price (vertical movement)
+            const updatedPoints = [...d.points];
+            updatedPoints[0] = { ...updatedPoints[0], price: chartPoint.price };
+            return { ...d, points: updatedPoints };
+          }
+          return d;
+        });
+        scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex === 997 || dragPointIndex === 998) {
+        // Legacy stop loss corner handles (keeping for compatibility)
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || !d.stopLoss) return d;
+
+          const [p0, p1] = d.points;
+          const minTimePoint = p0.time < p1.time ? 0 : 1;
+          const maxTimePoint = p0.time < p1.time ? 1 : 0;
+
+          // Clamp SL so it can never cross entry price (same rule as 984/985/987)
+          const entryPriceLegacy = d.points[0].price;
+          const clampedSLLegacy = d.type === 'long'
+            ? Math.min(chartPoint.price, entryPriceLegacy)
+            : d.type === 'short'
+              ? Math.max(chartPoint.price, entryPriceLegacy)
+              : chartPoint.price;
+
+          if (dragPointIndex === 997) {
+            const updatedPoints = d.points.map((p, i) =>
+              i === minTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            return { ...d, points: updatedPoints, stopLoss: { time: chartPoint.time, price: clampedSLLegacy } };
+          } else {
+            const updatedPoints = d.points.map((p, i) =>
+              i === maxTimePoint ? { ...p, time: chartPoint.time } : p
+            );
+            return { ...d, points: updatedPoints, stopLoss: { time: chartPoint.time, price: clampedSLLegacy } };
+          }
+        });
+        scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex >= 990 && dragPointIndex <= 993) {
+        // Dragging shape corners (rectangle, square, circle, oval, parallelogram, octagon, etc.)
+        const shapeTypes = ['rectangle', 'square', 'circle', 'oval', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart'];
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || !shapeTypes.includes(d.type as string)) return d;
+
+          const [p0, p1] = d.points;
+          const minTimePoint = p0.time < p1.time ? p0 : p1;
+          const maxTimePoint = p0.time < p1.time ? p1 : p0;
+          const minPricePoint = p0.price < p1.price ? p0 : p1;
+          const maxPricePoint = p0.price < p1.price ? p1 : p0;
+
+          let newP0, newP1;
+
+          // When dragging a corner, that corner moves to cursor position
+          // and the opposite corner stays fixed
+          if (dragPointIndex === 990) {
+            newP0 = { time: chartPoint.time, price: chartPoint.price };
+            newP1 = { time: maxTimePoint.time, price: minPricePoint.price };
+          } else if (dragPointIndex === 991) {
+            newP0 = { time: minTimePoint.time, price: minPricePoint.price };
+            newP1 = { time: chartPoint.time, price: chartPoint.price };
+          } else if (dragPointIndex === 992) {
+            newP0 = { time: chartPoint.time, price: chartPoint.price };
+            newP1 = { time: maxTimePoint.time, price: maxPricePoint.price };
+          } else {
+            newP0 = { time: minTimePoint.time, price: maxPricePoint.price };
+            newP1 = { time: chartPoint.time, price: chartPoint.price };
+          }
+
+          // For square/circle: enforce equal pixel width and height by adjusting
+          // the moved point's price so the vertical pixel span matches horizontal.
+          // We keep time (horizontal) as the user dragged it, and adjust price (vertical)
+          // because the price axis can be converted back precisely via pixelToChart.
+          if (d.type === 'square' || d.type === 'circle') {
+            const px0 = chartToPixel(newP0);
+            const px1 = chartToPixel(newP1);
+            if (px0 && px1) {
+              const dx = Math.abs(px1.x - px0.x);
+              const dy = Math.abs(px1.y - px0.y);
+              const size = Math.max(dx, dy);
+              // Determine which point was moved (the cursor point) and adjust it
+              // Keep the fixed corner unchanged, adjust the dragged corner
+              if (dragPointIndex === 990 || dragPointIndex === 992) {
+                // p0 is the moved point. Adjust its x/y pixel position to enforce size.
+                const fixedPx = px1;
+                const adjustedX = fixedPx.x > px0.x ? fixedPx.x - size : fixedPx.x + size;
+                const adjustedY = fixedPx.y > px0.y ? fixedPx.y - size : fixedPx.y + size;
+                const adjusted = pixelToChart({ x: adjustedX, y: adjustedY });
+                if (adjusted) newP0 = adjusted;
+              } else {
+                // p1 is the moved point
+                const fixedPx = px0;
+                const adjustedX = fixedPx.x > px1.x ? fixedPx.x - size : fixedPx.x + size;
+                const adjustedY = fixedPx.y > px1.y ? fixedPx.y - size : fixedPx.y + size;
+                const adjusted = pixelToChart({ x: adjustedX, y: adjustedY });
+                if (adjusted) newP1 = adjusted;
+              }
+            }
+          }
+
+          return { ...d, points: [newP0, newP1] };
+        });
+        scheduleRAFUpdate(updatedDrawings);
+      } else if (dragPointIndex >= 994 && dragPointIndex <= 996) {
+        // Dragging triangle corners
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId || d.type !== 'triangle') return d;
+
+          const [p0, p1] = d.points;
+          const minTimePoint = p0.time < p1.time ? p0 : p1;
+          const maxTimePoint = p0.time < p1.time ? p1 : p0;
+          const minPricePoint = p0.price < p1.price ? p0 : p1;
+          const maxPricePoint = p0.price < p1.price ? p1 : p0;
+
+          let newP0, newP1;
+
+          if (dragPointIndex === 994) {
+            // Bottom-left corner - adjust minTime and minPrice
+            newP0 = { time: chartPoint.time, price: chartPoint.price };
+            newP1 = { time: maxTimePoint.time, price: maxPricePoint.price };
+          } else if (dragPointIndex === 995) {
+            // Top-center corner - adjust the top (maxPrice), keep width
+            const midTime = (minTimePoint.time + maxTimePoint.time) / 2;
+            const timeDiff = chartPoint.time - midTime;
+            newP0 = { time: minTimePoint.time + timeDiff, price: minPricePoint.price };
+            newP1 = { time: maxTimePoint.time + timeDiff, price: chartPoint.price };
+          } else {
+            // Bottom-right corner - adjust maxTime and minPrice
+            newP0 = { time: minTimePoint.time, price: maxPricePoint.price };
+            newP1 = { time: chartPoint.time, price: chartPoint.price };
+          }
+
+          return { ...d, points: [newP0, newP1] };
+        });
+        scheduleRAFUpdate(updatedDrawings);
+      } else {
+        // Dragging regular corner point
+        const updatedDrawingsRegular = drawings.map((d) => {
+          if (d.id !== draggingId) return d;
+
+          const updatedPoints = d.points.map((p, i) => {
+            if (i !== dragPointIndex) return p;
+            // Allow free movement of endpoints for all line types including 'line' (straight line)
+            return chartPoint;
+          });
+
+          // For long/short, if dragging entry point (index 0), update stop loss time too
+          if ((d.type === 'long' || d.type === 'short') && dragPointIndex === 0 && d.stopLoss) {
+            return {
+              ...d,
+              points: updatedPoints,
+              stopLoss: { ...d.stopLoss, time: chartPoint.time }
+            };
+          }
+
+          return { ...d, points: updatedPoints };
+        });
+        scheduleRAFUpdate(updatedDrawingsRegular);
+      }
+      return;
+    }
+
+    // Only add brush points if we're actively drawing a NEW brush (not dragging an existing one)
+    // Use direct state update for immediate visual feedback
+    if (isBrushTool(activeTool) && isDrawingBrushRef.current && !isDraggingRef.current) {
+      const clampedPoint = clampToChartArea({ x, y });
+      // Add point smoothing - only add if moved enough to reduce jitter
+      // Use smaller threshold for smoother lines (especially important on mobile)
+      setBrushPath(prev => {
+        if (prev.length === 0) return [clampedPoint];
+        const lastPoint = prev[prev.length - 1];
+        const dist = Math.sqrt((clampedPoint.x - lastPoint.x) ** 2 + (clampedPoint.y - lastPoint.y) ** 2);
+        // Use 1px threshold for smoother curves (was 2px)
+        if (dist >= 1) {
+          return [...prev, clampedPoint];
+        }
+        return prev;
+      });
+      // Update crosshair position while drawing brush
+      setCursorPosition(clampedPoint);
+      return;
+    }
+
+    // Handle touch drawing (tap-hold-drag behavior)
+    if (touchDrawing) {
+      const clampedPoint = clampToChartArea({ x, y });
+      setTouchDrawing({ ...touchDrawing, currentPoint: clampedPoint });
+      return;
+    }
+
+    // Show crosshair and preview when a drawing tool is active
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'callout', 'anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile', 'regressionTrend', 'cyclicLines', 'sineLine', 'innerFork', 'splitChannel', 'timeArcs', 'brush', 'highlighter', 'arrow', 'measure'];
+    if (activeTool && drawingTools.includes(activeTool)) {
+      const clampedPoint = clampToChartArea({ x, y });
+
+      // #DO-NOT-FUCK-WITH-THIS  (commit 88b3536c)
+      // This block is what makes the drawing-tool preview feel silky. If you replace
+      // any of the imperative DOM writes below with React state, or remove the rAF
+      // throttle, the preview goes back to stuttering at high mouse rates. We tried
+      // it the React way; it diffs the entire overlay on every mousemove and blows
+      // the frame budget once you have a few drawings on screen.
+      //
+      // Crosshair is positioned imperatively at full mouse rate (no React re-render).
+      // The crosshair <line> elements have stable IDs from renderCrosshair() and were
+      // previously driven by setCursorPosition state, which forced an overlay re-render
+      // (diffing every existing drawing) on every mousemove. Direct setAttribute is free.
+      const hLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-h`);
+      const vLine = document.getElementById(`${clipIdRef.current}_drawing-crosshair-v`);
+      if (hLine && vLine) {
+        hLine.setAttribute('y1', String(clampedPoint.y));
+        hLine.setAttribute('y2', String(clampedPoint.y));
+        vLine.setAttribute('x1', String(clampedPoint.x));
+        vLine.setAttribute('x2', String(clampedPoint.x));
+        hLine.style.display = '';
+        vLine.style.display = '';
+      }
+
+      // Badges are also imperative (DOM textContent + style) inside updateCursorBadges.
+      updateCursorBadges(clampedPoint);
+
+      // Preview shape (the in-progress trend/line/rect/etc.) still goes through React
+      // because the shape varies per tool. rAF-throttle so we render at most once per
+      // frame regardless of how fast mousemove fires. The state sync also keeps
+      // cursorPosition fresh so any external re-render (live tick, prop change) keeps
+      // the crosshair at the current cursor instead of snapping to a stale position.
+      pendingPreviewPtRef.current = clampedPoint;
+      if (previewRafRef.current === null) {
+        previewRafRef.current = requestAnimationFrame(() => {
+          previewRafRef.current = null;
+          const pt = pendingPreviewPtRef.current;
+          if (!pt) return;
+          setCursorPosition(pt);
+          if (tempPoints.length >= 1) setPreviewPoint(pt);
+        });
+      }
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    // Cache bounding rect during drags to avoid layout thrashing
+    if (!cachedRectRef.current || !draggingId) {
+      cachedRectRef.current = containerRef.current.getBoundingClientRect();
+    }
+    const rect = cachedRectRef.current;
+    const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
+
+    handlePointerMove(x, y);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    e.preventDefault(); // Prevent scrolling while drawing
+    const touch = e.touches[0];
+    // Cache bounding rect during touch drags to avoid layout thrashing.
+    // On iOS Safari, getBoundingClientRect() shifts by 2-3px mid-touch as
+    // the toolbar slides or the viewport rubber-bands, causing drawings to
+    // "snap" to a slightly different position. Caching prevents this drift.
+    if (!cachedRectRef.current || !draggingId) {
+      cachedRectRef.current = containerRef.current.getBoundingClientRect();
+    }
+    const rect = cachedRectRef.current;
+    const { x, y } = localFromEvent(touch.clientX, touch.clientY, rect);
+    handlePointerMove(x, y);
+  };
+
+  // Unified pointer down handler for both mouse and touch
+  // Eraser tool: when active, clicking a drawing deletes it instead of selecting.
+  const selectOrErase = (id: string, pos: { x: number; y: number }) => {
+    if (activeTool === 'eraser') {
+      onDrawingsChange(drawings.filter((d) => d.id !== id));
+      onSelectDrawing?.(null);
+      return;
+    }
+    onSelectDrawing?.(id, pos);
+  };
+
+  // Distance from a point to a segment (pixels). Shared by the eraser hit test.
+  const distToSegment = (px: number, py: number, a: PixelPoint, b: PixelPoint): number => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - a.x, py - a.y);
+    let t = ((px - a.x) * dx + (py - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
+  };
+
+  // Resolve a drawing's on-screen polyline/points for eraser proximity testing.
+  const eraserPixelsOf = (d: Drawing): PixelPoint[] => {
+    if (isBrushTool(d.type)) {
+      if (d.brushChartPoints && d.brushChartPoints.length > 0) {
+        return d.brushChartPoints.map(chartToPixel).filter((p): p is PixelPoint => p !== null);
+      }
+      const anchor = chartToPixel(d.points[0]);
+      if (anchor) {
+        const offs = d.brushPixelOffsets || d.pixelOffsets;
+        if (offs && offs.length > 0) return offs.map(o => ({ x: anchor.x + o.x, y: anchor.y + o.y }));
+        if (d.brushPixelPoints && d.brushPixelPoints.length > 0) {
+          const o0 = d.brushPixelPoints[0];
+          return d.brushPixelPoints.map(p => ({ x: anchor.x + (p.x - o0.x), y: anchor.y + (p.y - o0.y) }));
+        }
+      }
+    }
+    const pts = (d.points || []).map(chartToPixel).filter((p): p is PixelPoint => p !== null);
+    if (d.stopLoss) { const sl = chartToPixel(d.stopLoss); if (sl) pts.push(sl); }
+    return pts;
+  };
+
+  // True when the eraser cursor (radius r) is close enough to erase drawing d.
+  const isErasedBy = (d: Drawing, x: number, y: number, r: number): boolean => {
+    const pts = eraserPixelsOf(d);
+    if (pts.length === 0) return false;
+    // Single-anchor glyphs (emoji/marker/text/notes): use a size-aware radius.
+    if (pts.length === 1) {
+      const glyph = (d.type === 'emoji' || isMarkerTool(d.type)) ? (d.strokeWidth || 24) / 2 : 10;
+      return Math.hypot(x - pts[0].x, y - pts[0].y) <= r + glyph;
+    }
+    for (let i = 1; i < pts.length; i++) {
+      if (distToSegment(x, y, pts[i - 1], pts[i]) <= r) return true;
+    }
+    // Closing edge for filled shapes so the whole outline is erasable.
+    const CLOSED_SHAPES = ['rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short'];
+    if (CLOSED_SHAPES.includes(d.type) && pts.length > 2 && distToSegment(x, y, pts[pts.length - 1], pts[0]) <= r) return true;
+    return false;
+  };
+
+  // Erase every drawing under the eraser at (x,y). Used for click + swipe erase.
+  // Brush / highlighter strokes are rubbed out PARTIALLY: only the points the
+  // eraser passes over are removed, and the stroke is split into the surviving
+  // runs (like a real eraser). Every other drawing is deleted whole on contact.
+  const eraseAtPixel = (x: number, y: number) => {
+    const r = 14;
+    let changed = false;
+    const next: Drawing[] = [];
+    for (const d of drawings) {
+      if (!isErasedBy(d, x, y, r)) { next.push(d); continue; }
+      // Partial erase for brush/highlighter with resolvable chart points.
+      if (isBrushTool(d.type) && d.brushChartPoints && d.brushChartPoints.length > 1) {
+        const runs: ChartPoint[][] = [];
+        let run: ChartPoint[] = [];
+        for (const cp of d.brushChartPoints) {
+          const px = chartToPixel(cp);
+          const hit = px ? Math.hypot(px.x - x, px.y - y) <= r : false;
+          if (hit) { if (run.length > 1) runs.push(run); run = []; }
+          else run.push(cp);
+        }
+        if (run.length > 1) runs.push(run);
+        changed = true;
+        runs.forEach((pts, i) => {
+          next.push({
+            ...d,
+            id: `${d.id}-e${i}-${Math.random().toString(36).slice(2, 7)}`,
+            points: [pts[0]],
+            brushChartPoints: pts,
+            brushPixelOffsets: undefined,
+            brushPixelPoints: undefined,
+            pixelOffsets: undefined,
+          });
+        });
+        continue; // fully-erased strokes leave no surviving runs
+      }
+      // Any other drawing: remove it entirely.
+      changed = true;
+    }
+    if (changed) {
+      onDrawingsChange(next);
+      onSelectDrawing?.(null);
+    }
+  };
+
+  const handlePointerDown = (x: number, y: number, clientX: number, clientY: number) => {
+    if (!containerRef.current) return false;
+
+    // If drawings are locked, don't allow dragging/resizing existing drawings
+    if (isLocked) return false;
+
+    // Eraser: press-and-swipe deletes any drawing the cursor touches — including
+    // brush / highlighter strokes. We consume the gesture so the chart doesn't
+    // pan while erasing; handlePointerMove keeps erasing until pointer up.
+    if (activeTool === 'eraser') {
+      isErasingRef.current = true;
+      eraseAtPixel(x, y);
+      return true;
+    }
+
+    // PRIORITY: If user has an active drawing tool selected, skip existing drawing detection
+    // This allows placing new drawings on top of existing ones
+    // Exception: brush tool should start drawing immediately in handlePointerDown
+    const drawingTools: DrawingTool[] = ['trend', 'trendRay', 'parallelChannel', 'line', 'straightArrow', 'fibonacci', 'fibExtension', 'fibFan', 'fibTimeZones', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'gannFan', 'gannBox', 'gannSquare', 'gannSquareFixed', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'freeTriangle', 'parallelogram', 'octagon', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'horizontal', 'text', 'extendedLine', 'infoLine', 'trendAngle', 'crossline', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'xabcd', 'cypher', 'abcd', 'headShoulders', 'trianglePattern', 'threeDrives', 'elliottImpulse', 'elliottCorrection', 'elliottTriangle', 'elliottCombo', 'markerArrowUp', 'markerArrowDown', 'markerCircle', 'markerSquare', 'markerDiamond', 'markerStar', 'markerTriangleUp', 'markerTriangleDown', 'emoji', 'note', 'callout', 'priceLabel', 'signpost', 'anchoredVwap', 'fixedVolumeProfile', 'anchoredVolumeProfile', 'regressionTrend', 'cyclicLines', 'sineLine', 'innerFork', 'splitChannel', 'timeArcs'];
+    if (activeTool && drawingTools.includes(activeTool)) {
+      return false; // Let handleClick/handleTap handle the new drawing creation
+    }
+
+    // Handle brush tool immediately - start drawing on pointer down
+    // BUT only if we're not clicking on an existing drawing (to allow selecting brush drawings)
+    if (isBrushTool(activeTool)) {
+      // First check if we clicked on any existing brush drawing
+      for (let i = drawings.length - 1; i >= 0; i--) {
+        const drawing = drawings[i];
+        if (!isBrushTool(drawing.type)) continue;
+
+        const pixels = drawing.points.map(chartToPixel).filter((p): p is PixelPoint => p !== null);
+        const anchorPixel = pixels[0];
+        if (!anchorPixel) continue;
+
+        // Compute brush pixels based on storage format - prioritize chart coordinates
+        let smoothPixels: PixelPoint[];
+
+        if (drawing.brushChartPoints && drawing.brushChartPoints.length > 0) {
+          // Primary format: ALL points in chart coordinates - scales with zoom
+          smoothPixels = drawing.brushChartPoints.map(cp => chartToPixel(cp)).filter((p): p is PixelPoint => p !== null);
+        } else if (drawing.brushPixelOffsets && drawing.brushPixelOffsets.length > 0) {
+          // Legacy format: pixel offsets (won't scale properly)
+          smoothPixels = drawing.brushPixelOffsets.map(offset => ({
+            x: anchorPixel.x + offset.x,
+            y: anchorPixel.y + offset.y
+          }));
+        } else if (drawing.pixelOffsets && drawing.pixelOffsets.length > 0) {
+          smoothPixels = drawing.pixelOffsets.map(offset => ({
+            x: anchorPixel.x + offset.x,
+            y: anchorPixel.y + offset.y
+          }));
+        } else if (drawing.brushPixelPoints && drawing.brushPixelPoints.length > 0) {
+          const originalAnchor = drawing.brushPixelPoints[0];
+          smoothPixels = drawing.brushPixelPoints.map(p => ({
+            x: anchorPixel.x + (p.x - originalAnchor.x),
+            y: anchorPixel.y + (p.y - originalAnchor.y)
+          }));
+        } else {
+          smoothPixels = pixels;
+        }
+
+        if (smoothPixels.length < 2) continue;
+
+        // Check if click is near any segment of the brush path
+        for (let j = 1; j < smoothPixels.length; j++) {
+          const p1 = smoothPixels[j - 1];
+          const p2 = smoothPixels[j];
+          const lineLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+          if (lineLength === 0) continue;
+
+          const distToLine = Math.abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x) / lineLength;
+          if (distToLine < 16) {
+            const dotProduct = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / (lineLength * lineLength);
+            if (dotProduct >= 0 && dotProduct <= 1) {
+              // Clicked on existing brush - select and start dragging
+              const firstPointPixel = chartToPixel(drawing.points[0]);
+              startDragging(drawing.id);
+              setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
+              return true;
+            }
+          }
+        }
+      }
+
+      // Start new brush drawing on empty area
+      const clampedPoint = clampToChartArea({ x, y });
+      isDrawingBrushRef.current = true;
+      setBrushPath([clampedPoint]);
+      return true;
+    }
+
+    // Track if we hit ANY drawing
+    let hitAnyDrawing = false;
+
+    // Check drawings in reverse order (top-most first)
+    for (let i = drawings.length - 1; i >= 0; i--) {
+      const drawing = drawings[i];
+      const pixels = drawing.points.map(chartToPixel).filter((p): p is PixelPoint => p !== null);
+
+      // First check if clicking on resize handles (corners/points)
+      // Special handling for rectangles and shapes - check all 4 corners (or 3 for triangle)
+      if ((drawing.type === 'rectangle' || drawing.type === 'square' || drawing.type === 'circle' || drawing.type === 'oval' || drawing.type === 'parallelogram' || drawing.type === 'octagon' || drawing.type === 'diamond' || drawing.type === 'pentagon' || drawing.type === 'hexagon' || drawing.type === 'star' || drawing.type === 'cross' || drawing.type === 'arrowBlock' || drawing.type === 'wedge' || drawing.type === 'heart') && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+
+        // For square/circle, use size-based corners to maintain equal proportions
+        const isFixedProportion = drawing.type === 'square' || drawing.type === 'circle';
+        const size = isFixedProportion ? Math.max(maxX - minX, maxY - minY) : 0;
+        const actualMaxX = isFixedProportion ? minX + size : maxX;
+        const actualMaxY = isFixedProportion ? minY + size : maxY;
+
+        const corners = [
+          { x: minX, y: minY, index: 990 }, // Top-left
+          { x: actualMaxX, y: minY, index: 991 }, // Top-right
+          { x: minX, y: actualMaxY, index: 992 }, // Bottom-left
+          { x: actualMaxX, y: actualMaxY, index: 993 }, // Bottom-right
+        ];
+
+        for (const corner of corners) {
+          const dist = Math.sqrt((x - corner.x) ** 2 + (y - corner.y) ** 2);
+          if (dist < 15) { // Larger hit area for touch
+            startDragging(drawing.id);
+            setDragPointIndex(corner.index);
+            return true;
+          }
+        }
+      }
+
+      // Special handling for triangle - 3 corners
+      if (drawing.type === 'triangle' && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const minX = Math.min(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const size = Math.max(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
+        const height = size * Math.sqrt(3) / 2;
+
+        // Triangle corners: bottom-left, top-center, bottom-right
+        const triangleCorners = [
+          { x: minX, y: minY + height, index: 994 }, // Bottom-left
+          { x: minX + size / 2, y: minY, index: 995 }, // Top-center
+          { x: minX + size, y: minY + height, index: 996 }, // Bottom-right
+        ];
+
+        for (const corner of triangleCorners) {
+          const dist = Math.sqrt((x - corner.x) ** 2 + (y - corner.y) ** 2);
+          if (dist < 15) {
+            startDragging(drawing.id);
+            setDragPointIndex(corner.index);
+            return true;
+          }
+        }
+      }
+
+      // Regular point checking for other drawing types (skip for rectangles and shapes - already handled above)
+      if (drawing.type !== 'rectangle' && drawing.type !== 'square' && drawing.type !== 'circle' && drawing.type !== 'oval' && drawing.type !== 'triangle' && drawing.type !== 'diamond' && drawing.type !== 'pentagon' && drawing.type !== 'hexagon' && drawing.type !== 'star' && drawing.type !== 'cross' && drawing.type !== 'arrowBlock' && drawing.type !== 'wedge' && drawing.type !== 'heart') {
+        for (let j = 0; j < pixels.length; j++) {
+          const pixel = pixels[j];
+          const dist = Math.sqrt((x - pixel.x) ** 2 + (y - pixel.y) ** 2);
+          if (dist < 15) { // Larger hit area for touch
+            startDragging(drawing.id);
+            setDragPointIndex(j);
+            return true;
+          }
+        }
+      }
+
+      // Corner/line handles for long/short positions, ONLY when drawing is
+      // already selected. Unselected drawings always get body-drag so the
+      // user can reposition the whole box without accidentally grabbing a
+      // handle that distorts its shape (the three horizontal lines cover
+      // most of the vertical area with their 15px tolerance zones).
+      const isThisDrawingSelected = selectedDrawingId === drawing.id;
+      if (isThisDrawingSelected && (drawing.type === 'long' || drawing.type === 'short') && drawing.stopLoss && pixels.length >= 2) {
+        const slPixel = chartToPixel(drawing.stopLoss);
+        if (slPixel) {
+          const minX = Math.min(pixels[0].x, pixels[1].x);
+          const maxX = Math.max(pixels[0].x, pixels[1].x);
+          const entryY = pixels[0].y;
+          const targetY = pixels[1].y;
+          const stopLossY = slPixel.y;
+          const cornerHitRadius = 12; // Tight radius so corners don't steal from lines
+          const lineHitTolerance = 15; // Generous hit area for lines
+
+          // CORNER handles checked FIRST. Visible handle squares are drawn AT
+          // the corners, so a click on the handle must route to corner-resize
+          // (horizontal + vertical) rather than line-drag (vertical only).
+          // The 12px corner radius is tight enough not to steal from clicks
+          // in the middle of a line.
+
+          // Target left corner (982) - green top-left
+          if (Math.sqrt((x - minX) ** 2 + (y - targetY) ** 2) < cornerHitRadius) {
+            startDragging(drawing.id);
+            setDragPointIndex(982);
+            return true;
+          }
+          // Target right corner (983) - green top-right
+          if (Math.sqrt((x - maxX) ** 2 + (y - targetY) ** 2) < cornerHitRadius) {
+            startDragging(drawing.id);
+            setDragPointIndex(983);
+            return true;
+          }
+          // Stop loss left corner (984) - red bottom-left
+          if (Math.sqrt((x - minX) ** 2 + (y - stopLossY) ** 2) < cornerHitRadius) {
+            startDragging(drawing.id);
+            setDragPointIndex(984);
+            return true;
+          }
+          // Stop loss right corner (985) - red bottom-right
+          if (Math.sqrt((x - maxX) ** 2 + (y - stopLossY) ** 2) < cornerHitRadius) {
+            startDragging(drawing.id);
+            setDragPointIndex(985);
+            return true;
+          }
+          // Entry left handle (980) - gray middle-left
+          if (Math.sqrt((x - minX) ** 2 + (y - entryY) ** 2) < cornerHitRadius) {
+            startDragging(drawing.id);
+            setDragPointIndex(980);
+            return true;
+          }
+          // Entry right handle (981) - gray middle-right
+          if (Math.sqrt((x - maxX) ** 2 + (y - entryY) ** 2) < cornerHitRadius) {
+            startDragging(drawing.id);
+            setDragPointIndex(981);
+            return true;
+          }
+
+          // LINE handles checked AFTER corners, so the middle of each line
+          // (away from the corner handles) drags vertically only.
+
+          // Target LINE hit detection (986) - anywhere along the horizontal TP line
+          if (x >= minX && x <= maxX && Math.abs(y - targetY) < lineHitTolerance) {
+            startDragging(drawing.id);
+            setDragPointIndex(986);
+            return true;
+          }
+
+          // Stop loss LINE hit detection (987) - anywhere along the horizontal SL line
+          if (x >= minX && x <= maxX && Math.abs(y - stopLossY) < lineHitTolerance) {
+            startDragging(drawing.id);
+            setDragPointIndex(987);
+            return true;
+          }
+
+          // Entry LINE hit detection (988) - anywhere along the horizontal entry line
+          if (x >= minX && x <= maxX && Math.abs(y - entryY) < lineHitTolerance) {
+            startDragging(drawing.id);
+            setDragPointIndex(988);
+            return true;
+          }
+        }
+      }
+
+      // Triangle body drag: test against the ACTUAL rendered equilateral polygon, not p1/p2 bbox.
+      // Why: render at line ~3219 uses size = max(|dx|, |dy|) and height = size * sqrt(3)/2, so the
+      // visible triangle extends well beyond the two stored points' bbox. A horizontal draw
+      // (dy = 0) produces a zero-height bbox and the body becomes ungrabbable.
+      if (drawing.type === 'triangle' && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const minX = Math.min(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const size = Math.max(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
+        const height = size * Math.sqrt(3) / 2;
+        const a = { x: minX, y: minY + height };
+        const b = { x: minX + size / 2, y: minY };
+        const c = { x: minX + size, y: minY + height };
+        const sign = (px: { x: number; y: number }, py: { x: number; y: number }, pz: { x: number; y: number }) =>
+          (px.x - pz.x) * (py.y - pz.y) - (py.x - pz.x) * (px.y - pz.y);
+        const d1 = sign({ x, y }, a, b);
+        const d2 = sign({ x, y }, b, c);
+        const d3 = sign({ x, y }, c, a);
+        const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+        const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+        if (!(hasNeg && hasPos)) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check if clicking on drawing body (for moving entire shape)
+      if ((drawing.type === 'rectangle' || drawing.type === 'square' || drawing.type === 'circle' || drawing.type === 'oval' || drawing.type === 'parallelogram' || drawing.type === 'octagon' || drawing.type === 'diamond' || drawing.type === 'pentagon' || drawing.type === 'hexagon' || drawing.type === 'star' || drawing.type === 'cross' || drawing.type === 'arrowBlock' || drawing.type === 'wedge' || drawing.type === 'heart' || drawing.type === 'long' || drawing.type === 'short') && pixels.length >= 2) {
+        const pixels0 = pixels[0];
+        const pixels1 = pixels[1];
+        if (pixels0 && pixels1) {
+          const minX = Math.min(pixels0.x, pixels1.x);
+          const maxX = Math.max(pixels0.x, pixels1.x);
+          let minY = Math.min(pixels0.y, pixels1.y);
+          let maxY = Math.max(pixels0.y, pixels1.y);
+
+          // For long/short, include stop loss in the body bounds
+          if ((drawing.type === 'long' || drawing.type === 'short') && drawing.stopLoss) {
+            const slPixel = chartToPixel(drawing.stopLoss);
+            if (slPixel) {
+              minY = Math.min(minY, slPixel.y);
+              maxY = Math.max(maxY, slPixel.y);
+            }
+          }
+
+          if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+            hitAnyDrawing = true;
+            // For selected drawings, allow dragging (don't deselect on click)
+            // Store offset from cursor to first point for precise dragging
+            const firstPointPixel = chartToPixel(drawing.points[0]);
+            startDragging(drawing.id);
+            setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+            // Select this drawing and show toolbar at click position
+            selectOrErase(drawing.id, { x: clientX, y: clientY });
+            return true;
+          }
+        }
+      }
+
+      // Check trendRay body (ray from p1 through p2)
+      if (drawing.type === 'trendRay' && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const lineLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+        if (lineLength > 0) {
+          const distToLine = Math.abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x) / lineLength;
+          const cw = (containerDims.width || 1000);
+          const ch = containerRef.current?.clientHeight || 600;
+          if (distToLine < 12 && x >= 0 && x <= cw && y >= 0 && y <= ch) {
+            const dotProduct = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / (lineLength * lineLength);
+            if (dotProduct >= -0.1) {
+              hitAnyDrawing = true;
+              const firstPointPixel = chartToPixel(drawing.points[0]);
+              startDragging(drawing.id);
+              setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
+              return true;
+            }
+          }
+        }
+      }
+      // Check trend and line (finite segment) body
+      if ((drawing.type === 'trend' || drawing.type === 'line' || drawing.type === 'infoLine' || drawing.type === 'trendAngle') && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const lineLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+        if (lineLength > 0) {
+          const distToLine = Math.abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x) / lineLength;
+          if (distToLine < 12) {
+            const dotProduct = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / (lineLength * lineLength);
+            if (dotProduct >= 0 && dotProduct <= 1) {
+              hitAnyDrawing = true;
+              const firstPointPixel = chartToPixel(drawing.points[0]);
+              startDragging(drawing.id);
+              setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
+              return true;
+            }
+          }
+        }
+      }
+      // Check extended line body (infinite both directions)
+      if (drawing.type === 'extendedLine' && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const lineLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+        if (lineLength > 0) {
+          const distToLine = Math.abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x) / lineLength;
+          if (distToLine < 12) {
+            hitAnyDrawing = true;
+            const firstPointPixel = chartToPixel(drawing.points[0]);
+            startDragging(drawing.id);
+            setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+            selectOrErase(drawing.id, { x: clientX, y: clientY });
+            return true;
+          }
+        }
+      }
+
+      // Check crossline body (horizontal + vertical through one point)
+      if (drawing.type === 'crossline' && pixels.length >= 1) {
+        const cxp = pixels[0].x, cyp = pixels[0].y;
+        if (Math.abs(y - cyp) < 12 || Math.abs(x - cxp) < 12) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check horizontal line body
+      if (drawing.type === 'horizontal' && pixels.length >= 1) {
+        const lineY = pixels[0].y;
+        if (Math.abs(y - lineY) < 12) { // Larger hit area for touch
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check straight arrow body (line between two points)
+      if (drawing.type === 'straightArrow' && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const lineLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+        if (lineLength > 0) {
+          const distToLine = Math.abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x) / lineLength;
+          if (distToLine < 15) {
+            const dotProduct = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / (lineLength * lineLength);
+            if (dotProduct >= 0 && dotProduct <= 1) {
+              hitAnyDrawing = true;
+              const firstPointPixel = chartToPixel(drawing.points[0]);
+              startDragging(drawing.id);
+              setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
+              return true;
+            }
+          }
+        }
+      }
+
+      // Check horizontal ray body (extends from point to right edge)
+      if (drawing.type === 'horizontalRay' && pixels.length >= 1) {
+        const lineY = pixels[0].y;
+        const startX = pixels[0].x;
+        if (Math.abs(y - lineY) < 12 && x >= startX - 10) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check vertical line body
+      if (drawing.type === 'vertical' && pixels.length >= 1) {
+        const lineX = pixels[0].x;
+        if (Math.abs(x - lineX) < 12) { // Larger hit area for touch
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check multi-point pattern / Elliott body
+      const mpHit = MULTIPOINT_TOOLS[drawing.type];
+      if (mpHit && pixels.length >= 2) {
+        const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+          const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+          if (L2 === 0) return Math.hypot(px - ax, py - ay);
+          let t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L2;
+          t = Math.max(0, Math.min(1, t));
+          return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
+        };
+        let near = false;
+        for (let i = 0; i < pixels.length - 1; i++) {
+          if (segDist(x, y, pixels[i].x, pixels[i].y, pixels[i + 1].x, pixels[i + 1].y) < 10) { near = true; break; }
+        }
+        if (!near) {
+          for (const [i, j] of mpHit.connectors) {
+            if (i < pixels.length && j < pixels.length && segDist(x, y, pixels[i].x, pixels[i].y, pixels[j].x, pixels[j].y) < 10) { near = true; break; }
+          }
+        }
+        if (near) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check fibonacci body
+      if ((drawing.type === 'fibonacci' || drawing.type === 'fibExtension' || drawing.type === 'fibFan' || drawing.type === 'fibTimeZones' || drawing.type === 'fibCircles' || drawing.type === 'fibSpiral' || drawing.type === 'fibArcs' || drawing.type === 'fibWedge' || drawing.type === 'gannFan' || drawing.type === 'gannBox' || drawing.type === 'gannSquare' || drawing.type === 'gannSquareFixed') && pixels.length >= 2) {
+        const [p1, p2] = pixels;
+        const minX = Math.min(p1.x, p2.x);
+        const maxX = Math.max(p1.x, p2.x);
+        const minY = Math.min(p1.y, p2.y);
+        const maxY = Math.max(p1.y, p2.y);
+
+        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check split channel (either line or the fill band)
+      if (drawing.type === 'splitChannel' && pixels.length >= 4) {
+        const [a1, a2, b1, b2] = pixels;
+        const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+          const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+          if (L2 === 0) return Math.hypot(px - ax, py - ay);
+          let t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L2;
+          t = Math.max(0, Math.min(1, t));
+          return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
+        };
+        const poly = [a1, a2, b2, b1];
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          if (((poly[i].y > y) !== (poly[j].y > y)) && (x < (poly[j].x - poly[i].x) * (y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)) inside = !inside;
+        }
+        if (inside || segDist(x, y, a1.x, a1.y, a2.x, a2.y) < 10 || segDist(x, y, b1.x, b1.y, b2.x, b2.y) < 10) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check time arcs (near any semicircle)
+      if (drawing.type === 'timeArcs' && pixels.length >= 2) {
+        const x1 = converter.timeToX(drawing.points[0].time), x2 = converter.timeToX(drawing.points[1].time);
+        const baseY = converter.priceToY(drawing.points[0].price);
+        const R = Math.abs(x2 - x1);
+        if (R >= 3) {
+          const dir = x2 >= x1 ? 1 : -1;
+          const cw = (containerDims.width || 2000);
+          const chartRight = cw - chartBounds.priceAxisWidth;
+          let hit = false;
+          for (let k = 0; k < 200; k++) {
+            const c = x1 + dir * R * (k + 0.5);
+            if (dir > 0 && c - R / 2 > chartRight) break;
+            if (dir < 0 && c + R / 2 < 0) break;
+            if (y <= baseY + 7 && Math.abs(Math.hypot(x - c, y - baseY) - R / 2) < 7) { hit = true; break; }
+            if (k > 80) break;
+          }
+          if (hit) {
+            hitAnyDrawing = true;
+            const fp = chartToPixel(drawing.points[0]);
+            startDragging(drawing.id);
+            setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+            selectOrErase(drawing.id, { x: clientX, y: clientY });
+            return true;
+          }
+        }
+      }
+
+      // Check freeTriangle body (point in polygon test)
+      if (drawing.type === 'freeTriangle' && pixels.length >= 3) {
+        const [p1, p2, p3] = pixels;
+
+        // Point in triangle test using barycentric coordinates
+        const sign = (px: PixelPoint, py: PixelPoint, pz: PixelPoint) =>
+          (px.x - pz.x) * (py.y - pz.y) - (py.x - pz.x) * (px.y - pz.y);
+
+        const d1 = sign({ x, y }, p1, p2);
+        const d2 = sign({ x, y }, p2, p3);
+        const d3 = sign({ x, y }, p3, p1);
+
+        const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+        const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+        if (!(hasNeg && hasPos)) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check pitchfork family body
+      if ((drawing.type === 'pitchfork' || drawing.type === 'schiff' || drawing.type === 'modifiedSchiff' || drawing.type === 'innerFork' || drawing.type === 'fibChannel' || drawing.type === 'fibPitchfan' || drawing.type === 'trendBasedFibTime') && pixels.length >= 3) {
+        const [a, b, c] = pixels;
+        const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+          const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+          if (L2 === 0) return Math.hypot(px - ax, py - ay);
+          let t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L2;
+          t = Math.max(0, Math.min(1, t));
+          return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
+        };
+        const sgn = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => (ax - cx) * (by - cy) - (bx - cx) * (ay - cy);
+        const d1 = sgn(x, y, a.x, a.y, b.x, b.y), d2 = sgn(x, y, b.x, b.y, c.x, c.y), d3 = sgn(x, y, c.x, c.y, a.x, a.y);
+        const inTri = !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+        if (inTri || segDist(x, y, a.x, a.y, b.x, b.y) < 12 || segDist(x, y, b.x, b.y, c.x, c.y) < 12 || segDist(x, y, a.x, a.y, c.x, c.y) < 12) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check flat channel body
+      if (drawing.type === 'flatChannel' && pixels.length >= 3) {
+        const [a, b, c] = pixels;
+        const flatY = c.y;
+        const segDist = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+          const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+          if (L2 === 0) return Math.hypot(px - ax, py - ay);
+          let t = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L2;
+          t = Math.max(0, Math.min(1, t));
+          return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
+        };
+        const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
+        const yTop = Math.min(a.y, b.y, flatY), yBot = Math.max(a.y, b.y, flatY);
+        const insideBox = x >= minX && x <= maxX && y >= yTop && y <= yBot;
+        if (insideBox || segDist(x, y, a.x, a.y, b.x, b.y) < 12 || segDist(x, y, a.x, flatY, b.x, flatY) < 12) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check parallelChannel body (point in parallelogram formed by the two channel lines)
+      if (drawing.type === 'parallelChannel' && pixels.length >= 3) {
+        const [p1, p2, p3] = pixels;
+        const dx = p3.x - p1.x;
+        const dy = p3.y - p1.y;
+        const q1 = p1;
+        const q2 = p2;
+        const q3 = { x: p2.x + dx, y: p2.y + dy };
+        const q4 = p3;
+        // Point in quad test: split into two triangles
+        const signQ = (px: PixelPoint, py: PixelPoint, pz: PixelPoint) =>
+          (px.x - pz.x) * (py.y - pz.y) - (py.x - pz.x) * (px.y - pz.y);
+        const inTri = (pt: PixelPoint, a: PixelPoint, b: PixelPoint, c: PixelPoint) => {
+          const d1 = signQ(pt, a, b);
+          const d2 = signQ(pt, b, c);
+          const d3 = signQ(pt, c, a);
+          return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+        };
+        if (inTri({ x, y }, q1, q2, q3) || inTri({ x, y }, q1, q3, q4)) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+        // Also check if near either line edge
+        for (const [la, lb] of [[q1, q2], [q4, q3]]) {
+          const lineLen = Math.sqrt((lb.x - la.x) ** 2 + (lb.y - la.y) ** 2);
+          if (lineLen > 0) {
+            const dist = Math.abs((lb.y - la.y) * x - (lb.x - la.x) * y + lb.x * la.y - lb.y * la.x) / lineLen;
+            const dot = ((x - la.x) * (lb.x - la.x) + (y - la.y) * (lb.y - la.y)) / (lineLen * lineLen);
+            if (dist < 12 && dot >= -0.1 && dot <= 1.1) {
+              hitAnyDrawing = true;
+              const firstPointPixel = chartToPixel(drawing.points[0]);
+              startDragging(drawing.id);
+              setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+              selectOrErase(drawing.id, { x: clientX, y: clientY });
+              return true;
+            }
+          }
+        }
+      }
+
+      // Check anchored volume profile (box or anchor marker)
+      if (drawing.type === 'anchoredVolumeProfile' && pixels.length >= 1) {
+        const anchor = drawing.points[0];
+        const cs = candlesProp;
+        const lastT = cs && cs.length ? cs[cs.length - 1].time : anchor.time;
+        const left = converter.timeToX(anchor.time);
+        const right = cs && cs.length ? converter.timeToX(lastT) : left + 120;
+        const vp = computeVolumeProfile(anchor.time, lastT, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
+        let top: number, bot: number;
+        if (vp) { const a = converter.priceToY(vp.priceHi), b = converter.priceToY(vp.priceLo); top = Math.min(a, b); bot = Math.max(a, b); }
+        else { const ap = converter.priceToY(anchor.price); top = ap - 8; bot = ap + 8; }
+        if (x >= Math.min(left, right) - 4 && x <= Math.max(left, right) + 4 && y >= top - 3 && y <= bot + 3) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check regression trend (near the fit line)
+      if (drawing.type === 'regressionTrend' && pixels.length >= 2) {
+        const reg = computeRegression(drawing.points[0].time, drawing.points[1].time);
+        let hit = false;
+        if (reg) { for (const p of reg.line) { if (Math.abs(x - p.x) <= 6 && Math.abs(y - p.y) <= 6) { hit = true; break; } } }
+        if (hit) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check cyclic lines (near any vertical)
+      if (drawing.type === 'cyclicLines' && pixels.length >= 2) {
+        const x1 = converter.timeToX(drawing.points[0].time), x2 = converter.timeToX(drawing.points[1].time);
+        const step = x2 - x1;
+        let hit = false;
+        if (Math.abs(step) >= 2) {
+          const cw = (containerDims.width || 2000);
+          const chartRight = cw - chartBounds.priceAxisWidth;
+          for (let k = 0; k < 240; k++) {
+            const xx = x1 + step * k;
+            if ((step > 0 && xx > chartRight) || (step < 0 && xx < 0)) break;
+            if (Math.abs(x - xx) <= 4) { hit = true; break; }
+          }
+        }
+        if (hit) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check sine line (near the sampled wave)
+      if (drawing.type === 'sineLine' && pixels.length >= 2) {
+        const x1 = converter.timeToX(drawing.points[0].time), y1 = converter.priceToY(drawing.points[0].price);
+        const x2 = converter.timeToX(drawing.points[1].time), y2 = converter.priceToY(drawing.points[1].price);
+        const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len, amp = 0.18 * len;
+        let hit = false;
+        for (let i = 0; i <= 36; i++) {
+          const t = i / 36;
+          const bx = x1 + dx * t, by = y1 + dy * t;
+          const off = amp * Math.sin(2 * Math.PI * t);
+          if (Math.abs(x - (bx + nx * off)) <= 6 && Math.abs(y - (by + ny * off)) <= 6) { hit = true; break; }
+        }
+        if (hit) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check anchored VWAP (anchor marker or along the line)
+      if (drawing.type === 'anchoredVwap' && pixels.length >= 1) {
+        const anchor = drawing.points[0];
+        const ax = converter.timeToX(anchor.time), ay = converter.priceToY(anchor.price);
+        let hit = Math.abs(x - ax) <= 8 && Math.abs(y - ay) <= 8;
+        if (!hit) {
+          const vw = computeAnchoredVwap(anchor.time, drawing.vwapSource || 'hlc3', drawing.band1 ?? 1, drawing.band2 ?? 2);
+          if (vw) {
+            for (const p of vw.line) { if (Math.abs(x - p.x) <= 6 && Math.abs(y - p.y) <= 6) { hit = true; break; } }
+          }
+        }
+        if (hit) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check fixed-range volume profile (selection box)
+      if (drawing.type === 'fixedVolumeProfile' && pixels.length >= 2) {
+        const p1 = drawing.points[0], p2 = drawing.points[1];
+        const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
+        const left = Math.min(x1, x2), right = Math.max(x1, x2);
+        const vp = computeVolumeProfile(p1.time, p2.time, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
+        let top: number, bot: number;
+        if (vp) { const a = converter.priceToY(vp.priceHi), b = converter.priceToY(vp.priceLo); top = Math.min(a, b); bot = Math.max(a, b); }
+        else { const a = converter.priceToY(p1.price), b = converter.priceToY(p2.price); top = Math.min(a, b); bot = Math.max(a, b); }
+        if (x >= left - 3 && x <= right + 3 && y >= top - 3 && y <= bot + 3) {
+          hitAnyDrawing = true;
+          const fp = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (fp?.x || 0), y: y - (fp?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check signpost drawing (box or pole)
+      if (drawing.type === 'signpost' && pixels.length >= 1) {
+        const p = pixels[0];
+        const fontSize = drawing.strokeWidth || 12;
+        const poleH = 38;
+        const boxW = (drawing.text?.length || 4) * fontSize * 0.6 + 14;
+        const boxH = fontSize + 8;
+        const topY = p.y - poleH;
+        const inBox = x >= p.x - 3 && x <= p.x + boxW + 3 && y >= topY - boxH - 3 && y <= topY + 3;
+        const onPole = Math.abs(x - p.x) <= 5 && y >= topY && y <= p.y;
+        if (inBox || onPole) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check price label drawing (pill box)
+      if (drawing.type === 'priceLabel' && pixels.length >= 1) {
+        const p = pixels[0];
+        const price = drawing.points[0].price;
+        const label = drawing.text && drawing.text.trim().length > 0 ? drawing.text : price.toFixed(price < 1 ? 6 : 2);
+        const boxW = label.length * 12 * 0.62 + 14;
+        const boxH = 20;
+        if (x >= p.x - 3 && x <= p.x + 6 + boxW + 3 && y >= p.y - boxH / 2 - 3 && y <= p.y + boxH / 2 + 3) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check callout drawing (label box)
+      if (drawing.type === 'callout' && pixels.length >= 2) {
+        const boxPx = pixels[1];
+        const fontSize = drawing.strokeWidth || 13;
+        const boxW = (drawing.text?.length || 4) * fontSize * 0.6 + 16;
+        const boxH = fontSize + 10;
+        if (x >= boxPx.x - 3 && x <= boxPx.x + boxW + 3 && y >= boxPx.y - 3 && y <= boxPx.y + boxH + 3) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check note drawing (click within the note box)
+      if (drawing.type === 'note' && pixels.length >= 1) {
+        const p = pixels[0];
+        const fontSize = drawing.strokeWidth || 13;
+        const boxW = (drawing.text?.length || 4) * fontSize * 0.6 + 16;
+        const boxH = fontSize + 10;
+        if (x >= p.x - 3 && x <= p.x + boxW + 3 && y >= p.y - boxH - 3 && y <= p.y + 3) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check emoji / sticker drawing (click within the glyph bounding box)
+      if (drawing.type === 'emoji' && pixels.length >= 1) {
+        const p = pixels[0];
+        const fs = drawing.strokeWidth || 28;
+        // Resize handle (bottom-right corner) takes priority when this emoji is selected
+        if (selectedDrawingId === drawing.id) {
+          const hx = p.x + fs / 2 + 3, hy = p.y + fs / 2 + 3;
+          if (Math.sqrt((x - hx) ** 2 + (y - hy) ** 2) < 10) {
+            hitAnyDrawing = true;
+            startDragging(drawing.id);
+            setDragPointIndex(970);
+            return true;
+          }
+        }
+        if (Math.abs(x - p.x) <= fs / 2 + 4 && Math.abs(y - p.y) <= fs / 2 + 4) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check text drawing (click near the text position)
+      if (drawing.type === 'text' && pixels.length >= 1) {
+        const p = pixels[0];
+        const textWidth = (drawing.text?.length || 5) * 8;
+        const textHeight = 20;
+        if (x >= p.x - 5 && x <= p.x + textWidth && y >= p.y - textHeight && y <= p.y + 5) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check marker drawing (click within the icon bounding box)
+      if (isMarkerTool(drawing.type) && pixels.length >= 1) {
+        const p = pixels[0];
+        const ext = ((drawing.strokeWidth || 16) / 16) * 12;
+        // Resize handle (bottom-right) takes priority when this marker is selected
+        if (selectedDrawingId === drawing.id) {
+          const hx = p.x + ext + 2, hy = p.y + ext + 2;
+          if (Math.sqrt((x - hx) ** 2 + (y - hy) ** 2) < 10) {
+            hitAnyDrawing = true;
+            startDragging(drawing.id);
+            setDragPointIndex(971);
+            return true;
+          }
+        }
+        if (Math.abs(x - p.x) <= ext && Math.abs(y - p.y) <= ext) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+
+      // Check brush drawing (click near any part of the brush path)
+      if (isBrushTool(drawing.type)) {
+        // Compute brush pixels based on storage format
+        const anchorPixel = pixels[0];
+        if (!anchorPixel) continue;
+
+        let smoothPixels: PixelPoint[];
+
+        if (drawing.brushChartPoints && drawing.brushChartPoints.length > 0) {
+          // Primary format: ALL points in chart coordinates - scales with zoom
+          smoothPixels = drawing.brushChartPoints.map(cp => chartToPixel(cp)).filter((p): p is PixelPoint => p !== null);
+        } else if (drawing.brushPixelOffsets && drawing.brushPixelOffsets.length > 0) {
+          // Legacy format: pixel offsets (won't scale properly)
+          smoothPixels = drawing.brushPixelOffsets.map(offset => ({
+            x: anchorPixel.x + offset.x,
+            y: anchorPixel.y + offset.y
+          }));
+        } else if (drawing.pixelOffsets && drawing.pixelOffsets.length > 0) {
+          // Oldest legacy format: pixel offsets
+          smoothPixels = drawing.pixelOffsets.map(offset => ({
+            x: anchorPixel.x + offset.x,
+            y: anchorPixel.y + offset.y
+          }));
+        } else if (drawing.brushPixelPoints && drawing.brushPixelPoints.length > 0) {
+          const originalAnchor = drawing.brushPixelPoints[0];
+          smoothPixels = drawing.brushPixelPoints.map(p => ({
+            x: anchorPixel.x + (p.x - originalAnchor.x),
+            y: anchorPixel.y + (p.y - originalAnchor.y)
+          }));
+        } else {
+          // Fallback: chart-converted pixels
+          smoothPixels = pixels;
+        }
+
+        if (smoothPixels.length < 2) continue;
+
+        let isNearBrush = false;
+        for (let j = 1; j < smoothPixels.length; j++) {
+          const p1 = smoothPixels[j - 1];
+          const p2 = smoothPixels[j];
+          const lineLength = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+          if (lineLength === 0) continue;
+          const distToLine = Math.abs((p2.y - p1.y) * x - (p2.x - p1.x) * y + p2.x * p1.y - p2.y * p1.x) / lineLength;
+
+          if (distToLine < 20) { // Increased hit area
+            const dotProduct = ((x - p1.x) * (p2.x - p1.x) + (y - p1.y) * (p2.y - p1.y)) / (lineLength * lineLength);
+            if (dotProduct >= 0 && dotProduct <= 1) {
+              isNearBrush = true;
+              break;
+            }
+          }
+        }
+
+        if (isNearBrush) {
+          hitAnyDrawing = true;
+          const firstPointPixel = chartToPixel(drawing.points[0]);
+          startDragging(drawing.id);
+          setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+          selectOrErase(drawing.id, { x: clientX, y: clientY });
+          return true;
+        }
+      }
+    }
+
+    // If we clicked on empty space (not on any drawing), deselect any selected drawing
+    if (!hitAnyDrawing && selectedDrawingId) {
+      onSelectDrawing?.(null);
+      return true;
+    }
+
+    // Brush is now handled at the start of this function
+
+    return false;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
+
+    // Reject clicks in the price axis area; nothing should be drawn on the Y-axis
+    const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
+    if (x > chartWidth) return;
+
+    // Clear frozen measurement on any click
+    if (measureState?.frozen) {
+      setMeasureState(null);
+      return;
+    }
+
+    // Handle measure tool - tap logic: start -> freeze
+    if (activeTool === 'measure') {
+      e.preventDefault();
+      if (!measureState) {
+        // First tap: start measuring
+        const clampedPoint = clampToChartArea({ x, y });
+        setMeasureState({ start: clampedPoint, current: clampedPoint, frozen: false });
+      } else {
+        // Second tap: freeze the measurement and deselect tool
+        setMeasureState(prev => prev ? { ...prev, frozen: true } : null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    // Try drawing hit-test FIRST, before checking the OHLC zone.
+    // Previously, clicks in the top 30px were blanket-rejected to let OHLC
+    // toggle clicks pass through. But this also blocked selecting/dragging
+    // drawings near the top of the chart. Now we try the hit-test first;
+    // if a drawing is under the cursor, handle it. Only fall through to
+    // the OHLC pass-through if no drawing was hit.
+    if (handlePointerDown(x, y, e.clientX, e.clientY)) {
+      e.preventDefault();
+      return;
+    }
+
+    // If no drawing was hit and click is in the OHLC/indicator label area
+    // (top ~30px), let it pass through to ProChart's toggle button underneath.
+    // This preserves OHLC toggle functionality while still allowing drawings
+    // near the top of the chart to be selected and dragged.
+    if (y < 30 && !activeTool && !draggingId) return;
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const touch = e.touches[0];
+    // Cache rect on touch start so subsequent touchmove events use the same
+    // reference frame, preventing iOS Safari toolbar/viewport shifts from
+    // causing 2-3px coordinate jumps during a single touch gesture.
+    cachedRectRef.current = containerRef.current.getBoundingClientRect();
+    const rect = cachedRectRef.current;
+    const { x, y } = localFromEvent(touch.clientX, touch.clientY, rect);
+
+    // Clear frozen measurement on any tap
+    if (measureState?.frozen) {
+      setMeasureState(null);
+      return;
+    }
+
+    // Check if touch is in chart area (not on axis)
+    if (!isPointInChartArea(x, y)) {
+      return; // Don't start drawing on axis areas
+    }
+
+    // Handle measure tool - tap logic: start -> freeze
+    if (activeTool === 'measure') {
+      e.preventDefault();
+      if (!measureState) {
+        // First tap: start measuring
+        const clampedPoint = clampToChartArea({ x, y });
+        setMeasureState({ start: clampedPoint, current: clampedPoint, frozen: false });
+      } else {
+        // Second tap: freeze the measurement and deselect tool
+        setMeasureState(prev => prev ? { ...prev, frozen: true } : null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    // PRIORITY: If user has an active drawing tool, start drawing instead of interacting with existing drawings
+    const twoPointDrawingTools: DrawingTool[] = ['trend', 'trendRay', 'line', 'straightArrow', 'extendedLine', 'infoLine', 'trendAngle', 'fibonacci', 'fibExtension', 'rectangle', 'square', 'circle', 'oval', 'triangle', 'diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart', 'long', 'short', 'parallelChannel', 'pitchfork', 'schiff', 'modifiedSchiff', 'flatChannel', 'fibChannel', 'fibCircles', 'fibSpiral', 'fibArcs', 'fibWedge', 'fibPitchfan', 'trendBasedFibTime', 'fixedVolumeProfile', 'regressionTrend', 'cyclicLines', 'sineLine', 'innerFork', 'timeArcs'];
+    if (activeTool && twoPointDrawingTools.includes(activeTool)) {
+      // Skip existing drawing detection - proceed to drawing logic below
+    } else if (handlePointerDown(x, y, touch.clientX, touch.clientY)) {
+      // Check if we're interacting with existing drawings (only when no active drawing tool)
+      e.preventDefault();
+      return;
+    }
+
+    // For drawing tools that require two points, start tap-hold-drag behavior
+    if (activeTool && twoPointDrawingTools.includes(activeTool)) {
+      e.preventDefault();
+      const clampedPoint = clampToChartArea({ x, y });
+      touchStartPointRef.current = clampedPoint;
+
+      // Start a timer for hold detection (150ms - quick enough to feel responsive)
+      touchHoldTimerRef.current = setTimeout(() => {
+        if (touchStartPointRef.current) {
+          // Start drawing immediately with same start and end point
+          setTouchDrawing({
+            startPoint: touchStartPointRef.current,
+            currentPoint: touchStartPointRef.current
+          });
+        }
+      }, 150);
+    } else if (isBrushTool(activeTool)) {
+      // handlePointerDown already handles brush tool - checks for existing brush first
+      // If we got here, handlePointerDown returned false which means it either:
+      // 1. Started dragging an existing brush (returns true, we wouldn't be here)
+      // 2. Started a new brush (returns true, we wouldn't be here)  
+      // 3. Didn't handle it (returns false)
+      // Since handlePointerDown now handles brush completely, we don't need to do anything here
+      // The brush drawing is started in handlePointerDown
+    }
+  };
+
+  // Unified pointer up handler for both mouse and touch
+  const handlePointerUp = () => {
+    // End any eraser swipe.
+    isErasingRef.current = false;
+    // Flush any pending RAF updates immediately for final position accuracy
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    if (pendingDrawingUpdateRef.current) {
+      onDrawingsChange(pendingDrawingUpdateRef.current);
+      pendingDrawingUpdateRef.current = null;
+    }
+
+    // Handle brush drawing completion
+    if (isBrushTool(activeTool) && isDrawingBrushRef.current && brushPath.length > 1) {
+      // Convert ALL brush pixel points to chart coordinates
+      // This ensures the brush scales correctly with zoom/pan
+      const brushChartPoints: ChartPoint[] = brushPath
+        .map(p => pixelToChart(p))
+        .filter((cp): cp is ChartPoint => cp !== null);
+
+      if (brushChartPoints.length > 1) {
+        const newDrawingId = Date.now().toString();
+        // Use pre-placement settings bar values if available, otherwise fall back
+        // to the per-brush-type defaults (e.g. highlighter = yellow, thick, semi-transparent)
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: activeTool, // Store the specific brush tool type
+          points: [brushChartPoints[0]], // Store first point for compatibility
+          color: toolSettings?.color ?? getBrushToolColor(activeTool),
+          opacity: toolSettings?.opacity ?? getBrushToolOpacity(activeTool),
+          strokeWidth: toolSettings?.strokeWidth ?? getBrushToolStrokeWidth(activeTool),
+          brushChartPoints // Store ALL points in chart coordinates for proper zoom scaling
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        // Auto-select the newly created brush drawing
+        onSelectDrawing?.(newDrawingId);
+      }
+      setBrushPath([]);
+      isDrawingBrushRef.current = false;
+      onToolSelect?.(null); // Auto-deselect brush tool
+    }
+
+    // Reset brush state even if brush path was too short
+    if (isDrawingBrushRef.current) {
+      setBrushPath([]);
+      isDrawingBrushRef.current = false;
+    }
+
+    // COMMIT FINAL POSITION on drag end (CSS transform approach)
+    if (draggingId && dragStartPosRef.current && lastPointerPosRef.current && dragOffset) {
+      justFinishedDragging.current = true;
+
+      // Calculate final position based on last cursor position.
+      // Adjust X by scroll delta: if chart auto-scrolled during drag,
+      // the pixel coordinate frame shifted and we need to compensate.
+      const scrollDelta = (scrollOffsetRef?.current ?? 0) - dragStartScrollOffsetRef.current;
+      const finalX = lastPointerPosRef.current.x - scrollDelta;
+      const finalY = lastPointerPosRef.current.y;
+
+      const drawing = drawings.find((d) => d.id === draggingId);
+      if (drawing) {
+        const updatedDrawings = drawings.map((d) => {
+          if (d.id !== draggingId) return d;
+
+          // PIXEL-BASED MOVE for ALL drawing types (including long/short positions):
+          // Convert each point to pixel, add the pixel delta, convert back to
+          // chart coordinates. This guarantees the shape stays identical in pixel
+          // space because every point shifts by the exact same pixel offset.
+          // Chart-coordinate deltas distort long/short drawings because xToTime()
+          // snaps to bar boundaries, causing the drawing to jump to discrete bar
+          // positions on horizontal movement and change visual width when bars
+          // have non-uniform pixel spacing (weekends, gaps).
+          const pixDeltaX = finalX - (dragStartPosRef.current!.x - scrollDelta);
+          let pixDeltaY = finalY - dragStartPosRef.current!.y;
+          // For 'horizontal': lock X movement (line spans full width, only moves vertically)
+          const effectivePixDeltaX = d.type === 'horizontal' ? 0 : pixDeltaX;
+          // 'line' (straight line) allows free movement in both axes, no Y lock needed
+
+          const updatedPoints = d.points.map(p => {
+            const px = chartToPixel(p);
+            if (!px) return p;
+            const moved = pixelToChart({ x: px.x + effectivePixDeltaX, y: px.y + pixDeltaY });
+            return moved || p;
+          });
+
+          let updatedStopLoss = d.stopLoss;
+          if (d.stopLoss) {
+            const slPx = chartToPixel(d.stopLoss);
+            if (slPx) {
+              updatedStopLoss = pixelToChart({ x: slPx.x + effectivePixDeltaX, y: slPx.y + pixDeltaY }) || d.stopLoss;
+            }
+          }
+
+          let updatedBrushChartPoints = d.brushChartPoints;
+          if (d.brushChartPoints && d.brushChartPoints.length > 0) {
+            updatedBrushChartPoints = d.brushChartPoints.map(p => {
+              const px = chartToPixel(p);
+              if (!px) return p;
+              return pixelToChart({ x: px.x + effectivePixDeltaX, y: px.y + pixDeltaY }) || p;
+            });
+          }
+
+          let updatedBrushPixelPoints = d.brushPixelPoints;
+          if (d.brushPixelPoints && d.brushPixelPoints.length > 0) {
+            updatedBrushPixelPoints = d.brushPixelPoints.map(p => ({
+              x: p.x + effectivePixDeltaX,
+              y: p.y + pixDeltaY
+            }));
+          }
+
+          // Keep scale-out take-profit levels attached to the position box when
+          // the whole drawing is dragged (they're absolute prices).
+          let updatedTakeProfits = d.takeProfits;
+          if (d.takeProfits && d.takeProfits.length > 0) {
+            updatedTakeProfits = d.takeProfits.map(tp => {
+              const py = converter.priceToY(tp.price);
+              if (!Number.isFinite(py)) return tp;
+              const moved = pixelToChart({ x: 0, y: py + pixDeltaY });
+              return moved ? { ...tp, price: moved.price } : tp;
+            });
+          }
+
+          return { ...d, points: updatedPoints, stopLoss: updatedStopLoss, brushChartPoints: updatedBrushChartPoints, brushPixelPoints: updatedBrushPixelPoints, takeProfits: updatedTakeProfits };
+        });
+
+        onDrawingsChange(updatedDrawings);
+      }
+
+      // Reset CSS transform AFTER committing position
+      const svgGroup = document.getElementById(`${clipIdRef.current}_drawing-${draggingId}`);
+      if (svgGroup) {
+        svgGroup.style.transform = '';
+        svgGroup.style.willChange = '';
+      }
+      // Reset touch grab dot transform and hide it
+
+      setTimeout(() => {
+        justFinishedDragging.current = false;
+      }, 0);
+    } else if (draggingId) {
+      // Fallback: just reset transform if we don't have position data
+      justFinishedDragging.current = true;
+      const svgGroup = document.getElementById(`${clipIdRef.current}_drawing-${draggingId}`);
+      if (svgGroup) {
+        svgGroup.style.transform = '';
+        svgGroup.style.willChange = '';
+      }
+      setTimeout(() => {
+        justFinishedDragging.current = false;
+      }, 0);
+    }
+
+    // Reset drag transform refs
+    dragTransformRef.current = { deltaX: 0, deltaY: 0 };
+    dragStartPosRef.current = null;
+    dragStartChartRef.current = null;
+    dragStartScrollOffsetRef.current = 0;
+    cachedRectRef.current = null; // Invalidate cached rect after drag
+
+    isDraggingRef.current = false;
+    lastPointerPosRef.current = null;
+    setDraggingId(null);
+    setDragOffset(null);
+    setDragPointIndex(null);
+    // Pair the (true) call from startDragging at line 446. Without this, the
+    // parent's isDrawingDragging stays true forever after the first drag, which
+    // permanently gates ProChart's main drawChart-on-prop-change effect (the
+    // `if (!isDrawingDragging) drawChart()` block). On pairs with no live tick
+    // (e.g. forex/metals after market close) the canvas then freezes on the
+    // next prop change because the livePrice fallback redraw never fires.
+    onDraggingStateChange?.(false);
+
+    // Hide crosshair via direct DOM to match how it was shown during dragging
+    hideCrosshair();
+  };
+
+  const handleMouseUp = () => {
+    // Don't auto-clear measure state - handled by tap logic
+    setCursorPosition(null); // Clear crosshair on mouse up
+    // Also hide via direct DOM to ensure crosshair is gone (matches how it was shown)
+    hideCrosshair();
+    handlePointerUp();
+  };
+
+  const handleMouseLeave = () => {
+    setCursorPosition(null); // Clear crosshair when mouse leaves
+    hideCrosshair();
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    // Clear the hold timer
+    if (touchHoldTimerRef.current) {
+      clearTimeout(touchHoldTimerRef.current);
+      touchHoldTimerRef.current = null;
+    }
+
+    // If we were doing a touch drawing, create the drawing now
+    if (touchDrawing && activeTool) {
+      const startChart = pixelToChart(touchDrawing.startPoint);
+      const endChart = pixelToChart(touchDrawing.currentPoint);
+
+      if (startChart && endChart) {
+        // Only create if user actually dragged (not just a tap)
+        const distance = Math.sqrt(
+          Math.pow(touchDrawing.currentPoint.x - touchDrawing.startPoint.x, 2) +
+          Math.pow(touchDrawing.currentPoint.y - touchDrawing.startPoint.y, 2)
+        );
+
+        if (distance > 10) { // Minimum drag distance to create drawing
+          if (activeTool === 'long' || activeTool === 'short') {
+            // Create long/short position with stop loss
+            const entryChart = startChart;
+            const targetChart = endChart;
+
+            // For shorts, ensure target is below entry; for longs, above
+            let finalTargetPrice = targetChart.price;
+            if (activeTool === 'short' && targetChart.price > entryChart.price) {
+              const dist = targetChart.price - entryChart.price;
+              finalTargetPrice = entryChart.price - dist;
+            } else if (activeTool === 'long' && targetChart.price < entryChart.price) {
+              const dist = entryChart.price - targetChart.price;
+              finalTargetPrice = entryChart.price + dist;
+            }
+
+            const finalTarget: ChartPoint = { time: targetChart.time, price: finalTargetPrice };
+            const priceDist = Math.abs(finalTargetPrice - entryChart.price);
+            const stopLossPrice = activeTool === 'long'
+              ? entryChart.price - priceDist
+              : entryChart.price + priceDist;
+
+            const stopLossChart: ChartPoint = { time: entryChart.time, price: stopLossPrice };
+
+            const newDrawingId = Date.now().toString();
+            const newDrawing: Drawing = {
+              id: newDrawingId,
+              type: activeTool,
+              points: [entryChart, finalTarget],
+              stopLoss: stopLossChart,
+              stopLossPointIndex: 999,
+              color: '#22c55e', // Profit zone color (green) - same for both long and short
+              fillColor: '#ef4444', // Loss zone color (red) - same for both long and short
+            };
+            onDrawingsChange([...drawings, newDrawing]);
+            onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+          } else {
+            // Create trend, fibonacci, or shape
+            // For square/circle on touch: constrain end point so pixel w === h
+            let finalEndChartTouch = endChart;
+            if (activeTool === 'square' || activeTool === 'circle' || activeTool === 'gannSquareFixed') {
+              const sp = touchDrawing.startPoint;
+              const ep = touchDrawing.currentPoint;
+              const dx = Math.abs(ep.x - sp.x);
+              const dy = Math.abs(ep.y - sp.y);
+              const size = Math.max(dx, dy);
+              const cx = sp.x + (ep.x >= sp.x ? size : -size);
+              const cy = sp.y + (ep.y >= sp.y ? size : -size);
+              const constrained = pixelToChart({ x: cx, y: cy });
+              if (constrained) finalEndChartTouch = constrained;
+            }
+            const isShape = activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart';
+            const newDrawingId = Date.now().toString();
+            // Apply pre-placement settings bar values for color, stroke, line style, fill
+            const newDrawing: Drawing = {
+              id: newDrawingId,
+              type: activeTool,
+              points: [startChart, finalEndChartTouch],
+              color: getNewDrawingColor(),
+              strokeWidth: getNewDrawingStrokeWidth(),
+              lineStyle: getNewDrawingLineStyle(),
+              opacity: getNewDrawingOpacity(),
+              fillColor: isShape ? getNewDrawingFillColor('#94a3b8') : undefined,
+              fillOpacity: isShape ? getNewDrawingFillOpacity() : undefined,
+              fibLevels: activeTool === 'fibExtension'
+                ? [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.0, 2.618]
+                : activeTool === 'fibonacci'
+                  ? [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]
+                  : undefined,
+            };
+            onDrawingsChange([...drawings, newDrawing]);
+            onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+          }
+          onToolSelect?.(null); // Auto-deselect tool after drawing
+        }
+      }
+
+      setTouchDrawing(null);
+      touchStartPointRef.current = null;
+      return;
+    }
+
+    // Handle tap for drawing tools (simulate click)
+    if (!draggingId && !isDrawingBrushRef.current && !touchDrawing && e.changedTouches.length > 0) {
+      const touch = e.changedTouches[0];
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const { x, y } = localFromEvent(touch.clientX, touch.clientY, rect);
+
+        // Only handle tap if within chart area
+        if (isPointInChartArea(x, y)) {
+          handleTap(x, y);
+        }
+      }
+    }
+
+    touchStartPointRef.current = null;
+    setCursorPosition(null); // Clear crosshair on touch end (prevents blue cursor persisting on iPhone)
+    // Also hide via direct DOM to ensure crosshair is gone (matches how it was shown)
+    hideCrosshair();
+    handlePointerUp();
+  };
+
+  // Handle tap/click for drawing tools
+  const handleTap = (x: number, y: number) => {
+    if (!containerRef.current || draggingId || justFinishedDragging.current) return;
+
+    const chartPoint = pixelToChart({ x, y });
+    if (!chartPoint) return;
+
+    // If no active tool, do nothing (pointer-events are disabled anyway)
+    if (!activeTool) {
+      return;
+    }
+
+    if (activeTool === 'horizontal') {
+      const newDrawingId = Date.now().toString();
+      // Apply pre-placement settings bar values
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'horizontal',
+        points: [chartPoint, chartPoint],
+        color: getNewDrawingColor(),
+        strokeWidth: getNewDrawingStrokeWidth(),
+        lineStyle: getNewDrawingLineStyle(),
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+      onToolSelect?.(null);
+      return;
+    }
+
+    // Straight arrow uses two-point creation like trend line
+    if (activeTool === 'straightArrow') {
+      if (tempPoints.length === 0) {
+        setTempPoints([{ x, y }]);
+      } else {
+        const startPixel = tempPoints[0];
+        const endPixel = { x, y };
+
+        const startChart = pixelToChart(startPixel);
+        const endChart = pixelToChart(endPixel);
+        if (!startChart || !endChart) return;
+
+        const newDrawingId = Date.now().toString();
+        // Apply pre-placement settings bar values
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: 'straightArrow',
+          points: [startChart, endChart],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId);
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    if (activeTool === 'horizontalRay') {
+      const newDrawingId = Date.now().toString();
+      // Apply pre-placement settings bar values
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'horizontalRay',
+        points: [chartPoint],
+        color: getNewDrawingColor(),
+        strokeWidth: getNewDrawingStrokeWidth(),
+        lineStyle: getNewDrawingLineStyle(),
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    if (activeTool === 'vertical') {
+      const newDrawingId = Date.now().toString();
+      // Apply pre-placement settings bar values
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'vertical',
+        points: [chartPoint],
+        color: getNewDrawingColor(),
+        strokeWidth: getNewDrawingStrokeWidth(),
+        lineStyle: getNewDrawingLineStyle(),
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+      onToolSelect?.(null);
+      return;
+    }
+
+    if (activeTool === 'crossline') {
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'crossline',
+        points: [chartPoint],
+        color: getNewDrawingColor(),
+        strokeWidth: getNewDrawingStrokeWidth(),
+        lineStyle: getNewDrawingLineStyle(),
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    if (activeTool === 'long' || activeTool === 'short') {
+      if (tempPoints.length === 0) {
+        setTempPoints([{ x, y }]);
+      } else if (tempPoints.length === 1) {
+        const entryPixel = tempPoints[0];
+        const targetPixel = { x, y };
+
+        const entryChart = pixelToChart(entryPixel);
+        const targetChart = pixelToChart(targetPixel);
+        if (!entryChart || !targetChart) return;
+
+        // For shorts, ensure target is below entry (profit when price drops)
+        // For longs, ensure target is above entry (profit when price rises)
+        let finalTargetPrice = targetChart.price;
+        if (activeTool === 'short' && targetChart.price > entryChart.price) {
+          // User clicked above entry on short - flip it below
+          const distance = targetChart.price - entryChart.price;
+          finalTargetPrice = entryChart.price - distance;
+        } else if (activeTool === 'long' && targetChart.price < entryChart.price) {
+          // User clicked below entry on long - flip it above
+          const distance = entryChart.price - targetChart.price;
+          finalTargetPrice = entryChart.price + distance;
+        }
+
+        const finalTarget: ChartPoint = {
+          time: targetChart.time,
+          price: finalTargetPrice
+        };
+
+        const distance = Math.abs(finalTargetPrice - entryChart.price);
+        const stopLossPrice = activeTool === 'long'
+          ? entryChart.price - distance
+          : entryChart.price + distance;
+
+        const stopLossChart: ChartPoint = {
+          time: entryChart.time,
+          price: stopLossPrice
+        };
+
+        const newDrawingId = Date.now().toString();
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: activeTool,
+          points: [entryChart, finalTarget],
+          stopLoss: stopLossChart,
+          stopLossPointIndex: 999,
+          color: '#22c55e', // Profit zone color (green) - same for both long and short
+          fillColor: '#ef4444', // Loss zone color (red) - same for both long and short
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+        setTempPoints([]);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    if (activeTool === 'text' || activeTool === 'note' || activeTool === 'signpost') {
+      setTextInput({ x, y, value: '', kind: activeTool });
+      return;
+    }
+
+    // Callout: click 1 = anchor (what it points at), click 2 = label box + text
+    if (activeTool === 'callout') {
+      if (tempPoints.length < 1) {
+        setTempPoints([{ x, y }]);
+        return;
+      }
+      setTextInput({ x, y, value: '', kind: 'callout', anchor: tempPoints[0] });
+      return;
+    }
+
+    // Anchored VWAP: single click sets the anchor bar; the line runs to the latest bar
+    if (activeTool === 'anchoredVwap') {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'anchoredVwap',
+        points: [chartPoint],
+        color: toolSettings?.color ?? '#2dd4bf',
+        strokeWidth: getNewDrawingStrokeWidth(),
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    // Anchored Volume Profile: single click sets the anchor; profile spans anchor -> latest bar
+    if (activeTool === 'anchoredVolumeProfile') {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'anchoredVolumeProfile',
+        points: [chartPoint],
+        color: toolSettings?.color ?? '#2dd4bf',
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    // Price label: single click drops a pill showing the price at that point
+    if (activeTool === 'priceLabel') {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'priceLabel',
+        points: [chartPoint],
+        color: toolSettings?.color ?? '#2dd4bf',
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    // Single-click emoji / sticker: place the currently selected emoji at one anchor
+    if (activeTool === 'emoji') {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: 'emoji',
+        points: [chartPoint],
+        text: emojiSelection.current,
+        strokeWidth: 28,
+        color: '#ffffff',
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    // Single-click markers: place a fixed-size icon at one anchor point
+    if (isMarkerTool(activeTool)) {
+      const chartPoint = pixelToChart({ x, y });
+      if (!chartPoint) return;
+      const newDrawingId = Date.now().toString();
+      const newDrawing: Drawing = {
+        id: newDrawingId,
+        type: activeTool,
+        points: [chartPoint],
+        color: toolSettings?.color ?? '#2dd4bf',
+        strokeWidth: 16,
+        opacity: getNewDrawingOpacity(),
+      };
+      onDrawingsChange([...drawings, newDrawing]);
+      onSelectDrawing?.(newDrawingId);
+      onToolSelect?.(null);
+      return;
+    }
+
+    if (activeTool === 'trend' || activeTool === 'trendRay' || activeTool === 'line' || activeTool === 'extendedLine' || activeTool === 'infoLine' || activeTool === 'trendAngle' || activeTool === 'fibonacci' || activeTool === 'fibExtension' || activeTool === 'fibFan' || activeTool === 'fibTimeZones' || activeTool === 'fibCircles' || activeTool === 'fibSpiral' || activeTool === 'fibArcs' || activeTool === 'fibWedge' || activeTool === 'gannFan' || activeTool === 'gannBox' || activeTool === 'gannSquare' || activeTool === 'gannSquareFixed' || activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart' || activeTool === 'fixedVolumeProfile' || activeTool === 'regressionTrend' || activeTool === 'cyclicLines' || activeTool === 'sineLine' || activeTool === 'timeArcs') {
+      if (tempPoints.length === 0) {
+        setTempPoints([{ x, y }]);
+      } else {
+        const startPixel = tempPoints[0];
+        // For 'line' tool: lock Y to start point (perfectly horizontal)
+        const endPixel = activeTool === 'line' ? { x, y: startPixel.y } : { x, y };
+
+        const startChart = pixelToChart(startPixel);
+        const endChart = pixelToChart(endPixel);
+        if (!startChart || !endChart) return;
+
+        // For square/circle: adjust the end point so pixel width === pixel height.
+        // The preview already shows a constrained shape, but the stored chart coords
+        // must also be constrained or the shape distorts on render.
+        let finalEndChart = endChart;
+        if (activeTool === 'square' || activeTool === 'circle' || activeTool === 'gannSquareFixed') {
+          const dx = Math.abs(endPixel.x - startPixel.x);
+          const dy = Math.abs(endPixel.y - startPixel.y);
+          const size = Math.max(dx, dy);
+          // Keep direction from start to end, but enforce equal pixel dimensions
+          const constrainedX = startPixel.x + (endPixel.x >= startPixel.x ? size : -size);
+          const constrainedY = startPixel.y + (endPixel.y >= startPixel.y ? size : -size);
+          const constrained = pixelToChart({ x: constrainedX, y: constrainedY });
+          if (constrained) finalEndChart = constrained;
+        }
+
+        const isShape = activeTool === 'rectangle' || activeTool === 'square' || activeTool === 'circle' || activeTool === 'oval' || activeTool === 'triangle' || activeTool === 'parallelogram' || activeTool === 'octagon' || activeTool === 'diamond' || activeTool === 'pentagon' || activeTool === 'hexagon' || activeTool === 'star' || activeTool === 'cross' || activeTool === 'arrowBlock' || activeTool === 'wedge' || activeTool === 'heart';
+        const newDrawingId = Date.now().toString();
+        // Apply pre-placement settings bar values for color, stroke, line style, fill
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: activeTool,
+          points: [startChart, finalEndChart],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+          fillColor: isShape ? getNewDrawingFillColor('#94a3b8') : undefined,
+          fillOpacity: isShape ? getNewDrawingFillOpacity() : undefined,
+          fibLevels: activeTool === 'fibExtension'
+            ? [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.0, 2.618]
+            : activeTool === 'fibonacci'
+              ? [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]
+              : undefined,
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    // Multi-point pattern & Elliott tools (generic N-click creation)
+    if (activeTool && MULTIPOINT_TOOLS[activeTool]) {
+      const mpCfg = MULTIPOINT_TOOLS[activeTool];
+      if (tempPoints.length < mpCfg.n - 1) {
+        setTempPoints([...tempPoints, { x, y }]);
+      } else {
+        const allPix = [...tempPoints, { x, y }];
+        const chartPts = allPix.map((pp) => pixelToChart(pp));
+        if (chartPts.some((p) => !p)) return;
+        const newDrawingId = Date.now().toString();
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: activeTool,
+          points: chartPts as ChartPoint[],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+          fillColor: getNewDrawingFillColor('#2dd4bf'),
+          fillOpacity: getNewDrawingFillOpacity(),
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId);
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    // Split Channel - two independent trendlines (4 clicks: A1, A2, B1, B2)
+    if (activeTool === 'splitChannel') {
+      if (tempPoints.length < 3) {
+        setTempPoints([...tempPoints, { x, y }]);
+      } else {
+        const cp = [...tempPoints, { x, y }].map((pp) => pixelToChart(pp));
+        if (cp.some((p) => !p)) return;
+        const newDrawingId = Date.now().toString();
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: 'splitChannel',
+          points: cp as ChartPoint[],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+          fillColor: getNewDrawingFillColor('#64748b'),
+          fillOpacity: getNewDrawingFillOpacity(),
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId);
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    // Free Triangle - requires 3 clicks for 3 independent corners
+    if (activeTool === 'freeTriangle') {
+      if (tempPoints.length < 2) {
+        setTempPoints([...tempPoints, { x, y }]);
+      } else {
+        // Third click - create the triangle
+        const p1 = pixelToChart(tempPoints[0]);
+        const p2 = pixelToChart(tempPoints[1]);
+        const p3 = pixelToChart({ x, y });
+        if (!p1 || !p2 || !p3) return;
+
+        const newDrawingId = Date.now().toString();
+        // Apply pre-placement settings bar values
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: 'freeTriangle',
+          points: [p1, p2, p3],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+          fillColor: getNewDrawingFillColor('#94a3b8'),
+          fillOpacity: getNewDrawingFillOpacity(),
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId);
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    // Parallel Channel - requires 3 clicks: first two define the base line, third defines the channel width
+    if (activeTool === 'pitchfork' || activeTool === 'schiff' || activeTool === 'modifiedSchiff' || activeTool === 'flatChannel' || activeTool === 'fibChannel' || activeTool === 'fibPitchfan' || activeTool === 'trendBasedFibTime' || activeTool === 'innerFork') {
+      if (tempPoints.length < 2) {
+        setTempPoints([...tempPoints, { x, y }]);
+      } else {
+        const p1 = pixelToChart(tempPoints[0]);
+        const p2 = pixelToChart(tempPoints[1]);
+        const p3 = pixelToChart({ x, y });
+        if (!p1 || !p2 || !p3) return;
+        const newDrawingId = Date.now().toString();
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: activeTool,
+          points: [p1, p2, p3],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+          fillColor: getNewDrawingFillColor('#64748b'),
+          fillOpacity: getNewDrawingFillOpacity(),
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId);
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+
+    if (activeTool === 'parallelChannel') {
+      if (tempPoints.length < 2) {
+        setTempPoints([...tempPoints, { x, y }]);
+      } else {
+        // Third click - create the channel
+        const p1 = pixelToChart(tempPoints[0]);
+        const p2 = pixelToChart(tempPoints[1]);
+        const p3 = pixelToChart({ x, y });
+        if (!p1 || !p2 || !p3) return;
+
+        const newDrawingId = Date.now().toString();
+        // Apply pre-placement settings bar values
+        const newDrawing: Drawing = {
+          id: newDrawingId,
+          type: 'parallelChannel',
+          points: [p1, p2, p3],
+          color: getNewDrawingColor(),
+          strokeWidth: getNewDrawingStrokeWidth(),
+          lineStyle: getNewDrawingLineStyle(),
+          opacity: getNewDrawingOpacity(),
+          fillColor: getNewDrawingFillColor('#64748b'),
+          fillOpacity: getNewDrawingFillOpacity(),
+        };
+        onDrawingsChange([...drawings, newDrawing]);
+        onSelectDrawing?.(newDrawingId);
+        setTempPoints([]);
+        setPreviewPoint(null);
+        onToolSelect?.(null);
+      }
+      return;
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
+    // Reject clicks in the price axis area
+    const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
+    if (x > chartWidth) return;
+    // handleTap handles new drawing placement (requires active tool).
+    // The OHLC pass-through for the top 30px is now handled in handleMouseDown
+    // after the drawing hit-test, so we don't need to block it here.
+    // When no tool is active, handleTap is a no-op anyway.
+    handleTap(x, y);
+  };
+
+  const handleTextSubmit = () => {
+    if (!textInput || !textInput.value.trim()) {
+      setTextInput(null);
+      setTempPoints([]);
+      onToolSelect?.(null);
+      return;
+    }
+
+    const chartPoint = pixelToChart({ x: textInput.x, y: textInput.y });
+    if (!chartPoint) {
+      setTextInput(null);
+      setTempPoints([]);
+      onToolSelect?.(null);
+      return;
+    }
+
+    const kind = textInput.kind ?? 'text';
+    let points: ChartPoint[] = [chartPoint];
+    if (kind === 'callout' && textInput.anchor) {
+      const anchorChart = pixelToChart(textInput.anchor);
+      if (!anchorChart) {
+        setTextInput(null);
+        setTempPoints([]);
+        onToolSelect?.(null);
+        return;
+      }
+      points = [anchorChart, chartPoint];
+    }
+
+    const newDrawingId = Date.now().toString();
+    // Annotations default to the terminal's teal accent when no custom color is set
+    const newDrawing: Drawing = {
+      id: newDrawingId,
+      type: kind as DrawingTool,
+      points,
+      text: textInput.value,
+      color: kind !== 'text' ? (toolSettings?.color ?? '#2dd4bf') : getNewDrawingColor(),
+      opacity: getNewDrawingOpacity(),
+    };
+    onDrawingsChange([...drawings, newDrawing]);
+    onSelectDrawing?.(newDrawingId); // Auto-select newly created drawing
+    setTextInput(null);
+    setTempPoints([]);
+    onToolSelect?.(null);
+  };
+
+  const handleDeleteDrawing = (id: string) => {
+    onDrawingsChange(drawings.filter((d) => d.id !== id));
+  };
+
+  // Midpoint dot: renders a small circle at the center of a two-point drawing
+  // when selected. Visual affordance showing the drawing is active and draggable.
+  // Sits inside the drawing's <g> so it moves with CSS transform3d during drag.
+  const renderMidpointDot = (pixels: PixelPoint[], drawingColor: string, drawingType: string) => {
+    if (pixels.length < 2) return null;
+    const lineTypes = ['trend', 'trendRay', 'line', 'straightArrow', 'horizontal', 'horizontalRay', 'fibonacci', 'fibExtension', 'parallelChannel'];
+    if (!lineTypes.includes(drawingType)) return null;
+    const midX = (pixels[0].x + pixels[1].x) / 2;
+    const midY = (pixels[0].y + pixels[1].y) / 2;
+    return (
+      <g style={{ pointerEvents: 'none' }}>
+        <circle cx={midX} cy={midY} r={11} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" />
+        <circle cx={midX} cy={midY} r={4.5} fill="white" fillOpacity={0.8} stroke="rgba(0,0,0,0.2)" strokeWidth="1" />
+      </g>
+    );
+  };
+
+  const beginEditLabel = (drawingId: string, currentText: string) => {
+    setLabelDraft(currentText);
+    setEditingLabelId(drawingId);
+  };
+
+  const commitLabel = () => {
+    if (!editingLabelId) return;
+    const trimmed = labelDraft.trim();
+    const updated = drawings.map((d) =>
+      d.id === editingLabelId ? { ...d, text: trimmed || undefined } : d,
+    );
+    onDrawingsChange(updated);
+    setEditingLabelId(null);
+    setLabelDraft('');
+  };
+
+  const cancelLabel = () => {
+    setEditingLabelId(null);
+    setLabelDraft('');
+  };
+
+  // Inline label states: edit mode shows an input via foreignObject; saved text shows as SVG text (dblclick reopens edit); selected with no text shows the "+ Add text" hint.
+  const renderInlineLabel = (
+    drawing: Drawing,
+    anchorX: number,
+    anchorY: number,
+    color: string,
+  ) => {
+    const isEditing = editingLabelId === drawing.id;
+    const hasText = !!(drawing.text && drawing.text.length > 0);
+    const isSel = selectedDrawingId === drawing.id;
+
+    // All three states use foreignObject because an SVG <text> only hit-tests on glyph fills, which lets clicks between letters slip through to the chart and deselect the drawing. A foreignObject with a real DOM child gives a uniform click area.
+    const labelFontSize = drawing.textFontSize ?? 13;
+    const boxWidth = 240;
+    const boxHeight = Math.max(28, Math.ceil(labelFontSize * 1.8));
+    const foX = anchorX - boxWidth / 2;
+    const foY = anchorY - boxHeight / 2;
+
+    if (isEditing) {
+      return (
+        <foreignObject x={foX} y={foY} width={boxWidth} height={boxHeight} style={{ overflow: 'visible' }}>
+          <input
+            ref={labelInputRef}
+            value={labelDraft}
+            onChange={(e) => setLabelDraft(e.target.value)}
+            onBlur={commitLabel}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitLabel();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelLabel();
+              }
+              e.stopPropagation();
+            }}
+            onKeyUp={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Text"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              background: 'rgba(255,255,255,0.96)',
+              border: '1px solid #94a3b8',
+              borderRadius: 4,
+              padding: '2px 6px',
+              fontSize: labelFontSize,
+              fontWeight: drawing.textBold ? 700 : 400,
+              fontStyle: drawing.textItalic ? 'italic' : 'normal',
+              color: '#0f172a',
+              outline: 'none',
+              textAlign: 'center',
+              fontFamily: 'inherit',
+            }}
+          />
+        </foreignObject>
+      );
+    }
+
+    if (hasText) {
+      const labelBold = drawing.textBold ?? false;
+      const labelItalic = drawing.textItalic ?? false;
+      const labelColor = drawing.textColor || color;
+      return (
+        <foreignObject x={foX} y={foY} width={boxWidth} height={boxHeight} style={{ overflow: 'visible', pointerEvents: 'none' }}>
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              beginEditLabel(drawing.id, drawing.text || '');
+            }}
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'text',
+              userSelect: 'none',
+              color: labelColor,
+              fontSize: labelFontSize,
+              fontWeight: labelBold ? 700 : 500,
+              fontStyle: labelItalic ? 'italic' : 'normal',
+              fontFamily: 'inherit',
+              pointerEvents: 'auto',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {drawing.text}
+          </div>
+        </foreignObject>
+      );
+    }
+
+    if (isSel) {
+      return (
+        <foreignObject x={foX} y={foY} width={boxWidth} height={boxHeight} style={{ overflow: 'visible', pointerEvents: 'none' }}>
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              beginEditLabel(drawing.id, '');
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'text',
+              userSelect: 'none',
+              color: '#94a3b8',
+              fontSize: 12,
+              fontStyle: 'italic',
+              fontFamily: 'inherit',
+              opacity: 0.85,
+              pointerEvents: 'auto',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            + Add text
+          </div>
+        </foreignObject>
+      );
+    }
+
+    return null;
+  };
+
+  const renderDrawing = (drawing: Drawing) => {
+    const pixels = drawing.points.map(chartToPixel).filter((p): p is PixelPoint => p !== null);
+    if (pixels.length === 0) return null;
+
+    const isHovered = hoveredDrawingId === drawing.id;
+    const isSelected = selectedDrawingId === drawing.id;
+    const showHandles = isSelected;
+
+    // Calculate opacity (default to 100 = full opacity)
+    const strokeOpacity = (drawing.opacity ?? 100) / 100;
+    const fillOpacityValue = (drawing.fillOpacity ?? 100) / 100;
+
+    // Use drawing's color/strokeWidth or fall back to defaults
+    const drawingColor = drawing.color || DEFAULT_DRAWING_COLOR;
+    const drawingStrokeWidth = drawing.strokeWidth || DEFAULT_STROKE_WIDTH;
+
+    // Midpoint dot for selected drawings on touch devices (rendered inside
+    // the drawing's <g> group so it moves with the drawing during drag)
+    const midpointDot = isSelected ? renderMidpointDot(pixels, drawingColor || '#ffffff', drawing.type || '') : null;
+
+    if (drawing.type === 'horizontal') {
+      if (pixels.length < 1) return null;
+      const y = pixels[0].y;
+      const containerWidth = (containerDims.width || 1000);
+      const chartWidth = containerWidth - chartBounds.priceAxisWidth;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line
+            x1={0}
+            y1={y}
+            x2={chartWidth}
+            y2={y}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }}
+          />
+          <line
+            x1={0}
+            y1={y}
+            x2={chartWidth}
+            y2={y}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={50} cy={y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+              <circle cx={chartWidth - 50} cy={y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+              {midpointDot}
+            </>
+          )}
+
+        </g>
+      );
+    }
+
+    if (drawing.type === 'straightArrow') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+
+      // Calculate arrowhead
+      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      const arrowLength = 12;
+      const arrowAngle = Math.PI / 6; // 30 degrees
+
+      const arrowX1 = p2.x - arrowLength * Math.cos(angle - arrowAngle);
+      const arrowY1 = p2.y - arrowLength * Math.sin(angle - arrowAngle);
+      const arrowX2 = p2.x - arrowLength * Math.cos(angle + arrowAngle);
+      const arrowY2 = p2.y - arrowLength * Math.sin(angle + arrowAngle);
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          {/* Invisible wider hit area */}
+          <line
+            x1={p1.x}
+            y1={p1.y}
+            x2={p2.x}
+            y2={p2.y}
+            stroke="transparent"
+            strokeWidth={15}
+            style={{ cursor: 'move', pointerEvents: 'stroke' }}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+          />
+          {/* Visible line */}
+          <line
+            x1={p1.x}
+            y1={p1.y}
+            x2={p2.x}
+            y2={p2.y}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Arrowhead */}
+          <polygon
+            points={`${p2.x},${p2.y} ${arrowX1},${arrowY1} ${arrowX2},${arrowY2}`}
+            fill={drawingColor}
+            fillOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              {midpointDot}
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'horizontalRay') {
+      if (pixels.length < 1) return null;
+      const y = pixels[0].y;
+      const startX = pixels[0].x;
+      const containerWidth = (containerDims.width || 1000);
+      const chartWidth = containerWidth - chartBounds.priceAxisWidth;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line
+            x1={startX}
+            y1={y}
+            x2={chartWidth}
+            y2={y}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }}
+          />
+          <line
+            x1={startX}
+            y1={y}
+            x2={chartWidth}
+            y2={y}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={startX} cy={y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'vertical') {
+      if (pixels.length < 1) return null;
+      const x = pixels[0].x;
+      const containerHeight = containerRef.current?.clientHeight || 600;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line
+            x1={x}
+            y1={0}
+            x2={x}
+            y2={containerHeight}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }}
+          />
+          <line
+            x1={x}
+            y1={0}
+            x2={x}
+            y2={containerHeight}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={x} cy={50} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'ew-resize', pointerEvents: 'all' }} />
+              <circle cx={x} cy={containerHeight - 50} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'ew-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'long' || drawing.type === 'short') {
+      if (pixels.length < 2 || !drawing.stopLoss) return null;
+
+
+      const entryPixel = pixels[0];
+      const targetPixel = pixels[1];
+      const stopLossPixel = chartToPixel(drawing.stopLoss);
+      if (!stopLossPixel) return null;
+
+      const x1 = entryPixel.x;
+      const x2 = targetPixel.x;
+      const entryY = entryPixel.y;
+      const targetY = targetPixel.y;
+      const stopLossY = stopLossPixel.y;
+
+      const minX = Math.min(x1, x2);
+      const maxX = Math.max(x1, x2);
+      const width = Math.max(0, maxX - minX);
+
+      const isLong = drawing.type === 'long';
+
+      // Get actual price values
+      const entryPrice = drawing.points[0].price;
+      const targetPrice = drawing.points[1].price;
+      const stopLossPrice = drawing.stopLoss.price;
+
+      // Format price for display
+      const fmtPrice = (p: number) => {
+        if (p >= 100) return p.toFixed(2);
+        if (p >= 1) return p.toFixed(4);
+        return p.toFixed(5);
+      };
+
+      // Calculate pips based on instrument type (IC Markets standard)
+      // Gold (XAU): pip = $0.10 -> $1 = 10 pips
+      // Silver (XAG): pip = $0.01 -> $1 = 100 pips
+      // JPY forex pairs: pip = 0.01 -> multiplier 100
+      // Standard forex: pip = 0.0001 -> multiplier 10000
+      // BTC/USD: pip = $1.00 -> multiplier 1
+      // ETH/LTC: pip = $0.01 -> multiplier 100
+      // SOL/XRP: pip = $0.0001 -> multiplier 10000
+      // DOGE: pip = $0.00001 -> multiplier 100000
+      // Indices/stocks: raw points -> multiplier 1
+      const sym = currentSymbol?.toUpperCase() || '';
+      const isGold = sym.includes('XAU') || sym.includes('GOLD');
+      const isSilver = sym.includes('XAG') || sym.includes('SILVER');
+      const isIndex = sym.includes('SPX') || sym.includes('NAS') || sym.includes('DJI') || sym.includes('DAX') || sym.includes('FTSE') || sym.includes('NIK') || sym.includes('US500') || sym.includes('US100') || sym.includes('US30');
+      const isForex = sym.includes('/') && !sym.includes('BTC') && !sym.includes('ETH') && !sym.includes('LTC') && !sym.includes('XRP') && !sym.includes('SOL') && !sym.includes('DOGE') && !sym.includes('ADA') && !sym.includes('AVAX') && !sym.includes('DOT') && !sym.includes('LINK') && !sym.includes('BNB') && !isGold && !isSilver && !isIndex;
+      const isPipJpy = isForex && sym.includes('JPY');
+
+      let pipMultiplier: number;
+      let pipLabel: string;
+
+      if (isGold) {
+        pipMultiplier = 10;       // $1 = 10 pips
+        pipLabel = 'pips';
+      } else if (isSilver) {
+        pipMultiplier = 100;      // $1 = 100 pips
+        pipLabel = 'pips';
+      } else if (isIndex) {
+        pipMultiplier = 1;        // 1 point = 1 pt
+        pipLabel = 'pts';
+      } else if (isForex && isPipJpy) {
+        pipMultiplier = 100;      // 0.01 = 1 pip
+        pipLabel = 'pips';
+      } else if (isForex) {
+        pipMultiplier = 10000;    // 0.0001 = 1 pip
+        pipLabel = 'pips';
+      } else {
+        // Crypto & stocks: determine by price magnitude (IC Markets standard)
+        if (entryPrice >= 1000) {
+          pipMultiplier = 1;      // BTC: $1 = 1 pip
+        } else if (entryPrice >= 10) {
+          pipMultiplier = 100;    // ETH/LTC: $0.01 = 1 pip
+        } else if (entryPrice >= 0.1) {
+          pipMultiplier = 10000;  // SOL/XRP: $0.0001 = 1 pip
+        } else {
+          pipMultiplier = 100000; // DOGE: $0.00001 = 1 pip
+        }
+        pipLabel = 'pips';
+      }
+
+      const targetPips = Math.abs(targetPrice - entryPrice) * pipMultiplier;
+      const stopLossPips = Math.abs(stopLossPrice - entryPrice) * pipMultiplier;
+
+      // Calculate percentages
+      const targetPercent = Math.abs((targetPrice - entryPrice) / entryPrice * 100);
+      const stopLossPercent = Math.abs((stopLossPrice - entryPrice) / entryPrice * 100);
+
+      // Risk/Reward ratio
+      const riskRewardRatio = stopLossPips > 0 ? (targetPips / stopLossPips) : 0;
+
+      // For long: profit box goes UP from entry, stop loss goes DOWN
+      // For short: profit box goes DOWN from entry, stop loss goes UP
+      const profitTop = isLong ? Math.min(entryY, targetY) : entryY;
+      const profitHeight = Math.abs(targetY - entryY);
+      const stopLossTop = isLong ? entryY : Math.min(entryY, stopLossY);
+      const stopLossHeight = Math.abs(stopLossY - entryY);
+
+      // Custom colors - color is for profit zone, fillColor is for loss zone
+      const profitColor = drawing.color || '#22c55e';
+      const lossColor = drawing.fillColor || '#ef4444';
+      const entryColor = drawing.entryLineColor || '#4b5563';
+
+      // Zone fill colours matching TradingView; both zones filled equally
+      const profitFill = drawing.color
+        ? `${drawing.color}40`
+        : 'rgba(34, 197, 94, 0.25)';
+      const lossFill = drawing.fillColor
+        ? `${drawing.fillColor}40`
+        : 'rgba(239, 68, 68, 0.25)';
+
+      // Check if this drawing is selected
+      const isSelected = selectedDrawingId === drawing.id;
+
+      // Scan candles: detect TP/SL hit + track last close
+      let lastClose = entryPrice;
+      let lastCandleX = minX;
+      let hitTP = false;
+      let hitSL = false;
+      let hitX = maxX;
+
+      if (candlesProp && candlesProp.length > 0) {
+        for (const c of candlesProp) {
+          const cx = converter.timeToX(c.time);
+          if (cx === null || cx < minX) continue;
+          if (cx > maxX) break;
+          lastClose = c.close;
+          lastCandleX = cx;
+          if (isLong) {
+            if (c.high >= targetPrice) { hitTP = true; hitX = cx; break; }
+            if (c.low <= stopLossPrice) { hitSL = true; hitX = cx; break; }
+          } else {
+            if (c.low <= targetPrice) { hitTP = true; hitX = cx; break; }
+            if (c.high >= stopLossPrice) { hitSL = true; hitX = cx; break; }
+          }
+        }
+      }
+
+      // ── Smart Position: ATR volatility projection cone (real OHLC) ──
+      const showProjection = drawing.showProjection !== false;
+      let conePath: string | null = null;
+      if (showProjection && candlesProp && candlesProp.length > 3) {
+        const cs = candlesProp;
+        let trSum = 0, trN = 0;
+        for (let i = Math.max(1, cs.length - 14); i < cs.length; i++) {
+          const tr = Math.max(cs[i].high - cs[i].low, Math.abs(cs[i].high - cs[i - 1].close), Math.abs(cs[i].low - cs[i - 1].close));
+          if (Number.isFinite(tr)) { trSum += tr; trN++; }
+        }
+        const atr = trN > 0 ? trSum / trN : 0;
+        let pxPerBar = 8;
+        if (cs.length >= 2) {
+          const xa = converter.timeToX(cs[cs.length - 2].time);
+          const xb = converter.timeToX(cs[cs.length - 1].time);
+          if (xa !== null && xb !== null && Math.abs(xb - xa) > 0.5) pxPerBar = Math.abs(xb - xa);
+        }
+        if (atr > 0) {
+          const steps = 24;
+          const up: string[] = [];
+          const dn: string[] = [];
+          for (let sIdx = 0; sIdx <= steps; sIdx++) {
+            const x = minX + (maxX - minX) * (sIdx / steps);
+            const bars = Math.max(0, (x - minX) / pxPerBar);
+            const band = atr * Math.sqrt(bars);
+            const yUp = converter.priceToY(entryPrice + band);
+            const yDn = converter.priceToY(entryPrice - band);
+            if (!Number.isFinite(yUp) || !Number.isFinite(yDn)) continue;
+            up.push(`${x},${yUp}`);
+            dn.push(`${x},${yDn}`);
+          }
+          if (up.length > 1) conePath = `M ${up.join(' L ')} L ${dn.reverse().join(' L ')} Z`;
+        }
+      }
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}
+          onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+          onMouseLeave={() => setHoveredDrawingId(null)}>
+          {/* ATR volatility projection cone (drawn behind everything) */}
+          {conePath && (
+            <>
+              <path d={conePath} fill="#2dd4bf" fillOpacity={0.08} stroke="none" style={{ pointerEvents: 'none' }} />
+              <path d={conePath} fill="none" stroke="#2dd4bf" strokeOpacity={0.3} strokeWidth={1} strokeDasharray="4,4" style={{ pointerEvents: 'none' }} />
+            </>
+          )}
+          {/* Profit zone fill: full width, full height */}
+          <rect
+            x={minX}
+            y={profitTop}
+            width={width}
+            height={profitHeight}
+            fill={profitFill}
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Stop loss zone fill: full width, full height */}
+          <rect
+            x={minX}
+            y={stopLossTop}
+            width={width}
+            height={stopLossHeight}
+            fill={lossFill}
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Single invisible hit area covering both zones for drag */}
+          <rect
+            x={minX}
+            y={Math.min(profitTop, stopLossTop)}
+            width={width}
+            height={Math.abs(stopLossY - targetY)}
+            fill="transparent"
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+
+          {/* Left vertical border - profit zone segment */}
+          <line x1={minX} y1={targetY} x2={minX} y2={entryY} stroke={profitColor} strokeWidth={drawing.strokeWidth ?? 1} style={{ pointerEvents: 'none' }} />
+          {/* Left vertical border - loss zone segment */}
+          <line x1={minX} y1={entryY} x2={minX} y2={stopLossY} stroke={lossColor} strokeWidth={drawing.strokeWidth ?? 1} style={{ pointerEvents: 'none' }} />
+          {/* Right vertical border - profit zone segment */}
+          <line x1={maxX} y1={targetY} x2={maxX} y2={entryY} stroke={profitColor} strokeWidth={drawing.strokeWidth ?? 1} style={{ pointerEvents: 'none' }} />
+          {/* Right vertical border - loss zone segment */}
+          <line x1={maxX} y1={entryY} x2={maxX} y2={stopLossY} stroke={lossColor} strokeWidth={drawing.strokeWidth ?? 1} style={{ pointerEvents: 'none' }} />
+
+          {/* Horizontal lines */}
+          <line x1={minX} y1={targetY} x2={maxX} y2={targetY} stroke={profitColor} strokeWidth={drawing.strokeWidth ?? 1} style={{ pointerEvents: 'none' }} />
+          <line x1={minX} y1={entryY} x2={maxX} y2={entryY} stroke={entryColor} strokeWidth={drawing.strokeWidth ?? 1} style={{ pointerEvents: 'none' }} />
+          <line x1={minX} y1={stopLossY} x2={maxX} y2={stopLossY} stroke={lossColor} strokeWidth={drawing.strokeWidth ?? 1} style={{ pointerEvents: 'none' }} />
+
+          {/* Invisible wider hit areas for grabbing */}
+          <line x1={minX} y1={targetY} x2={maxX} y2={targetY} stroke="transparent" strokeWidth={20} style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+          <line x1={minX} y1={entryY} x2={maxX} y2={entryY} stroke="transparent" strokeWidth={20} style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+          <line x1={minX} y1={stopLossY} x2={maxX} y2={stopLossY} stroke="transparent" strokeWidth={20} style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+
+          {/* ── Multi-target scale-out: extra take-profit levels TP2, TP3, … ──
+              Each is a dashed line across the position at its price, with a
+              right-edge dot and (when selected) a "TP· price · size%" chip. */}
+          {Array.isArray(drawing.takeProfits) && drawing.takeProfits.map((tp, ti) => {
+            const tpY = converter.priceToY(tp.price);
+            if (!Number.isFinite(tpY)) return null;
+            const label = `TP${ti + 2}  ${fmtPrice(tp.price)}  ·  ${(tp.sizePct || 0).toFixed(0)}%`;
+            const lw = label.length * 5.4 + 10;
+            return (
+              <g key={`tp-${ti}`} style={{ pointerEvents: 'none' }}>
+                <line x1={minX} y1={tpY} x2={maxX} y2={tpY} stroke={profitColor} strokeWidth={1} strokeDasharray="5,4" strokeOpacity={0.9} />
+                <circle cx={maxX} cy={tpY} r={3} fill={profitColor} />
+                {isSelected && (
+                  <>
+                    <rect x={minX + 4} y={tpY - 17} width={lw} height={15} rx={3} fill={profitColor} opacity={0.92} />
+                    <text x={minX + 4 + lw / 2} y={tpY - 6} fill="#ffffff" fontSize="10" fontWeight="600" fontFamily="system-ui, -apple-system, sans-serif" textAnchor="middle" style={{ userSelect: 'none' }}>{label}</text>
+                  </>
+                )}
+              </g>
+            );
+          })}
+
+          {/* ── Two-tone overlay ──────────────────────────────────────
+              Condition 1: TP/SL hit -> full zone height, width to hitX
+              Condition 2: Neither hit -> entry to last close, full width */}
+          {(() => {
+            if (hitTP) {
+              // TP hit: darker green on profit zone, width stops at hitX.
+              // No minimum width threshold here: if a candle hit TP, always
+              // show the overlay regardless of how close to the entry it was.
+              // Previously required dw >= 10% of drawing width, which hid the
+              // hit when the drawing extended far to the right of the candles.
+              const dw = Math.max(2, hitX - minX);
+              return (
+                <>
+                  <rect x={minX} y={profitTop} width={dw}
+                    height={profitHeight}
+                    fill={profitColor} opacity={0.22}
+                    style={{ pointerEvents: 'none' }} />
+                  <line x1={minX} y1={entryY} x2={hitX} y2={targetY}
+                    stroke={profitColor} strokeWidth={1} strokeDasharray="6,4"
+                    opacity={0.45} style={{ pointerEvents: 'none' }} />
+                </>
+              );
+            }
+            if (hitSL) {
+              // SL hit: darker red on loss zone, width stops at hitX.
+              // Same fix as TP: always show the hit overlay.
+              const dw = Math.max(2, hitX - minX);
+              return (
+                <>
+                  <rect x={minX} y={stopLossTop} width={dw}
+                    height={stopLossHeight}
+                    fill={lossColor} opacity={0.22}
+                    style={{ pointerEvents: 'none' }} />
+                  <line x1={minX} y1={entryY} x2={hitX} y2={stopLossY}
+                    stroke={lossColor} strokeWidth={1} strokeDasharray="6,4"
+                    opacity={0.45} style={{ pointerEvents: 'none' }} />
+                </>
+              );
+            }
+            // Neither hit: darker overlay from entry to last close, full width
+            // Require candles to cover at least 10% of drawing width
+            if (lastCandleX - minX < width * 0.1) return null;
+            const lastCloseY = converter.priceToY(lastClose);
+            const overlayTop = Math.min(entryY, lastCloseY);
+            const overlayHeight = Math.abs(lastCloseY - entryY);
+            if (overlayHeight <= 0) return null;
+            const inProfit = isLong
+              ? lastClose > entryPrice
+              : lastClose < entryPrice;
+            return (
+              <>
+                <rect x={minX} y={overlayTop} width={width}
+                  height={overlayHeight}
+                  fill={inProfit ? profitColor : lossColor} opacity={0.22}
+                  style={{ pointerEvents: 'none' }} />
+                <line x1={minX} y1={entryY} x2={lastCandleX} y2={lastCloseY}
+                  stroke={inProfit ? profitColor : lossColor}
+                  strokeWidth={1} strokeDasharray="6,4"
+                  opacity={0.45} style={{ pointerEvents: 'none' }} />
+              </>
+            );
+          })()}
+
+          {/* ── Stat badges: TradingView-style, visible when selected ── */}
+          {isSelected && (() => {
+            const pnlLabel = hitTP || hitSL ? 'Closed P&L' : 'Open P&L';
+            const pnlValue = hitTP || hitSL
+              ? Math.abs(targetPrice - entryPrice)
+              : Math.abs(lastClose - entryPrice);
+            const pnlSign = (isLong ? lastClose >= entryPrice : lastClose <= entryPrice) ? '+' : '-';
+            const riskPerUnit = Math.abs(entryPrice - stopLossPrice);
+            const hasSizing = !!(drawing.accountSize && drawing.riskPercent && riskPerUnit > 0);
+            const riskAmount = hasSizing ? (drawing.accountSize! * drawing.riskPercent! / 100) : 0;
+            const qty = hasSizing
+              ? Math.max(0, Math.round(riskAmount / riskPerUnit))
+              : Math.round(Math.abs(targetPrice - entryPrice) / (entryPrice * 0.0001));
+            const cx = minX + width / 2;
+
+            // Auto-size: ~5.5px per char for 11px font, 10px padding
+            const tpText = `Target  ${fmtPrice(targetPrice)}  (${targetPercent.toFixed(2)}%)  ${targetPips.toFixed(0)} pips`;
+            const slText = `Stop  ${fmtPrice(stopLossPrice)}  (${stopLossPercent.toFixed(2)}%)  ${stopLossPips.toFixed(0)} pips`;
+            const entryLine1 = `${pnlLabel}: ${pnlSign}${fmtPrice(pnlValue)}  ·  Qty: ${qty}`;
+            const entryLine2 = hasSizing
+              ? `R:R ${riskRewardRatio.toFixed(2)}  ·  Risk $${riskAmount.toFixed(0)}`
+              : `Risk/reward ratio: ${riskRewardRatio.toFixed(2)}`;
+
+            const tpW = tpText.length * 5.5 + 10;
+            const slW = slText.length * 5.5 + 10;
+            const entryW = Math.max(entryLine1.length, entryLine2.length) * 5.5 + 14;
+
+            return (
+              <>
+                {/* TP badge: tight auto-width, centered on drawing */}
+                <g style={{ pointerEvents: 'none' }}>
+                  <rect x={cx - tpW / 2} y={targetY + (isLong ? -22 : 4)}
+                    width={tpW} height={18} rx={3}
+                    fill={profitColor} opacity={0.9} />
+                  <text x={cx} y={targetY + (isLong ? -9 : 17)}
+                    fill="#ffffff" fontSize="11" fontWeight="600"
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                    textAnchor="middle"
+                    style={{ userSelect: 'none' }}>
+                    {tpText}
+                  </text>
+                </g>
+
+                {/* SL badge: tight auto-width, centered on drawing */}
+                <g style={{ pointerEvents: 'none' }}>
+                  <rect x={cx - slW / 2} y={stopLossY + (isLong ? 4 : -22)}
+                    width={slW} height={18} rx={3}
+                    fill={lossColor} opacity={0.9} />
+                  <text x={cx} y={stopLossY + (isLong ? 17 : -9)}
+                    fill="#ffffff" fontSize="11" fontWeight="600"
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                    textAnchor="middle"
+                    style={{ userSelect: 'none' }}>
+                    {slText}
+                  </text>
+                </g>
+
+                {/* Entry badge: tight auto-width, two lines */}
+                <g style={{ pointerEvents: 'none' }}>
+                  <rect x={cx - entryW / 2} y={entryY - 28}
+                    width={entryW} height={32} rx={4}
+                    fill="rgba(15, 23, 42, 0.88)" />
+                  <text x={cx} y={entryY - 15}
+                    fill="#ffffff" fontSize="11" fontWeight="600"
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                    textAnchor="middle"
+                    style={{ userSelect: 'none' }}>
+                    {entryLine1}
+                  </text>
+                  <text x={cx} y={entryY - 3}
+                    fill="rgba(255,255,255,0.7)" fontSize="10" fontWeight="500"
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                    textAnchor="middle"
+                    style={{ userSelect: 'none' }}>
+                    {entryLine2}
+                  </text>
+                </g>
+              </>
+            );
+          })()}
+
+          {/* Smart Position analytics chip (model estimate, gambler's-ruin barrier prob) */}
+          {isSelected && (() => {
+            const distTP = Math.abs(targetPrice - entryPrice);
+            const distSL = Math.abs(entryPrice - stopLossPrice);
+            const denom = distTP + distSL;
+            if (denom <= 0) return null;
+            const pTP = distSL / denom;
+            const rr = distSL > 0 ? distTP / distSL : 0;
+            const expR = pTP * rr - (1 - pTP);
+            const chipTop = Math.min(profitTop, stopLossTop);
+            const line1 = `Win ~${(pTP * 100).toFixed(0)}%  ·  E ${expR >= 0 ? '+' : ''}${expR.toFixed(2)}R`;
+            const chipW = line1.length * 6.2 + 16;
+            return (
+              <g style={{ pointerEvents: 'none' }}>
+                <rect x={minX + 6} y={chipTop + 6} width={chipW} height={30} rx={5} fill="rgba(11,15,20,0.9)" stroke="#2dd4bf" strokeOpacity={0.35} />
+                <text x={minX + 6 + chipW / 2} y={chipTop + 19} fill="#5eead4" fontSize="11" fontWeight="600" fontFamily="system-ui, -apple-system, sans-serif" textAnchor="middle">{line1}</text>
+                <text x={minX + 6 + chipW / 2} y={chipTop + 30} fill="rgba(148,163,184,0.8)" fontSize="8" fontWeight="500" fontFamily="system-ui, -apple-system, sans-serif" textAnchor="middle">est. · volatility model</text>
+              </g>
+            );
+          })()}
+
+          {/* Resize handles at anchor positions: TradingView-style 8x8 squares,
+              visible when selected for dragging TP, entry, and SL levels */}
+          {isSelected && (
+            <>
+              <rect x={minX - 4} y={targetY - 4} width={8} height={8} fill="white" stroke={profitColor} strokeWidth="1.5" rx="1" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+              <rect x={maxX - 4} y={targetY - 4} width={8} height={8} fill="white" stroke={profitColor} strokeWidth="1.5" rx="1" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+              <rect x={minX - 4} y={entryY - 4} width={8} height={8} fill="white" stroke={entryColor} strokeWidth="1.5" rx="1" style={{ cursor: 'ew-resize', pointerEvents: 'all' }} />
+              <rect x={maxX - 4} y={entryY - 4} width={8} height={8} fill="white" stroke={entryColor} strokeWidth="1.5" rx="1" style={{ cursor: 'ew-resize', pointerEvents: 'all' }} />
+              <rect x={minX - 4} y={stopLossY - 4} width={8} height={8} fill="white" stroke={lossColor} strokeWidth="1.5" rx="1" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+              <rect x={maxX - 4} y={stopLossY - 4} width={8} height={8} fill="white" stroke={lossColor} strokeWidth="1.5" rx="1" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+
+        </g>
+      );
+    }
+
+    if (drawing.type === 'extendedLine') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const cw = (containerDims.width || 1000);
+      const ch = containerRef.current?.clientHeight || 600;
+      const chartW = cw - chartBounds.priceAxisWidth;
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      let ax1 = p1.x, ay1 = 0, ax2 = p1.x, ay2 = ch;
+      if (Math.abs(dx) >= 0.001) {
+        const ts: number[] = [(0 - p1.x) / dx, (chartW - p1.x) / dx];
+        if (Math.abs(dy) > 0.001) { ts.push((0 - p1.y) / dy); ts.push((ch - p1.y) / dy); }
+        let tMin = 0, tMax = 1;
+        for (const t of ts) {
+          const ix = p1.x + dx * t, iy = p1.y + dy * t;
+          if (ix >= -1 && ix <= chartW + 1 && iy >= -1 && iy <= ch + 1) {
+            if (t < tMin) tMin = t;
+            if (t > tMax) tMax = t;
+          }
+        }
+        ax1 = p1.x + dx * tMin; ay1 = p1.y + dy * tMin;
+        ax2 = p1.x + dx * tMax; ay2 = p1.y + dy * tMax;
+      }
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line x1={ax1} y1={ay1} x2={ax2} y2={ay2} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }} />
+          <line x1={ax1} y1={ay1} x2={ax2} y2={ay2} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              {midpointDot}
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'infoLine') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const c1 = drawing.points[0], c2 = drawing.points[1];
+      const dPrice = c2.price - c1.price;
+      const dPct = c1.price !== 0 ? (dPrice / c1.price) * 100 : 0;
+      const bars = Math.round(Math.abs(c2.time - c1.time) / timeframeMs);
+      const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
+      const sign = dPrice >= 0 ? '+' : '';
+      const info = `${sign}${dPrice.toFixed(2)} (${sign}${dPct.toFixed(2)}%)  ${bars} bars`;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }} />
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <rect x={midX + 8} y={midY - 22} width={info.length * 6.2 + 12} height={16} rx={3} fill="#0b0d12" fillOpacity={0.85} stroke={drawingColor} strokeOpacity={0.5} style={{ pointerEvents: 'none' }} />
+          <text x={midX + 13} y={midY - 10} fill={drawingColor} fontSize="10" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{info}</text>
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              {midpointDot}
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'trendAngle') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      const angle = (Math.atan2(-(dy), dx) * 180) / Math.PI;
+      const baseLen = Math.min(Math.abs(dx) || 40, 60) + 20;
+      const baseX = p1.x + (dx >= 0 ? baseLen : -baseLen);
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line x1={p1.x} y1={p1.y} x2={baseX} y2={p1.y} stroke={drawingColor} strokeWidth={1} strokeOpacity={0.4} strokeDasharray="3,3" style={{ pointerEvents: 'none' }} />
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }} />
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <text x={p1.x + (dx >= 0 ? 16 : -44)} y={p1.y - 6} fill={drawingColor} fontSize="10" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{angle.toFixed(1)}°</text>
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              {midpointDot}
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'crossline') {
+      if (pixels.length < 1) return null;
+      const cx = pixels[0].x, cy = pixels[0].y;
+      const cw = (containerDims.width || 1000);
+      const ch = containerRef.current?.clientHeight || 600;
+      const chartW = cw - chartBounds.priceAxisWidth;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line x1={0} y1={cy} x2={chartW} y2={cy} stroke={drawingColor} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }} />
+          <line x1={cx} y1={0} x2={cx} y2={ch} stroke={drawingColor} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }} />
+          <line x1={0} y1={cy} x2={chartW} y2={cy} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={cx} y1={0} x2={cx} y2={ch} stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          {showHandles && (
+            <circle cx={cx} cy={cy} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'trendRay') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+
+      // Extend line forward to chart edge
+      const cw = (containerDims.width || 1000);
+      const ch = containerRef.current?.clientHeight || 600;
+      const chartW = cw - chartBounds.priceAxisWidth;
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+
+      let extX1 = p1.x, extY1 = p1.y, extX2 = p2.x, extY2 = p2.y;
+      if (Math.abs(dx) < 0.001) {
+        extX2 = p1.x; extY2 = dy > 0 ? ch : 0;
+      } else {
+        const tCandidates: number[] = [];
+        tCandidates.push((0 - p1.x) / dx);
+        tCandidates.push((chartW - p1.x) / dx);
+        if (Math.abs(dy) > 0.001) {
+          tCandidates.push((0 - p1.y) / dy);
+          tCandidates.push((ch - p1.y) / dy);
+        }
+
+        let tMax = 1;
+        for (const t of tCandidates) {
+          const ix = p1.x + dx * t;
+          const iy = p1.y + dy * t;
+          if (ix >= -1 && ix <= chartW + 1 && iy >= -1 && iy <= ch + 1) {
+            if (t > tMax) tMax = t;
+          }
+        }
+        extX2 = p1.x + dx * tMax;
+        extY2 = p1.y + dy * tMax;
+      }
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line
+            x1={extX1}
+            y1={extY1}
+            x2={extX2}
+            y2={extY2}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }}
+          />
+          <line
+            x1={extX1}
+            y1={extY1}
+            x2={extX2}
+            y2={extY2}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              {midpointDot}
+            </>
+          )}
+        </g>
+      );
+    }
+
+    // Straight line segment (finite, between two points)
+    if (drawing.type === 'trend' || drawing.type === 'line') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      // Label anchor: midpoint of the segment, offset 12px perpendicular above the line so the text sits cleanly off the stroke.
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const segLen = Math.sqrt(dx * dx + dy * dy) || 1;
+      const nx = -dy / segLen;
+      const ny = dx / segLen;
+      const sideSign = ny > 0 ? -1 : 1;
+      const ux = dx / segLen, uy = dy / segLen;
+      const EXT = 6000;
+      const eX1 = drawing.extendLeft ? p1.x - ux * EXT : p1.x;
+      const eY1 = drawing.extendLeft ? p1.y - uy * EXT : p1.y;
+      const eX2 = drawing.extendRight ? p2.x + ux * EXT : p2.x;
+      const eY2 = drawing.extendRight ? p2.y + uy * EXT : p2.y;
+      const labelX = midX + nx * 12 * sideSign;
+      const labelY = midY + ny * 12 * sideSign;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <line
+            x1={eX1}
+            y1={eY1}
+            x2={eX2}
+            y2={eY2}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 10, opacity: 0 }}
+          />
+          <line
+            x1={eX1}
+            y1={eY1}
+            x2={eX2}
+            y2={eY2}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {renderInlineLabel(drawing, labelX, labelY, drawingColor)}
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              {midpointDot}
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'rectangle') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const width = Math.abs(p2.x - p1.x);
+      const height = Math.abs(p2.y - p1.y);
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <rect
+            x={minX}
+            y={minY}
+            width={width}
+            height={height}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {renderInlineLabel(drawing, minX + width / 2, minY + height / 2, drawingColor)}
+          {showHandles && (
+            <>
+              <circle cx={minX} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+
+        </g>
+      );
+    }
+
+    if (drawing.type === 'square') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      // Force equal width and height at render time to maintain square proportions.
+      // Points are stored as chart coords (time, price) which have very different
+      // pixel scales, so we must re-enforce the constraint every frame, same as circle.
+      const size = Math.max(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const width = size;
+      const height = size;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <rect
+            x={minX}
+            y={minY}
+            width={width}
+            height={height}
+            fill={drawing.fillColor ? drawing.fillColor : 'transparent'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={minX} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'circle') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      // Fixed proportions - perfect circle
+      const size = Math.max(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const cx = minX + size / 2;
+      const cy = minY + size / 2;
+      const r = size / 2;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <circle
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              {/* Circle uses 'size' for both dimensions (square bounding box), not separate width/height.
+                 Using undefined 'width'/'height' here caused ReferenceError crash + black screen. */}
+              <circle cx={minX} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + size} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX} cy={minY + size} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + size} cy={minY + size} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'triangle') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      // Fixed proportions - equilateral triangle
+      const size = Math.max(Math.abs(p2.x - p1.x), Math.abs(p2.y - p1.y));
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const height = size * Math.sqrt(3) / 2;
+      // Triangle pointing up: bottom-left, top-center, bottom-right
+      const points = `${minX},${minY + height} ${minX + size / 2},${minY} ${minX + size},${minY + height}`;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <polygon
+            points={points}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              {/* 3 handles at triangle corners: bottom-left, top-center, bottom-right */}
+              <circle cx={minX} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + size / 2} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + size} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'oval') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const width = Math.abs(p2.x - p1.x);
+      const height = Math.abs(p2.y - p1.y);
+      const cx = minX + width / 2;
+      const cy = minY + height / 2;
+      const rx = width / 2;
+      const ry = height / 2;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <ellipse
+            cx={cx}
+            cy={cy}
+            rx={rx}
+            ry={ry}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={minX} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    // Free Triangle - 3 independent corners
+    if (drawing.type === 'splitChannel') {
+      if (pixels.length < 4) return null;
+      const [a1, a2, b1, b2] = pixels;
+      const col = drawingColor;
+      const fillCol = drawing.fillColor || col;
+      const CEXT = 6000;
+      const scL = !!drawing.extendLeft, scR = !!drawing.extendRight;
+      const u1x = a2.x - a1.x, u1y = a2.y - a1.y, l1 = Math.hypot(u1x, u1y) || 1;
+      const u2x = b2.x - b1.x, u2y = b2.y - b1.y, l2 = Math.hypot(u2x, u2y) || 1;
+      const A1 = { x: scL ? a1.x - (u1x / l1) * CEXT : a1.x, y: scL ? a1.y - (u1y / l1) * CEXT : a1.y };
+      const A2 = { x: scR ? a2.x + (u1x / l1) * CEXT : a2.x, y: scR ? a2.y + (u1y / l1) * CEXT : a2.y };
+      const B1 = { x: scL ? b1.x - (u2x / l2) * CEXT : b1.x, y: scL ? b1.y - (u2y / l2) * CEXT : b1.y };
+      const B2 = { x: scR ? b2.x + (u2x / l2) * CEXT : b2.x, y: scR ? b2.y + (u2y / l2) * CEXT : b2.y };
+      const scMid = drawing.showMiddleLine === true;
+      const fillPts = `${A1.x},${A1.y} ${A2.x},${A2.y} ${B2.x},${B2.y} ${B1.x},${B1.y}`;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <polygon points={fillPts} fill={fillCol} fillOpacity={0.08 * fillOpacityValue} stroke="none" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          <line x1={A1.x} y1={A1.y} x2={A2.x} y2={A2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={B1.x} y1={B1.y} x2={B2.x} y2={B2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          {scMid && (
+            <line x1={(A1.x + B1.x) / 2} y1={(A1.y + B1.y) / 2} x2={(A2.x + B2.x) / 2} y2={(A2.y + B2.y) / 2} stroke={col} strokeWidth={Math.max(1, drawingStrokeWidth - 1)} strokeDasharray="6 4" strokeOpacity={strokeOpacity * 0.7} style={{ pointerEvents: 'none' }} />
+          )}
+          {showHandles && [a1, a2, b1, b2].map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? '#ffffff' : '#1e293b'} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+          ))}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'timeArcs') {
+      const p1 = drawing.points[0], p2 = drawing.points[1];
+      if (!p1 || !p2) return null;
+      const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
+      const baseY = converter.priceToY(p1.price);
+      const R = Math.abs(x2 - x1);
+      if (R < 3) return null;
+      const dir = x2 >= x1 ? 1 : -1;
+      const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
+      const cw = (containerDims.width || 2000);
+      const chartRight = cw - chartBounds.priceAxisWidth;
+      const centers: number[] = [];
+      for (let k = 0; k < 200; k++) {
+        const c = x1 + dir * R * (k + 0.5);
+        if (dir > 0 && c - R / 2 > chartRight) break;
+        if (dir < 0 && c + R / 2 < 0) break;
+        centers.push(c);
+        if (centers.length > 80) break;
+      }
+      const lastEnd = centers.length ? centers[centers.length - 1] + dir * R / 2 : x2;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          <line x1={x1} y1={baseY} x2={lastEnd} y2={baseY} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.45} strokeDasharray="4 4" style={{ pointerEvents: 'none' }} />
+          {centers.map((c, i) => (
+            <path key={i} d={`M ${c - R / 2} ${baseY} A ${R / 2} ${R / 2} 0 0 0 ${c + R / 2} ${baseY}`} fill="none" stroke={col} strokeWidth={i === 0 ? 1.5 : 1} strokeOpacity={i === 0 ? strokeOpacity : strokeOpacity * 0.55} style={{ cursor: 'move', pointerEvents: 'stroke' }} />
+          ))}
+          {showHandles && isSelected && (
+            <>
+              <circle cx={x1} cy={baseY} r={isSelected ? 7 : 6} fill={col} stroke="#ffffff" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={x2} cy={converter.priceToY(p2.price)} r={isSelected ? 7 : 6} fill={col} stroke="#ffffff" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'freeTriangle') {
+      if (pixels.length < 3) return null;
+      const [p1, p2, p3] = pixels;
+      const points = `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <polygon
+            points={points}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p3.x} cy={p3.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    // Parallel Channel - two parallel lines with fill
+    if (drawing.type === 'pitchfork' || drawing.type === 'schiff' || drawing.type === 'modifiedSchiff' || drawing.type === 'innerFork') {
+      if (pixels.length < 3) return null;
+      const [P0, P1, P2] = pixels;
+      const M = { x: (P1.x + P2.x) / 2, y: (P1.y + P2.y) / 2 };
+      let O = P0;
+      if (drawing.type === 'schiff') O = { x: P0.x, y: (P0.y + P1.y) / 2 };
+      else if (drawing.type === 'modifiedSchiff') O = { x: (P0.x + P1.x) / 2, y: (P0.y + P1.y) / 2 };
+      const dxr = M.x - O.x, dyr = M.y - O.y;
+      const extendRay = (sx: number, sy: number, dx: number, dy: number) => {
+        const cw = (containerDims.width || 1000);
+        const ch = containerRef.current?.clientHeight || 600;
+        const chartW = cw - chartBounds.priceAxisWidth;
+        if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return { x: sx, y: sy };
+        const ts: number[] = [];
+        if (Math.abs(dx) > 0.001) { ts.push((0 - sx) / dx); ts.push((chartW - sx) / dx); }
+        if (Math.abs(dy) > 0.001) { ts.push((0 - sy) / dy); ts.push((ch - sy) / dy); }
+        let tMax = 0;
+        for (const t of ts) {
+          if (t <= 0.001) continue;
+          const ix = sx + dx * t, iy = sy + dy * t;
+          if (ix >= -1 && ix <= chartW + 1 && iy >= -1 && iy <= ch + 1) { if (t > tMax) tMax = t; }
+        }
+        if (tMax === 0) tMax = 1;
+        return { x: sx + dx * tMax, y: sy + dy * tMax };
+      };
+      const medEnd = extendRay(O.x, O.y, dxr, dyr);
+      const e1 = extendRay(P1.x, P1.y, dxr, dyr);
+      const e2 = extendRay(P2.x, P2.y, dxr, dyr);
+      const col = drawingColor;
+      const fillCol = drawing.fillColor || col;
+      const fillPts = `${P1.x},${P1.y} ${e1.x},${e1.y} ${e2.x},${e2.y} ${P2.x},${P2.y}`;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <polygon points={fillPts} fill={fillCol} fillOpacity={0.08 * fillOpacityValue} stroke="none" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(O.x !== P0.x || O.y !== P0.y) && (
+            <line x1={P0.x} y1={P0.y} x2={O.x} y2={O.y} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.5} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+          )}
+          <line x1={P1.x} y1={P1.y} x2={P2.x} y2={P2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={O.x} y1={O.y} x2={medEnd.x} y2={medEnd.y} stroke={col} strokeWidth={drawingStrokeWidth + 1} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={P1.x} y1={P1.y} x2={e1.x} y2={e1.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity * 0.85} style={{ pointerEvents: 'none' }} />
+          <line x1={P2.x} y1={P2.y} x2={e2.x} y2={e2.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity * 0.85} style={{ pointerEvents: 'none' }} />
+          {drawing.type === 'innerFork' && (() => {
+            const q1 = { x: (P1.x + M.x) / 2, y: (P1.y + M.y) / 2 };
+            const q2 = { x: (P2.x + M.x) / 2, y: (P2.y + M.y) / 2 };
+            const eq1 = extendRay(q1.x, q1.y, dxr, dyr);
+            const eq2 = extendRay(q2.x, q2.y, dxr, dyr);
+            return (
+              <>
+                <line x1={q1.x} y1={q1.y} x2={eq1.x} y2={eq1.y} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="5,4" style={{ pointerEvents: 'none' }} />
+                <line x1={q2.x} y1={q2.y} x2={eq2.x} y2={eq2.y} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="5,4" style={{ pointerEvents: 'none' }} />
+              </>
+            );
+          })()}
+          {showHandles && (
+            <>
+              <circle cx={P0.x} cy={P0.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={P1.x} cy={P1.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={P2.x} cy={P2.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'flatChannel') {
+      if (pixels.length < 3) return null;
+      const [P0, P1, P2] = pixels;
+      const flatY = P2.y;
+      const col = drawingColor;
+      const fillCol = drawing.fillColor || col;
+      const CEXT = 6000;
+      const fcL = !!drawing.extendLeft, fcR = !!drawing.extendRight;
+      const ux = P1.x - P0.x, uy = P1.y - P0.y, ul = Math.hypot(ux, uy) || 1;
+      const topL = { x: fcL ? P0.x - (ux / ul) * CEXT : P0.x, y: fcL ? P0.y - (uy / ul) * CEXT : P0.y };
+      const topR = { x: fcR ? P1.x + (ux / ul) * CEXT : P1.x, y: fcR ? P1.y + (uy / ul) * CEXT : P1.y };
+      const botL = { x: topL.x, y: flatY };
+      const botR = { x: topR.x, y: flatY };
+      const fcMid = drawing.showMiddleLine === true;
+      const fillPts = `${topL.x},${topL.y} ${topR.x},${topR.y} ${botR.x},${botR.y} ${botL.x},${botL.y}`;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <polygon points={fillPts} fill={fillCol} fillOpacity={0.08 * fillOpacityValue} stroke="none" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          <line x1={topL.x} y1={topL.y} x2={topR.x} y2={topR.y} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          <line x1={botL.x} y1={flatY} x2={botR.x} y2={flatY} stroke={col} strokeWidth={drawingStrokeWidth} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'none' }} />
+          {fcMid && (
+            <line x1={topL.x} y1={(topL.y + flatY) / 2} x2={topR.x} y2={(topR.y + flatY) / 2} stroke={col} strokeWidth={Math.max(1, drawingStrokeWidth - 1)} strokeDasharray="6 4" strokeOpacity={strokeOpacity * 0.7} style={{ pointerEvents: 'none' }} />
+          )}
+          {showHandles && (
+            <>
+              <circle cx={P0.x} cy={P0.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={P1.x} cy={P1.y} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={P2.x} cy={flatY} r={isSelected ? 7 : 6} fill={col} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'ns-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'parallelChannel') {
+      if (pixels.length < 3) return null;
+      const [p1, p2, p3] = pixels;
+      // p3 defines the offset from p1. The second line is p2+offset to p1+offset.
+      const dx = p3.x - p1.x;
+      const dy = p3.y - p1.y;
+      const q3 = { x: p2.x + dx, y: p2.y + dy };
+      const cdx = p2.x - p1.x, cdy = p2.y - p1.y;
+      const clen = Math.hypot(cdx, cdy) || 1;
+      const cux = cdx / clen, cuy = cdy / clen;
+      const CEXT = 6000;
+      const ceL = !!drawing.extendLeft, ceR = !!drawing.extendRight;
+      const a1 = { x: ceL ? p1.x - cux * CEXT : p1.x, y: ceL ? p1.y - cuy * CEXT : p1.y };
+      const a2 = { x: ceR ? p2.x + cux * CEXT : p2.x, y: ceR ? p2.y + cuy * CEXT : p2.y };
+      const b1 = { x: ceL ? p3.x - cux * CEXT : p3.x, y: ceL ? p3.y - cuy * CEXT : p3.y };
+      const b2 = { x: ceR ? q3.x + cux * CEXT : q3.x, y: ceR ? q3.y + cuy * CEXT : q3.y };
+      const showMid = drawing.showMiddleLine !== false;
+      const fillPoints = `${a1.x},${a1.y} ${a2.x},${a2.y} ${b2.x},${b2.y} ${b1.x},${b1.y}`;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          {/* Fill between the two lines */}
+          <polygon
+            points={fillPoints}
+            fill={drawing.fillColor || '#64748b'}
+            fillOpacity={0.08 * fillOpacityValue}
+            stroke="none"
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {/* Base trend line */}
+          <line x1={a1.x} y1={a1.y} x2={a2.x} y2={a2.y}
+            stroke={drawingColor} strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Parallel line */}
+          <line x1={b1.x} y1={b1.y} x2={b2.x} y2={b2.y}
+            stroke={drawingColor} strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Middle dashed line */}
+          {showMid && (
+          <line x1={(a1.x + b1.x) / 2} y1={(a1.y + b1.y) / 2} x2={(a2.x + b2.x) / 2} y2={(a2.y + b2.y) / 2}
+            stroke={drawingColor} strokeWidth={1}
+            strokeDasharray="4,4"
+            strokeOpacity={strokeOpacity * 0.4}
+            style={{ pointerEvents: 'none' }}
+          />
+          )}
+          {showHandles && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p3.x} cy={p3.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    // Parallelogram - skewed rectangle
+    if (drawing.type === 'parallelogram') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const width = Math.abs(p2.x - p1.x);
+      const height = Math.abs(p2.y - p1.y);
+      const skew = width * 0.25; // 25% skew
+      // Parallelogram points: top-left skewed right, top-right skewed right, bottom-right, bottom-left
+      const points = `${minX + skew},${minY} ${minX + width + skew},${minY} ${minX + width},${minY + height} ${minX},${minY + height}`;
+
+      // Parallelogram corner positions: top-left, top-right, bottom-right, bottom-left
+      const corners = [
+        { x: minX + skew, y: minY },           // top-left (skewed)
+        { x: minX + width + skew, y: minY },   // top-right (skewed)
+        { x: minX + width, y: minY + height }, // bottom-right
+        { x: minX, y: minY + height }          // bottom-left
+      ];
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <polygon
+            points={points}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={corners[0].x} cy={corners[0].y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+              <circle cx={corners[1].x} cy={corners[1].y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={corners[2].x} cy={corners[2].y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={corners[3].x} cy={corners[3].y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    // Octagon - 8-sided polygon
+    if (drawing.type === 'octagon') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const width = Math.abs(p2.x - p1.x);
+      const height = Math.abs(p2.y - p1.y);
+      const cx = minX + width / 2;
+      const cy = minY + height / 2;
+      const rx = width / 2;
+      const ry = height / 2;
+
+      // Generate octagon points (8 vertices)
+      const octagonPoints: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI / 8) + (i * Math.PI / 4); // Start at 22.5 degrees
+        const px = cx + rx * Math.cos(angle);
+        const py = cy + ry * Math.sin(angle);
+        octagonPoints.push(`${px},${py}`);
+      }
+      const points = octagonPoints.join(' ');
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <polygon
+            points={points}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={minX} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={minX + width} cy={minY + height} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    // ── New shapes: all use 2-point bounding box like rectangle/octagon ──
+    // Helper to render any polygon-based shape with standard handles
+    const renderPolygonShape = (polyPoints: string) => {
+      const [p1, p2] = pixels;
+      const bMinX = Math.min(p1.x, p2.x);
+      const bMinY = Math.min(p1.y, p2.y);
+      const bW = Math.abs(p2.x - p1.x);
+      const bH = Math.abs(p2.y - p1.y);
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <polygon
+            points={polyPoints}
+            fill={drawing.fillColor || 'none'}
+            fillOpacity={drawing.fillColor ? 0.2 * fillOpacityValue : 0}
+            stroke={drawingColor}
+            strokeWidth={drawingStrokeWidth}
+            strokeDasharray={getStrokeDashArray(drawing.lineStyle)}
+            strokeOpacity={strokeOpacity}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {showHandles && (
+            <>
+              <circle cx={bMinX} cy={bMinY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+              <circle cx={bMinX + bW} cy={bMinY} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={bMinX} cy={bMinY + bH} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nesw-resize', pointerEvents: 'all' }} />
+              <circle cx={bMinX + bW} cy={bMinY + bH} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    };
+
+    if (['diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart'].includes(drawing.type as string)) {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const w = Math.abs(p2.x - p1.x);
+      const h = Math.abs(p2.y - p1.y);
+      const cx = minX + w / 2;
+      const cy = minY + h / 2;
+      const rx = w / 2;
+      const ry = h / 2;
+
+      let pts = '';
+
+      if (drawing.type === 'diamond') {
+        // Diamond: 4 points at the midpoints of bounding box edges
+        pts = `${cx},${minY} ${minX + w},${cy} ${cx},${minY + h} ${minX},${cy}`;
+      } else if (drawing.type === 'pentagon') {
+        // Regular pentagon inscribed in bounding ellipse
+        const verts: string[] = [];
+        for (let i = 0; i < 5; i++) {
+          const a = -Math.PI / 2 + (i * 2 * Math.PI / 5);
+          verts.push(`${cx + rx * Math.cos(a)},${cy + ry * Math.sin(a)}`);
+        }
+        pts = verts.join(' ');
+      } else if (drawing.type === 'hexagon') {
+        // Regular hexagon
+        const verts: string[] = [];
+        for (let i = 0; i < 6; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI / 3);
+          verts.push(`${cx + rx * Math.cos(a)},${cy + ry * Math.sin(a)}`);
+        }
+        pts = verts.join(' ');
+      } else if (drawing.type === 'star') {
+        // 5-pointed star: alternating outer and inner vertices
+        const verts: string[] = [];
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI / 5);
+          const r = i % 2 === 0 ? 1 : 0.38; // inner radius ~38% of outer
+          verts.push(`${cx + rx * r * Math.cos(a)},${cy + ry * r * Math.sin(a)}`);
+        }
+        pts = verts.join(' ');
+      } else if (drawing.type === 'cross') {
+        // Plus/cross shape: 12 points forming a + sign
+        const t = 0.3; // arm thickness ratio
+        pts = [
+          `${cx - rx * t},${minY}`, `${cx + rx * t},${minY}`,
+          `${cx + rx * t},${cy - ry * t}`, `${minX + w},${cy - ry * t}`,
+          `${minX + w},${cy + ry * t}`, `${cx + rx * t},${cy + ry * t}`,
+          `${cx + rx * t},${minY + h}`, `${cx - rx * t},${minY + h}`,
+          `${cx - rx * t},${cy + ry * t}`, `${minX},${cy + ry * t}`,
+          `${minX},${cy - ry * t}`, `${cx - rx * t},${cy - ry * t}`,
+        ].join(' ');
+      } else if (drawing.type === 'arrowBlock') {
+        // Block arrow pointing right
+        const headStart = minX + w * 0.6;
+        pts = [
+          `${minX},${cy - ry * 0.4}`, `${headStart},${cy - ry * 0.4}`,
+          `${headStart},${minY}`, `${minX + w},${cy}`,
+          `${headStart},${minY + h}`, `${headStart},${cy + ry * 0.4}`,
+          `${minX},${cy + ry * 0.4}`,
+        ].join(' ');
+      } else if (drawing.type === 'wedge') {
+        // Wedge/triangle variant: point on left, wide on right
+        pts = `${minX},${cy} ${minX + w},${minY} ${minX + w},${minY + h}`;
+      } else if (drawing.type === 'heart') {
+        // Simplified heart using polygon approximation (16 points)
+        const verts: string[] = [];
+        for (let i = 0; i <= 16; i++) {
+          const t = (i / 16) * 2 * Math.PI;
+          // Heart parametric: x = 16sin^3(t), y = 13cos(t) - 5cos(2t) - 2cos(3t) - cos(4t)
+          const hx = 16 * Math.pow(Math.sin(t), 3);
+          const hy = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+          // Scale to bounding box (heart ranges: x[-16,16], y[-17,15])
+          verts.push(`${cx + (hx / 16) * rx},${cy + (hy / 32) * ry * 2 - ry * 0.1}`);
+        }
+        pts = verts.join(' ');
+      }
+
+      return renderPolygonShape(pts);
+    }
+
+    if (drawing.type === 'gannFan') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const ux = p2.x - p1.x;
+      const uy = p2.y - p1.y;
+      const rightEdge = containerDims.width - chartBounds.priceAxisWidth;
+      const chartH = containerDims.height - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0);
+      const angles: [number, number, string][] = [[1, 1, '1x1'], [1, 2, '1x2'], [1, 3, '1x3'], [1, 4, '1x4'], [2, 1, '2x1'], [3, 1, '3x1'], [4, 1, '4x1']];
+      const clampEnd = (dirX: number, dirY: number) => {
+        if (dirX === 0 && dirY === 0) return { x: p1.x, y: p1.y };
+        const targetX = dirX >= 0 ? rightEdge : 0;
+        if (dirX !== 0) {
+          let t = (targetX - p1.x) / dirX;
+          let ey = p1.y + dirY * t;
+          if (ey < 0 && dirY !== 0) { t = (0 - p1.y) / dirY; ey = 0; }
+          else if (ey > chartH && dirY !== 0) { t = (chartH - p1.y) / dirY; ey = chartH; }
+          return { x: p1.x + dirX * t, y: ey };
+        }
+        return { x: p1.x, y: dirY >= 0 ? chartH : 0 };
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {angles.map(([tU, pU, label]) => {
+            const end = clampEnd(tU * ux, pU * uy);
+            const main = tU === 1 && pU === 1;
+            return (
+              <g key={label}>
+                <line x1={p1.x} y1={p1.y} x2={end.x} y2={end.y} stroke={drawingColor} strokeWidth={main ? 1.75 : 1} strokeDasharray={main ? undefined : '4,3'} style={{ pointerEvents: 'none' }} />
+                <text x={end.x - 18} y={end.y - 3} fill={drawingColor} fontSize="9" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{label}</text>
+              </g>
+            );
+          })}
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth={12} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'gannBox') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x);
+      const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
+      const w = x1 - x0, h = y1 - y0;
+      const GB_DEF_R = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
+      // Green Terminal cohesive palette (slate -> teal -> emerald), distinct from TradingView
+      const GB_DEF_C = ['#64748b', '#22d3ee', '#2dd4bf', '#34d399', '#2dd4bf', '#22d3ee', '#64748b'];
+      const gbLevels = (drawing.levelStyles && drawing.levelStyles.length)
+        ? drawing.levelStyles
+        : GB_DEF_R.map((v, i) => ({ value: v, visible: true, color: GB_DEF_C[i] }));
+      const gbOne = !!drawing.useOneColor;
+      const gbTop = drawing.topLabels !== false;
+      const gbBot = drawing.bottomLabels !== false;
+      const gbShowLabels = gbTop || gbBot;
+      const gbRev = !!drawing.reverse;
+      const gbAngles = !!drawing.gannAngles;
+      const gpos = (fv: number) => (gbRev ? 1 - fv : fv);
+      const ratios = gbLevels.map(l => l.value);
+      const LVLC = gbLevels.map(l => (gbOne ? drawingColor : l.color));
+      const GBVIS = gbLevels.map(l => l.visible !== false);
+      const gbPill = (lx: number, ly: number, txt: string, c: string, anchor: 'start' | 'middle' | 'end') => {
+        const tw = txt.length * 6.2 + 8;
+        const rx = anchor === 'end' ? lx - tw : anchor === 'middle' ? lx - tw / 2 : lx;
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <rect x={rx} y={ly - 8} width={tw} height={13} rx={3} fill="#0b0f14" fillOpacity={0.72} stroke={c} strokeOpacity={0.35} strokeWidth={0.75} />
+            <text x={anchor === 'end' ? lx - 4 : anchor === 'middle' ? lx : lx + 4} y={ly + 2} textAnchor={anchor} fill={c} fontSize="9.5" fontWeight="700" style={{ userSelect: 'none' }}>{txt}</text>
+          </g>
+        );
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {ratios.slice(0, -1).map((fv, i) => {
+            const yA = y0 + h * gpos(fv), yB = y0 + h * gpos(ratios[i + 1]);
+            if (!GBVIS[i]) return null;
+            return <rect key={`gb-hb-${i}`} x={x0} y={Math.min(yA, yB)} width={w} height={Math.abs(yB - yA)} fill={LVLC[i]} fillOpacity={0.055} style={{ pointerEvents: 'none' }} />;
+          })}
+          {ratios.slice(0, -1).map((fv, i) => {
+            const xA = x0 + w * gpos(fv), xB = x0 + w * gpos(ratios[i + 1]);
+            if (!GBVIS[i]) return null;
+            return <rect key={`gb-vb-${i}`} x={Math.min(xA, xB)} y={y0} width={Math.abs(xB - xA)} height={h} fill={LVLC[i]} fillOpacity={0.04} style={{ pointerEvents: 'none' }} />;
+          })}
+          {ratios.map((fv, i) => {
+            const yl = y0 + h * gpos(fv);
+            const c = LVLC[i];
+            if (!GBVIS[i]) return null;
+            return (
+              <g key={`gb-p-${i}`}>
+                <line x1={x0} y1={yl} x2={x1} y2={yl} stroke={c} strokeWidth={1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
+                {gbShowLabels && gbPill(x0 - 6, yl, String(fv), c, 'end')}
+                {gbShowLabels && gbPill(x1 + 6, yl, String(fv), c, 'start')}
+              </g>
+            );
+          })}
+          {ratios.map((fv, i) => {
+            const xl = x0 + w * gpos(fv);
+            const c = LVLC[i];
+            if (!GBVIS[i]) return null;
+            return (
+              <g key={`gb-t-${i}`}>
+                <line x1={xl} y1={y0} x2={xl} y2={y1} stroke={c} strokeWidth={1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
+                {gbTop && gbPill(xl, y0 - 6, String(fv), c, 'middle')}
+                {gbBot && gbPill(xl, y1 + 15, String(fv), c, 'middle')}
+              </g>
+            );
+          })}
+          {gbAngles && (
+            <>
+              <line x1={x0} y1={y0} x2={x1} y2={y1} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.55} strokeDasharray="5,3" style={{ pointerEvents: 'none' }} />
+              <line x1={x0} y1={y1} x2={x1} y2={y0} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.55} strokeDasharray="5,3" style={{ pointerEvents: 'none' }} />
+            </>
+          )}
+          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeOpacity={0.8} style={{ pointerEvents: 'none' }} />
+          <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'gannSquare' || drawing.type === 'gannSquareFixed') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const x0 = Math.min(p1.x, p2.x), x1 = Math.max(p1.x, p2.x);
+      const y0 = Math.min(p1.y, p2.y), y1 = Math.max(p1.y, p2.y);
+      const w = x1 - x0, h = y1 - y0;
+      const ox = p1.x, oy = p1.y;
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      // Green Terminal cohesive palette
+      const gsTeal = '#34d399', gsCyan = '#22d3ee', gsIndigo = '#818cf8', gsAmber = '#fbbf24', gsGrey = '#64748b';
+      const gsDiv = 8;
+      const fans: { ex: number; ey: number; c: string; sw: number }[] = [
+        { ex: ox + dx, ey: oy + dy, c: '#e2e8f0', sw: 1.6 },
+        { ex: ox + dx, ey: oy + dy * 0.5, c: gsTeal, sw: 1 },
+        { ex: ox + dx * 0.5, ey: oy + dy, c: gsTeal, sw: 1 },
+        { ex: ox + dx, ey: oy + dy * 0.25, c: gsCyan, sw: 1 },
+        { ex: ox + dx * 0.25, ey: oy + dy, c: gsCyan, sw: 1 },
+        { ex: ox + dx, ey: oy + dy * 0.125, c: gsIndigo, sw: 1 },
+        { ex: ox + dx * 0.125, ey: oy + dy, c: gsIndigo, sw: 1 },
+      ];
+      const arcFracs: [number, string][] = [[0.25, gsAmber], [0.382, gsCyan], [0.5, gsTeal], [0.618, gsCyan], [0.75, gsIndigo], [1, '#e2e8f0']];
+      const arcPts = (frac: number) => {
+        const pts: string[] = [];
+        for (let k = 0; k <= 20; k++) {
+          const th = (k / 20) * (Math.PI / 2);
+          pts.push(`${(ox + dx * frac * Math.cos(th)).toFixed(1)},${(oy + dy * frac * Math.sin(th)).toFixed(1)}`);
+        }
+        return pts.join(' ');
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {Array.from({ length: gsDiv + 1 }).map((_, i) => {
+            const fv = i / gsDiv;
+            return (
+              <g key={`gs-grid-${i}`}>
+                <line x1={x0} y1={y0 + h * fv} x2={x1} y2={y0 + h * fv} stroke={gsTeal} strokeWidth={0.5} opacity={0.28} style={{ pointerEvents: 'none' }} />
+                <line x1={x0 + w * fv} y1={y0} x2={x0 + w * fv} y2={y1} stroke={gsTeal} strokeWidth={0.5} opacity={0.28} style={{ pointerEvents: 'none' }} />
+              </g>
+            );
+          })}
+          {arcFracs.map(([frac, c], i) => (
+            <polyline key={`gs-arc-${i}`} points={arcPts(frac)} fill="none" stroke={c} strokeWidth={1.1} strokeOpacity={0.85} style={{ pointerEvents: 'none' }} />
+          ))}
+          {fans.map((fn, i) => (
+            <line key={`gs-fan-${i}`} x1={ox} y1={oy} x2={fn.ex} y2={fn.ey} stroke={fn.c} strokeWidth={fn.sw} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
+          ))}
+          <line x1={ox + dx} y1={oy} x2={ox} y2={oy + dy} stroke={gsGrey} strokeWidth={1} strokeOpacity={0.5} style={{ pointerEvents: 'none' }} />
+          <rect x={x0} y={y0} width={w} height={h} fill="none" stroke="#94a3b8" strokeWidth={1.5} strokeOpacity={0.8} style={{ pointerEvents: 'none' }} />
+          <rect x={x0} y={y0} width={w} height={h} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    const mpCfg = MULTIPOINT_TOOLS[drawing.type];
+    if (mpCfg) {
+      if (pixels.length < 2) return null;
+      const path = pixels.map((p) => `${p.x},${p.y}`).join(' ');
+      const mpAccent = '#2dd4bf';
+      const mpLabel = (px: number, py: number, txt: string, idx: number) => {
+        const tw = txt.length * 7 + 8;
+        return (
+          <g key={`mpl-${idx}`} style={{ pointerEvents: 'none' }}>
+            <rect x={px - tw / 2} y={py - 21} width={tw} height={14} rx={3} fill="#0b0f14" fillOpacity={0.8} stroke={mpAccent} strokeOpacity={0.45} strokeWidth={0.75} />
+            <text x={px} y={py - 11} textAnchor="middle" fill={mpAccent} fontSize="10" fontWeight="700" style={{ userSelect: 'none' }}>{txt}</text>
+          </g>
+        );
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {mpCfg.fillTris.map((tri, i) => tri.every((idx) => idx < pixels.length) ? (
+            <polygon key={`mpt-${i}`} points={tri.map((idx) => `${pixels[idx].x},${pixels[idx].y}`).join(' ')} fill={i % 2 === 0 ? '#2dd4bf' : '#22d3ee'} fillOpacity={0.06 * fillOpacityValue} stroke="none" style={{ pointerEvents: 'none' }} />
+          ) : null)}
+          <polyline points={path} fill="none" stroke="transparent" strokeWidth={12} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke' }} />
+          <polyline points={path} fill="none" stroke={drawingColor} strokeWidth={drawingStrokeWidth} strokeOpacity={strokeOpacity} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} style={{ pointerEvents: 'none' }} />
+          {mpCfg.connectors.map(([i, j], k) => (i < pixels.length && j < pixels.length) ? (
+            <line key={`mpc-${k}`} x1={pixels[i].x} y1={pixels[i].y} x2={pixels[j].x} y2={pixels[j].y} stroke={drawingColor} strokeWidth={1} strokeOpacity={strokeOpacity * 0.55} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+          ) : null)}
+          {mpCfg.labels.map((lb, i) => (lb && i < pixels.length) ? mpLabel(pixels[i].x, pixels[i].y, lb, i) : null)}
+          {showHandles && pixels.map((p, i) => (
+            <circle key={`mph-${i}`} cx={p.x} cy={p.y} r={isSelected ? 6 : 5} fill={drawingColor} stroke={isSelected ? '#ffffff' : '#1e293b'} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+          ))}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibChannel') {
+      if (pixels.length < 3) return null;
+      const [a, b, p3] = pixels;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy || 1;
+      const tproj = ((p3.x - a.x) * dx + (p3.y - a.y) * dy) / len2;
+      const foot = { x: a.x + dx * tproj, y: a.y + dy * tproj };
+      const ox = p3.x - foot.x, oy = p3.y - foot.y;
+      const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+      const cols = ['#64748b', '#22d3ee', '#2dd4bf', '#34d399', '#2dd4bf', '#22d3ee', '#e2e8f0'];
+      const fill = `${a.x},${a.y} ${b.x},${b.y} ${b.x + ox},${b.y + oy} ${a.x + ox},${a.y + oy}`;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <polygon points={fill} fill="#2dd4bf" fillOpacity={0.05 * fillOpacityValue} stroke="none" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {levels.map((lv, i) => {
+            const x1p = a.x + ox * lv, y1p = a.y + oy * lv, x2p = b.x + ox * lv, y2p = b.y + oy * lv;
+            return (
+              <g key={`fc-${i}`}>
+                <line x1={x1p} y1={y1p} x2={x2p} y2={y2p} stroke={cols[i]} strokeWidth={lv === 0 || lv === 1 ? 1.4 : 1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
+                <text x={x2p + 5} y={y2p + 3} fill={cols[i]} fontSize="9" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{lv}</text>
+              </g>
+            );
+          })}
+          {showHandles && (
+            <>
+              <circle cx={a.x} cy={a.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={b.x} cy={b.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p3.x} cy={p3.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibCircles') {
+      if (pixels.length < 2) return null;
+      const [c, e] = pixels;
+      const R = Math.hypot(e.x - c.x, e.y - c.y);
+      const levels = [0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618];
+      const cols = ['#22d3ee', '#2dd4bf', '#34d399', '#2dd4bf', '#22d3ee', '#e2e8f0', '#818cf8'];
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {levels.map((lv, i) => (
+            <g key={`fcir-${i}`}>
+              <circle cx={c.x} cy={c.y} r={Math.max(R * lv, 0)} fill="none" stroke={cols[i]} strokeWidth={lv === 1 ? 1.4 : 1} strokeOpacity={0.85} style={{ pointerEvents: 'none' }} />
+              <text x={c.x} y={c.y - R * lv - 3} textAnchor="middle" fill={cols[i]} fontSize="9" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{lv}</text>
+            </g>
+          ))}
+          <circle cx={c.x} cy={c.y} r={Math.max(R, 6)} fill="none" stroke="transparent" strokeWidth={14} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke' }} />
+          <line x1={c.x} y1={c.y} x2={e.x} y2={e.y} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.5} strokeDasharray="3,3" style={{ pointerEvents: 'none' }} />
+          {showHandles && (
+            <>
+              <circle cx={c.x} cy={c.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={e.x} cy={e.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibArcs') {
+      if (pixels.length < 2) return null;
+      const [c, e] = pixels;
+      const R = Math.hypot(e.x - c.x, e.y - c.y);
+      const base = Math.atan2(e.y - c.y, e.x - c.x);
+      const levels = [0.382, 0.5, 0.618, 0.786, 1];
+      const cols = ['#2dd4bf', '#34d399', '#2dd4bf', '#22d3ee', '#e2e8f0'];
+      const arcPts = (r: number) => {
+        const pts: string[] = [];
+        for (let k = 0; k <= 24; k++) {
+          const th = base - Math.PI / 2 + (k / 24) * Math.PI;
+          pts.push(`${(c.x + r * Math.cos(th)).toFixed(1)},${(c.y + r * Math.sin(th)).toFixed(1)}`);
+        }
+        return pts.join(' ');
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <line x1={c.x} y1={c.y} x2={e.x} y2={e.y} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.5} strokeDasharray="3,3" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 12 }} />
+          {levels.map((lv, i) => (
+            <g key={`farc-${i}`}>
+              <polyline points={arcPts(R * lv)} fill="none" stroke={cols[i]} strokeWidth={lv === 1 ? 1.4 : 1} strokeOpacity={0.85} style={{ pointerEvents: 'none' }} />
+              <text x={c.x + R * lv * Math.cos(base)} y={c.y + R * lv * Math.sin(base) - 3} textAnchor="middle" fill={cols[i]} fontSize="9" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{lv}</text>
+            </g>
+          ))}
+          {showHandles && (
+            <>
+              <circle cx={c.x} cy={c.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={e.x} cy={e.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibSpiral') {
+      if (pixels.length < 2) return null;
+      const [c, e] = pixels;
+      const r0 = Math.hypot(e.x - c.x, e.y - c.y);
+      const th0 = Math.atan2(e.y - c.y, e.x - c.x);
+      const phi = 1.618;
+      const turns = 4;
+      const total = turns * 2 * Math.PI;
+      const steps = turns * 48;
+      const pts: string[] = [];
+      for (let k = 0; k <= steps; k++) {
+        const t = -(k / steps) * total;
+        const r = r0 * Math.pow(phi, t / (Math.PI / 2));
+        if (r < 0.4) break;
+        const a = th0 + t;
+        pts.push(`${(c.x + r * Math.cos(a)).toFixed(1)},${(c.y + r * Math.sin(a)).toFixed(1)}`);
+      }
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <polyline points={pts.join(' ')} fill="none" stroke="#34d399" strokeWidth={1.4} strokeOpacity={0.9} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke' }} />
+          <line x1={c.x} y1={c.y} x2={e.x} y2={e.y} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.45} strokeDasharray="3,3" style={{ pointerEvents: 'none' }} />
+          {showHandles && (
+            <>
+              <circle cx={c.x} cy={c.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={e.x} cy={e.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibWedge') {
+      if (pixels.length < 2) return null;
+      const [o, e] = pixels;
+      const dx = e.x - o.x, dy = e.y - o.y;
+      const R = Math.hypot(dx, dy) || 1;
+      const a2 = Math.atan2(dy, dx);
+      const a1 = dx >= 0 ? 0 : Math.PI;
+      const arcLevels = [0.382, 0.618, 1, 1.618];
+      const rayFracs = [0, 0.382, 0.5, 0.618, 1];
+      const cols = ['#22d3ee', '#2dd4bf', '#34d399', '#22d3ee', '#818cf8'];
+      const arcPts = (r: number) => {
+        const pts: string[] = [];
+        for (let k = 0; k <= 24; k++) {
+          const th = a1 + (a2 - a1) * (k / 24);
+          pts.push(`${(o.x + r * Math.cos(th)).toFixed(1)},${(o.y + r * Math.sin(th)).toFixed(1)}`);
+        }
+        return pts.join(' ');
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {arcLevels.map((lv, i) => (
+            <polyline key={`fw-arc-${i}`} points={arcPts(R * lv)} fill="none" stroke={cols[i % cols.length]} strokeWidth={lv === 1 ? 1.4 : 1} strokeOpacity={0.8} style={{ pointerEvents: 'none' }} />
+          ))}
+          {rayFracs.map((frc, i) => {
+            const ang = a1 + (a2 - a1) * frc;
+            const ex = o.x + Math.cos(ang) * R * 1.618;
+            const ey = o.y + Math.sin(ang) * R * 1.618;
+            return (
+              <g key={`fw-ray-${i}`}>
+                <line x1={o.x} y1={o.y} x2={ex} y2={ey} stroke={cols[i % cols.length]} strokeWidth={frc === 0 || frc === 1 ? 1.3 : 1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />
+                <text x={o.x + Math.cos(ang) * R * 1.05} y={o.y + Math.sin(ang) * R * 1.05} fill={cols[i % cols.length]} fontSize="9" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{frc}</text>
+              </g>
+            );
+          })}
+          <line x1={o.x} y1={o.y} x2={e.x} y2={e.y} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.4} strokeDasharray="3,3" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 12 }} />
+          {showHandles && (
+            <>
+              <circle cx={o.x} cy={o.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={e.x} cy={e.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibPitchfan') {
+      if (pixels.length < 3) return null;
+      const [P0, P1, P2] = pixels;
+      const M = { x: (P1.x + P2.x) / 2, y: (P1.y + P2.y) / 2 };
+      const O = P0;
+      const dirx = M.x - O.x, diry = M.y - O.y;
+      const extendRay = (sx: number, sy: number, ddx: number, ddy: number) => {
+        const cw = (containerDims.width || 1000);
+        const ch = containerRef.current?.clientHeight || 600;
+        const chartW = cw - chartBounds.priceAxisWidth;
+        if (Math.abs(ddx) < 0.001 && Math.abs(ddy) < 0.001) return { x: sx, y: sy };
+        const ts: number[] = [];
+        if (Math.abs(ddx) > 0.001) { ts.push((0 - sx) / ddx); ts.push((chartW - sx) / ddx); }
+        if (Math.abs(ddy) > 0.001) { ts.push((0 - sy) / ddy); ts.push((ch - sy) / ddy); }
+        let tMax = 0;
+        for (const t of ts) {
+          if (t <= 0.001) continue;
+          const ix = sx + ddx * t, iy = sy + ddy * t;
+          if (ix >= -1 && ix <= chartW + 1 && iy >= -1 && iy <= ch + 1) { if (t > tMax) tMax = t; }
+        }
+        if (tMax === 0) tMax = 1;
+        return { x: sx + ddx * tMax, y: sy + ddy * tMax };
+      };
+      const offx = P1.x - M.x, offy = P1.y - M.y;
+      const fibs = [1, 0.618, 0.5, 0.382, 0, -0.382, -0.5, -0.618, -1];
+      const colFor = (fl: number) => {
+        const a = Math.abs(fl);
+        if (a === 0) return '#e2e8f0';
+        if (a === 1) return '#34d399';
+        if (a === 0.618) return '#2dd4bf';
+        if (a === 0.5) return '#22d3ee';
+        return '#818cf8';
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {fibs.map((fl, i) => {
+            const bx = M.x + offx * fl, by = M.y + offy * fl;
+            const end = extendRay(bx, by, dirx, diry);
+            return <line key={`fpf-${i}`} x1={bx} y1={by} x2={end.x} y2={end.y} stroke={colFor(fl)} strokeWidth={fl === 0 ? 1.7 : Math.abs(fl) === 1 ? 1.3 : 1} strokeOpacity={0.9} style={{ pointerEvents: 'none' }} />;
+          })}
+          <line x1={P1.x} y1={P1.y} x2={P2.x} y2={P2.y} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.6} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 12 }} />
+          {showHandles && (
+            <>
+              <circle cx={P0.x} cy={P0.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={P1.x} cy={P1.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={P2.x} cy={P2.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'trendBasedFibTime') {
+      if (pixels.length < 3) return null;
+      const [a, b, c] = pixels;
+      const span = b.x - a.x;
+      const chartH = containerDims.height - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0);
+      const rightEdge = containerDims.width - chartBounds.priceAxisWidth;
+      const levels = [0, 0.382, 0.5, 0.618, 1, 1.618, 2.618];
+      const cols = ['#e2e8f0', '#2dd4bf', '#34d399', '#22d3ee', '#34d399', '#22d3ee', '#818cf8'];
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#94a3b8" strokeWidth={1} strokeOpacity={0.5} strokeDasharray="4,3" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke', strokeWidth: 12 }} />
+          {levels.map((lv, i) => {
+            const xx = c.x + span * lv;
+            if (xx < -4 || xx > rightEdge + 4) return null;
+            return (
+              <g key={`tbft-${i}`}>
+                <line x1={xx} y1={0} x2={xx} y2={chartH} stroke={cols[i]} strokeWidth={lv === 0 || lv === 1 ? 1.3 : 1} strokeDasharray={lv === 0 || lv === 1 ? undefined : '4,3'} strokeOpacity={0.85} style={{ pointerEvents: 'none' }} />
+                <text x={xx + 3} y={13} fill={cols[i]} fontSize="9" fontWeight="700" style={{ pointerEvents: 'none', userSelect: 'none' }}>{lv}</text>
+              </g>
+            );
+          })}
+          {showHandles && (
+            <>
+              <circle cx={a.x} cy={a.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={b.x} cy={b.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={c.x} cy={c.y} r={isSelected ? 7 : 6} fill={drawingColor} stroke={isSelected ? "#ffffff" : "#1e293b"} strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibFan') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const fanLevels = [0, 0.382, 0.5, 0.618, 1];
+      const rightEdge = containerDims.width - chartBounds.priceAxisWidth;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {fanLevels.map((level) => {
+            const yLevel = p1.y + (p2.y - p1.y) * level;
+            const dx = p2.x - p1.x;
+            const dy = yLevel - p1.y;
+            let ex = p2.x, ey = yLevel;
+            if (dx !== 0) {
+              const far = rightEdge > p1.x ? rightEdge : p1.x + Math.abs(dx) * 30;
+              ey = p1.y + (dy * (far - p1.x)) / dx;
+              ex = far;
+            }
+            const solid = level === 0 || level === 1;
+            return (
+              <g key={level}>
+                <line x1={p1.x} y1={p1.y} x2={ex} y2={ey} stroke={drawingColor} strokeWidth={solid ? 1.5 : 1} strokeDasharray={solid ? undefined : '4,3'} style={{ pointerEvents: 'none' }} />
+                <text x={p2.x + 4} y={yLevel - 2} fill={drawingColor} fontSize="10" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{(level * 100).toFixed(1)}%</text>
+              </g>
+            );
+          })}
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="transparent" strokeWidth={12} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibTimeZones') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const dx = p2.x - p1.x;
+      const chartH = containerDims.height - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0);
+      const rightEdge = containerDims.width - chartBounds.priceAxisWidth;
+      const fibSeq = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {fibSeq.map((nn, idx) => {
+            const zx = p1.x + dx * nn;
+            if (dx > 0 && zx > rightEdge + 4) return null;
+            if (dx < 0 && zx < -4) return null;
+            const solid = idx === 0 || idx === 1;
+            return (
+              <g key={nn}>
+                <line x1={zx} y1={0} x2={zx} y2={chartH} stroke={drawingColor} strokeWidth={1} strokeDasharray={solid ? undefined : '4,3'} style={{ pointerEvents: 'none' }} />
+                <text x={zx + 3} y={12} fill={drawingColor} fontSize="10" fontWeight="600" style={{ pointerEvents: 'none', userSelect: 'none' }}>{nn}</text>
+              </g>
+            );
+          })}
+          <rect x={Math.min(p1.x, p2.x)} y={0} width={Math.abs(dx)} height={chartH} fill="transparent" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {(isHovered || isSelected) && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fibonacci' || drawing.type === 'fibExtension') {
+      if (pixels.length < 2) return null;
+      const [p1, p2] = pixels;
+      const fibStyles = (drawing.levelStyles && drawing.levelStyles.length) ? drawing.levelStyles : null;
+      const fibOne = !!drawing.useOneColor;
+      const fibShowLabels = drawing.showLabels !== false;
+      const levels = fibStyles ? fibStyles.map(s => s.value) : (drawing.fibLevels || [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]);
+      const fibRev = !!drawing.reverse;
+      const fibLabelMode = drawing.fibLabelMode || 'both';
+      const fibCW = (containerDims.width || 1200) - (chartBounds?.priceAxisWidth || 0);
+      const fibLX = drawing.extendLeft ? 0 : Math.min(p1.x, p2.x);
+      const fibRX = drawing.extendRight ? fibCW : Math.max(p1.x, p2.x);
+
+      // For fibExtension, remap so the topmost level lands on the second handle
+      // (i.e. the bounding rectangle covers all levels, not just 0-100%). For
+      // plain fibonacci retracement, levels are 0-1 and the second handle is 100%.
+      const maxLevel = drawing.type === 'fibExtension' ? Math.max(...levels, 1) : 1;
+
+      // Calculate prices at each fib level
+      const startChart = drawing.points[0];
+      const endChart = drawing.points[1];
+      const priceRange = endChart.price - startChart.price;
+
+      const minX = Math.min(p1.x, p2.x);
+      const maxX = Math.max(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const maxY = Math.max(p1.y, p2.y);
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          {/* Large transparent rect for easy dragging */}
+          <rect
+            x={minX}
+            y={minY}
+            width={maxX - minX}
+            height={maxY - minY}
+            fill="transparent"
+            stroke="transparent"
+            strokeWidth="20"
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {levels.map((level, li) => {
+            const t0 = level / maxLevel;
+            const t = fibRev ? (1 - t0) : t0;
+            const y = p1.y + (p2.y - p1.y) * t;
+            const price = startChart.price + priceRange * t;
+            const percentage = (level * 100).toFixed(1);
+            const st = fibStyles ? fibStyles[li] : null;
+            if (st && st.visible === false) return null;
+            const lineC = fibOne ? drawingColor : (st ? st.color : drawingColor);
+
+            return (
+              <g key={li} opacity={strokeOpacity}>
+                <line
+                  x1={fibLX}
+                  y1={y}
+                  x2={fibRX}
+                  y2={y}
+                  stroke={lineC}
+                  strokeWidth="1"
+                  strokeDasharray="3,3"
+                  style={{ pointerEvents: 'none' }}
+                />
+                {fibShowLabels && (
+                <text
+                  x={fibRX + 5}
+                  y={y - 2}
+                  fill={lineC}
+                  fontSize="11"
+                  fontWeight="600"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {fibLabelMode === 'percent' ? `${percentage}%` : fibLabelMode === 'price' ? price.toFixed(2) : `${percentage}% (${price.toFixed(2)})`}
+                </text>
+                )}
+              </g>
+            );
+          })}
+          <line
+            x1={p1.x}
+            y1={p1.y}
+            x2={p2.x}
+            y2={p2.y}
+            stroke="transparent"
+            strokeWidth="10"
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', pointerEvents: 'all' }}
+          />
+          {isHovered && (
+            <>
+              <circle cx={p1.x} cy={p1.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+              <circle cx={p2.x} cy={p2.y} r="6" fill={drawingColor} stroke="#1e293b" strokeWidth="2" style={{ cursor: 'move', pointerEvents: 'all' }} />
+            </>
+          )}
+          {midpointDot}
+        </g>
+      );
+    }
+
+    if (isMarkerTool(drawing.type)) {
+      if (pixels.length < 1) return null;
+      const mp = pixels[0];
+      const mCol = drawing.color || '#2dd4bf';
+      const cx = mp.x, cy = mp.y;
+      const mSize = drawing.strokeWidth || 16;
+      const mScale = mSize / 16;
+      const mExt = mScale * 12;
+      const starPts = (ox: number, oy: number, outer: number, inner: number) => {
+        const pts: string[] = [];
+        for (let i = 0; i < 10; i++) {
+          const r = i % 2 === 0 ? outer : inner;
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          pts.push(`${ox + r * Math.cos(a)},${oy + r * Math.sin(a)}`);
+        }
+        return pts.join(' ');
+      };
+      let shape: React.ReactNode = null;
+      switch (drawing.type) {
+        case 'markerCircle':
+          shape = <circle cx={cx} cy={cy} r={8} fill={mCol} />;
+          break;
+        case 'markerSquare':
+          shape = <rect x={cx - 8} y={cy - 8} width={16} height={16} fill={mCol} />;
+          break;
+        case 'markerDiamond':
+          shape = <polygon points={`${cx},${cy - 9} ${cx + 9},${cy} ${cx},${cy + 9} ${cx - 9},${cy}`} fill={mCol} />;
+          break;
+        case 'markerTriangleUp':
+          shape = <polygon points={`${cx},${cy - 9} ${cx + 9},${cy + 7} ${cx - 9},${cy + 7}`} fill={mCol} />;
+          break;
+        case 'markerTriangleDown':
+          shape = <polygon points={`${cx},${cy + 9} ${cx + 9},${cy - 7} ${cx - 9},${cy - 7}`} fill={mCol} />;
+          break;
+        case 'markerArrowUp':
+          shape = <polygon points={`${cx},${cy - 10} ${cx + 7},${cy - 1} ${cx + 3},${cy - 1} ${cx + 3},${cy + 10} ${cx - 3},${cy + 10} ${cx - 3},${cy - 1} ${cx - 7},${cy - 1}`} fill={mCol} />;
+          break;
+        case 'markerArrowDown':
+          shape = <polygon points={`${cx},${cy + 10} ${cx + 7},${cy + 1} ${cx + 3},${cy + 1} ${cx + 3},${cy - 10} ${cx - 3},${cy - 10} ${cx - 3},${cy + 1} ${cx - 7},${cy + 1}`} fill={mCol} />;
+          break;
+        case 'markerStar':
+          shape = <polygon points={starPts(cx, cy, 10, 4)} fill={mCol} />;
+          break;
+        default:
+          shape = <circle cx={cx} cy={cy} r={8} fill={mCol} />;
+      }
+      const mSelected = selectedDrawingId === drawing.id;
+      return (
+        <g
+          key={drawing.id}
+          id={`${clipId}_drawing-${drawing.id}`}
+          opacity={strokeOpacity}
+          onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+          onMouseLeave={() => setHoveredDrawingId(null)}
+          style={{ cursor: 'move', pointerEvents: 'all' }}
+        >
+          {mScale === 1 ? shape : <g transform={`translate(${cx} ${cy}) scale(${mScale}) translate(${-cx} ${-cy})`}>{shape}</g>}
+          {mSelected && (
+            <circle cx={cx} cy={cy} r={mExt + 2} fill="none" stroke="#2dd4bf" strokeWidth={1} strokeDasharray="3 3" />
+          )}
+          {showHandles && mSelected && <rect x={cx + mExt - 2} y={cy + mExt - 2} width={8} height={8} rx={2} fill="#2dd4bf" stroke="#0b0f14" strokeWidth={1} style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'anchoredVolumeProfile') {
+      const anchor = drawing.points[0];
+      const cs = candlesProp;
+      const lastT = cs && cs.length ? cs[cs.length - 1].time : anchor.time;
+      const vp = computeVolumeProfile(anchor.time, lastT, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
+      const left = converter.timeToX(anchor.time);
+      const right = cs && cs.length ? converter.timeToX(lastT) : left + 120;
+      const rangeW = Math.max(right - left, 12);
+      const barMaxW = rangeW * 0.9;
+      const upCol = drawing.upColor || '#2dd4bf', downCol = drawing.downColor || '#6366f1', pocCol = '#fbbf24', frameCol = '#94a3b8';
+      const ax = left, ayTop = 0;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          {vp ? (() => {
+            const yHi = converter.priceToY(vp.priceHi), yLo = converter.priceToY(vp.priceLo);
+            const boxTop = Math.min(yHi, yLo), boxH = Math.abs(yLo - yHi);
+            const pocY = converter.priceToY(vp.priceLo + (vp.pocIdx + 0.5) * vp.rowH);
+            const pocPrice = vp.priceLo + (vp.pocIdx + 0.5) * vp.rowH;
+            const txt = `POC ${pocPrice.toFixed(pocPrice < 1 ? 6 : 2)}`;
+            const tw = txt.length * 6.2 + 10;
+            return (
+              <>
+                <rect x={left} y={boxTop} width={right - left} height={boxH} fill="none" stroke={frameCol} strokeOpacity={0.4} strokeWidth={1} strokeDasharray="4 3" style={{ pointerEvents: 'all', cursor: 'move' }} />
+                {Array.from({ length: vp.N }).map((_, i) => {
+                  const rowBotY = converter.priceToY(vp.priceLo + i * vp.rowH);
+                  const rowTopY = converter.priceToY(vp.priceLo + (i + 1) * vp.rowH);
+                  const yy = Math.min(rowTopY, rowBotY);
+                  const hh = Math.max(1, Math.abs(rowBotY - rowTopY) - 1);
+                  const wDown = (vp.down[i] / vp.maxVol) * barMaxW;
+                  const wUp = (vp.up[i] / vp.maxVol) * barMaxW;
+                  const isPoc = i === vp.pocIdx;
+                  const inVA = (drawing.showVA !== false) && i >= vp.vaLo && i <= vp.vaHi;
+                  const op = isPoc ? 1 : inVA ? 0.85 : 0.4;
+                  return (
+                    <g key={i} style={{ pointerEvents: 'none' }}>
+                      <rect x={left} y={yy} width={wDown} height={hh} fill={isPoc ? pocCol : downCol} fillOpacity={op} />
+                      <rect x={left + wDown} y={yy} width={wUp} height={hh} fill={isPoc ? pocCol : upCol} fillOpacity={op} />
+                    </g>
+                  );
+                })}
+                {drawing.showPOC !== false && (
+                  <>
+                    <line x1={left} y1={pocY} x2={right} y2={pocY} stroke={pocCol} strokeWidth={1.25} strokeOpacity={0.9} strokeDasharray="2 2" style={{ pointerEvents: 'none' }} />
+                    <g style={{ pointerEvents: 'none' }}>
+                      <rect x={left + 4} y={boxTop + 4} width={tw} height={15} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={pocCol} strokeOpacity={0.5} strokeWidth={0.75} />
+                      <text x={left + 9} y={boxTop + 15} fill={pocCol} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                    </g>
+                  </>
+                )}
+                <path d={`M ${ax} ${converter.priceToY(anchor.price) - 6} L ${ax + 6} ${converter.priceToY(anchor.price)} L ${ax} ${converter.priceToY(anchor.price) + 6} L ${ax - 6} ${converter.priceToY(anchor.price)} Z`} fill={upCol} stroke="#0b0f14" strokeWidth={1} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              </>
+            );
+          })() : (
+            <g style={{ pointerEvents: 'all', cursor: 'move' }}>
+              <path d={`M ${ax} ${converter.priceToY(anchor.price) - 6} L ${ax + 6} ${converter.priceToY(anchor.price)} L ${ax} ${converter.priceToY(anchor.price) + 6} L ${ax - 6} ${converter.priceToY(anchor.price)} Z`} fill={frameCol} stroke="#0b0f14" strokeWidth={1} />
+              <text x={ax + 10} y={converter.priceToY(anchor.price) + 3} fill={frameCol} fontSize={10} style={{ userSelect: 'none', pointerEvents: 'none' }}>No volume data</text>
+            </g>
+          )}
+          {showHandles && isSelected && <circle cx={ax} cy={converter.priceToY(anchor.price)} r={4} fill="#2dd4bf" stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'regressionTrend') {
+      const p1 = drawing.points[0], p2 = drawing.points[1];
+      if (!p1 || !p2) return null;
+      const reg = computeRegression(p1.time, p2.time);
+      const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
+      const band = (up: PixelPoint[], loArr: PixelPoint[]) => {
+        const top = up.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        const bot = [...loArr].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ');
+        return `${top} ${bot} Z`;
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          {reg ? (
+            <>
+              {drawing.showBands !== false && (
+                <>
+                  <path d={band(reg.u2, reg.l2)} fill={col} fillOpacity={0.05} stroke="none" style={{ pointerEvents: 'none' }} />
+                  <path d={band(reg.u1, reg.l1)} fill={col} fillOpacity={0.09} stroke="none" style={{ pointerEvents: 'none' }} />
+                  <path d={reg.u2.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
+                  <path d={reg.l2.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.6} strokeDasharray="4 3" style={{ pointerEvents: 'none' }} />
+                </>
+              )}
+              <path d={reg.line.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={drawing.strokeWidth || 2} strokeOpacity={strokeOpacity} style={{ cursor: 'move', pointerEvents: 'stroke' }} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} />
+              {(() => {
+                const last = reg.line[reg.line.length - 1];
+                const txt = `R² ${reg.r2.toFixed(2)}`;
+                const tw = txt.length * 6.2 + 10;
+                return (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <rect x={last.x + 6} y={last.y - 9} width={tw} height={16} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeOpacity={0.5} strokeWidth={0.75} />
+                    <text x={last.x + 11} y={last.y + 2.5} fill={col} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                  </g>
+                );
+              })()}
+            </>
+          ) : (
+            <text x={converter.timeToX(p1.time)} y={converter.priceToY(p1.price)} fill="#94a3b8" fontSize={10} style={{ userSelect: 'none', pointerEvents: 'none' }}>No data in range</text>
+          )}
+          {showHandles && isSelected && (
+            <>
+              <circle cx={converter.timeToX(p1.time)} cy={converter.priceToY(p1.price)} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              <circle cx={converter.timeToX(p2.time)} cy={converter.priceToY(p2.price)} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'cyclicLines') {
+      const p1 = drawing.points[0], p2 = drawing.points[1];
+      if (!p1 || !p2) return null;
+      const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
+      const step = x2 - x1;
+      if (Math.abs(step) < 2) return null;
+      const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
+      const cw = (containerDims.width || 2000);
+      const ch = containerRef.current?.clientHeight ?? 1000;
+      const chartRight = cw - chartBounds.priceAxisWidth;
+      const chartBottom = ch - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0);
+      const xs: number[] = [];
+      for (let k = 0; k < 240; k++) {
+        const xx = x1 + step * k;
+        if ((step > 0 && xx > chartRight) || (step < 0 && xx < 0)) break;
+        if (xx >= 0 && xx <= chartRight) xs.push(xx);
+      }
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          {xs.map((xx, i) => (
+            <line key={i} x1={xx} y1={0} x2={xx} y2={chartBottom} stroke={col} strokeWidth={i === 0 ? 1.5 : 1} strokeOpacity={i === 0 ? strokeOpacity : strokeOpacity * 0.5} strokeDasharray={i === 0 ? 'none' : '4 4'} style={{ pointerEvents: 'stroke', cursor: 'move' }} />
+          ))}
+          {showHandles && isSelected && (
+            <>
+              <circle cx={x1} cy={converter.priceToY(p1.price)} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              <circle cx={x2} cy={converter.priceToY(p2.price)} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'sineLine') {
+      const p1 = drawing.points[0], p2 = drawing.points[1];
+      if (!p1 || !p2) return null;
+      const x1 = converter.timeToX(p1.time), y1 = converter.priceToY(p1.price);
+      const x2 = converter.timeToX(p2.time), y2 = converter.priceToY(p2.price);
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len, amp = 0.18 * len;
+      const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
+      const N = 72;
+      const pts: PixelPoint[] = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const bx = x1 + dx * t, by = y1 + dy * t;
+        const off = amp * Math.sin(2 * Math.PI * t);
+        pts.push({ x: bx + nx * off, y: by + ny * off });
+      }
+      const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          <path d={path} fill="none" stroke="transparent" strokeWidth={12} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', pointerEvents: 'stroke' }} />
+          <path d={path} fill="none" stroke={col} strokeWidth={drawing.strokeWidth || 2} strokeOpacity={strokeOpacity} strokeDasharray={getStrokeDashArray(drawing.lineStyle)} style={{ pointerEvents: 'none' }} />
+          {showHandles && isSelected && (
+            <>
+              <circle cx={x1} cy={y1} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              <circle cx={x2} cy={y2} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'anchoredVwap') {
+      const anchor = drawing.points[0];
+      const col = drawing.color && drawing.color !== '#000000' ? drawing.color : '#2dd4bf';
+      const ax = converter.timeToX(anchor.time);
+      const ay = converter.priceToY(anchor.price);
+      const vw = computeAnchoredVwap(anchor.time, drawing.vwapSource || 'hlc3', drawing.band1 ?? 1, drawing.band2 ?? 2);
+      const band = (up: PixelPoint[], loArr: PixelPoint[]) => {
+        const top = up.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        const bot = [...loArr].reverse().map((p) => `L ${p.x} ${p.y}`).join(' ');
+        return `${top} ${bot} Z`;
+      };
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          {vw && (
+            <>
+              {drawing.showBands !== false && (
+                <>
+                  <path d={band(vw.u2, vw.l2)} fill={col} fillOpacity={0.05} stroke="none" style={{ pointerEvents: 'none' }} />
+                  <path d={band(vw.u1, vw.l1)} fill={col} fillOpacity={0.09} stroke="none" style={{ pointerEvents: 'none' }} />
+                </>
+              )}
+              <path d={vw.line.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')} fill="none" stroke={col} strokeWidth={drawing.strokeWidth || 2} strokeOpacity={strokeOpacity} style={{ cursor: 'move', pointerEvents: 'stroke' }} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} />
+              {(() => {
+                const last = vw.line[vw.line.length - 1];
+                const txt = `VWAP ${vw.lastVwap.toFixed(vw.lastVwap < 1 ? 6 : 2)}`;
+                const tw = txt.length * 6.2 + 10;
+                return (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <rect x={last.x + 6} y={last.y - 9} width={tw} height={16} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeOpacity={0.5} strokeWidth={0.75} />
+                    <text x={last.x + 11} y={last.y + 2.5} fill={col} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                  </g>
+                );
+              })()}
+            </>
+          )}
+          <path d={`M ${ax} ${ay - 6} L ${ax + 6} ${ay} L ${ax} ${ay + 6} L ${ax - 6} ${ay} Z`} fill={col} stroke="#0b0f14" strokeWidth={1} style={{ cursor: 'move', pointerEvents: 'all' }} />
+          {showHandles && isSelected && <circle cx={ax} cy={ay} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'fixedVolumeProfile') {
+      const p1 = drawing.points[0], p2 = drawing.points[1];
+      if (!p1 || !p2) return null;
+      const vp = computeVolumeProfile(p1.time, p2.time, drawing.vpRows ?? 24, (drawing.valueAreaPct ?? 70) / 100);
+      const x1 = converter.timeToX(p1.time), x2 = converter.timeToX(p2.time);
+      const left = Math.min(x1, x2), right = Math.max(x1, x2);
+      const rangeW = Math.max(right - left, 12);
+      const barMaxW = rangeW * 0.92;
+      const upCol = drawing.upColor || '#2dd4bf', downCol = drawing.downColor || '#6366f1', pocCol = '#fbbf24', frameCol = '#94a3b8';
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)}>
+          {vp ? (() => {
+            const yHi = converter.priceToY(vp.priceHi), yLo = converter.priceToY(vp.priceLo);
+            const boxTop = Math.min(yHi, yLo), boxH = Math.abs(yLo - yHi);
+            const pocY = converter.priceToY(vp.priceLo + (vp.pocIdx + 0.5) * vp.rowH);
+            const pocPrice = vp.priceLo + (vp.pocIdx + 0.5) * vp.rowH;
+            const txt = `POC ${pocPrice.toFixed(pocPrice < 1 ? 6 : 2)}`;
+            const tw = txt.length * 6.2 + 10;
+            return (
+              <>
+                <rect x={left} y={boxTop} width={right - left} height={boxH} fill="none" stroke={frameCol} strokeOpacity={0.4} strokeWidth={1} strokeDasharray="4 3" style={{ pointerEvents: 'all', cursor: 'move' }} />
+                {Array.from({ length: vp.N }).map((_, i) => {
+                  const rowBotY = converter.priceToY(vp.priceLo + i * vp.rowH);
+                  const rowTopY = converter.priceToY(vp.priceLo + (i + 1) * vp.rowH);
+                  const y = Math.min(rowTopY, rowBotY);
+                  const h = Math.max(1, Math.abs(rowBotY - rowTopY) - 1);
+                  const wDown = (vp.down[i] / vp.maxVol) * barMaxW;
+                  const wUp = (vp.up[i] / vp.maxVol) * barMaxW;
+                  const isPoc = i === vp.pocIdx;
+                  const inVA = (drawing.showVA !== false) && i >= vp.vaLo && i <= vp.vaHi;
+                  const op = isPoc ? 1 : inVA ? 0.85 : 0.4;
+                  return (
+                    <g key={i} style={{ pointerEvents: 'none' }}>
+                      <rect x={left} y={y} width={wDown} height={h} fill={isPoc ? pocCol : downCol} fillOpacity={op} />
+                      <rect x={left + wDown} y={y} width={wUp} height={h} fill={isPoc ? pocCol : upCol} fillOpacity={op} />
+                    </g>
+                  );
+                })}
+                {drawing.showPOC !== false && (
+                  <>
+                    <line x1={left} y1={pocY} x2={right} y2={pocY} stroke={pocCol} strokeWidth={1.25} strokeOpacity={0.9} strokeDasharray="2 2" style={{ pointerEvents: 'none' }} />
+                    <g style={{ pointerEvents: 'none' }}>
+                      <rect x={left + 4} y={boxTop + 4} width={tw} height={15} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={pocCol} strokeOpacity={0.5} strokeWidth={0.75} />
+                      <text x={left + 9} y={boxTop + 15} fill={pocCol} fontSize={10} fontWeight={700} style={{ userSelect: 'none' }}>{txt}</text>
+                    </g>
+                  </>
+                )}
+              </>
+            );
+          })() : (() => {
+            const a = converter.priceToY(p1.price), b = converter.priceToY(p2.price);
+            const top = Math.min(a, b), h = Math.abs(b - a);
+            return (
+              <g style={{ pointerEvents: 'all', cursor: 'move' }}>
+                <rect x={left} y={top} width={right - left} height={h} fill="none" stroke={frameCol} strokeOpacity={0.3} strokeWidth={1} strokeDasharray="4 3" />
+                <text x={(left + right) / 2} y={top + h / 2} textAnchor="middle" fill={frameCol} fontSize={10} style={{ userSelect: 'none', pointerEvents: 'none' }}>No volume in range</text>
+              </g>
+            );
+          })()}
+          {showHandles && isSelected && (
+            <>
+              <circle cx={x1} cy={converter.priceToY(p1.price)} r={4} fill="#2dd4bf" stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              <circle cx={x2} cy={converter.priceToY(p2.price)} r={4} fill="#2dd4bf" stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'signpost' && drawing.text) {
+      if (pixels.length < 1) return null;
+      const p = pixels[0];
+      const fontSize = drawing.strokeWidth || 12;
+      const poleH = 38;
+      const boxW = drawing.text.length * fontSize * 0.6 + 14;
+      const boxH = fontSize + 8;
+      const topY = p.y - poleH;
+      const col = drawing.color || '#2dd4bf';
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
+          <line x1={p.x} y1={p.y} x2={p.x} y2={topY} stroke={col} strokeWidth={1.5} strokeOpacity={strokeOpacity} style={{ pointerEvents: 'stroke' }} />
+          <circle cx={p.x} cy={p.y} r={2.5} fill={col} />
+          <rect x={p.x} y={topY - boxH} width={boxW} height={boxH} rx={3} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
+          <text x={p.x + 7} y={topY - boxH / 2 + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'priceLabel') {
+      if (pixels.length < 1) return null;
+      const p = pixels[0];
+      const price = drawing.points[0].price;
+      const label = drawing.text && drawing.text.trim().length > 0 ? drawing.text : price.toFixed(price < 1 ? 6 : 2);
+      const fontSize = drawing.strokeWidth || 12;
+      const padX = 7;
+      const boxW = label.length * fontSize * 0.62 + padX * 2;
+      const boxH = fontSize + 8;
+      const col = drawing.color || '#2dd4bf';
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
+          <path d={`M ${p.x} ${p.y} L ${p.x + 6} ${p.y - 5} L ${p.x + 6} ${p.y + 5} Z`} fill={col} style={{ pointerEvents: 'all' }} />
+          <rect x={p.x + 6} y={p.y - boxH / 2} width={boxW} height={boxH} rx={4} fill="#0b0f14" fillOpacity={0.9} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
+          <text x={p.x + 6 + padX} y={p.y + fontSize * 0.35} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{label}</text>
+          {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'callout' && drawing.text) {
+      if (pixels.length < 2) return null;
+      const anchorPx = pixels[0];
+      const boxPx = pixels[1];
+      const fontSize = drawing.strokeWidth || 13;
+      const padX = 8, padY = 5;
+      const boxW = drawing.text.length * fontSize * 0.6 + padX * 2;
+      const boxH = fontSize + padY * 2;
+      const col = drawing.color || '#2dd4bf';
+      const ccx = boxPx.x + boxW / 2;
+      const ccy = boxPx.y + boxH / 2;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
+          <line x1={ccx} y1={ccy} x2={anchorPx.x} y2={anchorPx.y} stroke={col} strokeWidth={1} strokeOpacity={strokeOpacity * 0.75} style={{ pointerEvents: 'none' }} />
+          <circle cx={anchorPx.x} cy={anchorPx.y} r={3} fill={col} style={{ pointerEvents: 'all' }} />
+          <rect x={boxPx.x} y={boxPx.y} width={boxW} height={boxH} rx={5} fill="#0b0f14" fillOpacity={0.9} stroke={col} strokeWidth={1} style={{ pointerEvents: 'all' }} />
+          <text x={boxPx.x + padX} y={boxPx.y + boxH - padY - 1} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          {showHandles && isSelected && (
+            <>
+              <circle cx={anchorPx.x} cy={anchorPx.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+              <circle cx={boxPx.x} cy={boxPx.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'note' && drawing.text) {
+      if (pixels.length < 1) return null;
+      const p = pixels[0];
+      const fontSize = drawing.strokeWidth || 13;
+      const padX = 8, padY = 5;
+      const boxW = drawing.text.length * fontSize * 0.6 + padX * 2;
+      const boxH = fontSize + padY * 2;
+      const col = drawing.color || '#2dd4bf';
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity} onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move' }}>
+          <rect x={p.x} y={p.y - boxH} width={boxW} height={boxH} rx={5} fill="#0b0f14" fillOpacity={0.85} stroke={col} strokeOpacity={0.7} strokeWidth={1} style={{ pointerEvents: 'all' }} />
+          <text x={p.x + padX} y={p.y - padY - 1} fill={col} fontSize={fontSize} fontWeight={drawing.textBold === false ? 400 : 600} fontStyle={drawing.textItalic ? 'italic' : 'normal'} style={{ userSelect: 'none', pointerEvents: 'none' }}>{drawing.text}</text>
+          {showHandles && isSelected && <circle cx={p.x} cy={p.y} r={4} fill={col} stroke="#ffffff" strokeWidth={1.5} style={{ pointerEvents: 'all', cursor: 'move' }} />}
+        </g>
+      );
+    }
+
+    if (drawing.type === 'emoji' && drawing.text) {
+      if (pixels.length < 1) return null;
+      const p = pixels[0];
+      const fontSize = drawing.strokeWidth || 28;
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`} opacity={strokeOpacity}>
+          {showHandles && isSelected && <rect x={p.x - fontSize / 2 - 3} y={p.y - fontSize / 2 - 3} width={fontSize + 6} height={fontSize + 6} rx={4} fill="none" stroke="#2dd4bf" strokeWidth={1} strokeDasharray="3 2" style={{ pointerEvents: 'none' }} />}
+          {showHandles && isSelected && <rect x={p.x + fontSize / 2 - 1} y={p.y + fontSize / 2 - 1} width={8} height={8} rx={2} fill="#2dd4bf" stroke="#0b0f14" strokeWidth={1} style={{ cursor: 'nwse-resize', pointerEvents: 'all' }} />}
+          <text x={p.x} y={p.y} fontSize={fontSize} textAnchor="middle" dominantBaseline="central" onMouseEnter={() => setHoveredDrawingId(drawing.id)} onMouseLeave={() => setHoveredDrawingId(null)} style={{ cursor: 'move', userSelect: 'none', pointerEvents: 'all' }}>{drawing.text}</text>
+        </g>
+      );
+    }
+
+    if (drawing.type === 'text' && drawing.text) {
+      if (pixels.length < 1) return null;
+      const p = pixels[0];
+      // Use strokeWidth directly as font size (default 14px)
+      const fontSize = drawing.strokeWidth || 14;
+      const fw = drawing.textBold === false ? 400 : 700;
+      const fst = drawing.textItalic ? 'italic' : 'normal';
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          <text
+            x={p.x}
+            y={p.y}
+            fill={drawing.color || '#64748b'}
+            fillOpacity={strokeOpacity}
+            fontSize={fontSize}
+            fontWeight={fw}
+            fontStyle={fst}
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            style={{ cursor: 'move', userSelect: 'none', pointerEvents: 'all' }}
+          >
+            {drawing.text}
+          </text>
+
+        </g>
+      );
+    }
+
+    if (isBrushTool(drawing.type)) {
+      // For brush drawings, convert ALL chart points to pixels on each render
+      // This ensures the brush scales correctly with zoom/pan - it stays fixed relative to candles
+
+      let smoothPixels: PixelPoint[];
+
+      if (drawing.brushChartPoints && drawing.brushChartPoints.length > 0) {
+        // Primary format: ALL points stored in chart coordinates
+        // Convert each point to current pixel position - this scales with zoom
+        smoothPixels = drawing.brushChartPoints
+          .map(cp => chartToPixel(cp))
+          .filter((p): p is PixelPoint => p !== null);
+      } else if (drawing.brushPixelOffsets && drawing.brushPixelOffsets.length > 0 && pixels[0]) {
+        // Legacy format: pixel offsets (won't scale properly, kept for backward compatibility)
+        const anchorPixel = pixels[0];
+        smoothPixels = drawing.brushPixelOffsets.map(offset => ({
+          x: anchorPixel.x + offset.x,
+          y: anchorPixel.y + offset.y
+        }));
+      } else if (drawing.pixelOffsets && drawing.pixelOffsets.length > 0 && pixels[0]) {
+        // Oldest legacy format: pixel offsets
+        const anchorPixel = pixels[0];
+        smoothPixels = drawing.pixelOffsets.map(offset => ({
+          x: anchorPixel.x + offset.x,
+          y: anchorPixel.y + offset.y
+        }));
+      } else if (drawing.brushPixelPoints && drawing.brushPixelPoints.length > 0 && pixels[0]) {
+        // Another legacy format: absolute pixel points with offset calculation
+        const anchorPixel = pixels[0];
+        const originalAnchor = drawing.brushPixelPoints[0];
+        smoothPixels = drawing.brushPixelPoints.map(p => ({
+          x: anchorPixel.x + (p.x - originalAnchor.x),
+          y: anchorPixel.y + (p.y - originalAnchor.y)
+        }));
+      } else {
+        // Fallback: chart-converted pixels
+        smoothPixels = pixels;
+      }
+
+      if (smoothPixels.length < 2) return null;
+
+      // Create smooth Catmull-Rom spline path for brush strokes (much smoother on mobile)
+      const createSmoothPath = (points: PixelPoint[]): string => {
+        if (points.length < 2) return '';
+        if (points.length === 2) {
+          return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+        }
+
+        // Use Catmull-Rom to Bezier conversion for ultra-smooth curves
+        const tension = 0.5; // Controls curve tightness (0 = sharp, 1 = very smooth)
+
+        let path = `M ${points[0].x} ${points[0].y}`;
+
+        for (let i = 0; i < points.length - 1; i++) {
+          const p0 = points[Math.max(0, i - 1)];
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const p3 = points[Math.min(points.length - 1, i + 2)];
+
+          // Calculate control points using Catmull-Rom formula
+          const cp1x = p1.x + (p2.x - p0.x) * tension / 3;
+          const cp1y = p1.y + (p2.y - p0.y) * tension / 3;
+          const cp2x = p2.x - (p3.x - p1.x) * tension / 3;
+          const cp2y = p2.y - (p3.y - p1.y) * tension / 3;
+
+          path += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${p2.x} ${p2.y}`;
+        }
+
+        return path;
+      };
+
+      const pathData = createSmoothPath(smoothPixels);
+      // Use strokeWidth to control line thickness
+      const lineWidth = drawing.strokeWidth || 2;
+
+      const firstPoint = smoothPixels[0];
+      const lastPoint = smoothPixels[smoothPixels.length - 1];
+      const isSelected = selectedDrawingId === drawing.id;
+
+      return (
+        <g key={drawing.id} id={`${clipId}_drawing-${drawing.id}`}>
+          {/* Invisible wider path for easier selection */}
+          <path
+            d={pathData}
+            stroke="transparent"
+            strokeWidth={Math.max(16, lineWidth + 12)}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            onMouseEnter={() => setHoveredDrawingId(drawing.id)}
+            onMouseLeave={() => setHoveredDrawingId(null)}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              const rect = containerRef.current?.getBoundingClientRect();
+              if (rect) {
+                const firstPointPixel = chartToPixel(drawing.points[0]);
+                const { x, y } = localFromEvent(e.clientX, e.clientY, rect);
+                startDragging(drawing.id);
+                setDragOffset({ x: x - (firstPointPixel?.x || 0), y: y - (firstPointPixel?.y || 0) });
+                selectOrErase(drawing.id, { x: e.clientX, y: e.clientY });
+              }
+            }}
+            style={{ cursor: 'move', pointerEvents: 'stroke' }}
+          />
+          {/* Visible brush path */}
+          <path
+            d={pathData}
+            stroke={drawing.color || '#64748b'}
+            strokeWidth={lineWidth}
+            strokeDasharray={
+              drawing.lineStyle === 'dashed' ? '8,4' :
+                drawing.lineStyle === 'dotted' ? '2,4' :
+                  undefined
+            }
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeOpacity={strokeOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Arrow head for arrow tool */}
+          {drawing.type === 'arrow' && smoothPixels.length >= 2 && (() => {
+            const last = smoothPixels[smoothPixels.length - 1];
+            const secondLast = smoothPixels[Math.max(0, smoothPixels.length - 5)]; // Look back a bit for better angle
+            const angle = Math.atan2(last.y - secondLast.y, last.x - secondLast.x);
+            const arrowSize = 12;
+            const arrowAngle = Math.PI / 6; // 30 degrees
+            return (
+              <polygon
+                points={`
+                  ${last.x},${last.y}
+                  ${last.x - arrowSize * Math.cos(angle - arrowAngle)},${last.y - arrowSize * Math.sin(angle - arrowAngle)}
+                  ${last.x - arrowSize * Math.cos(angle + arrowAngle)},${last.y - arrowSize * Math.sin(angle + arrowAngle)}
+                `}
+                fill={drawing.color || '#3B82F6'}
+                fillOpacity={strokeOpacity}
+                style={{ pointerEvents: 'none' }}
+              />
+            );
+          })()}
+          {/* Endpoint handles when selected */}
+          {isSelected && (
+            <>
+              {/* Start point handle */}
+              <circle
+                cx={firstPoint.x}
+                cy={firstPoint.y}
+                r={6}
+                fill="white"
+                stroke={drawing.color || '#64748b'}
+                strokeWidth={2}
+                style={{ cursor: 'move', pointerEvents: 'all' }}
+              />
+              {/* End point handle */}
+              <circle
+                cx={lastPoint.x}
+                cy={lastPoint.y}
+                r={6}
+                fill="white"
+                stroke={drawing.color || '#64748b'}
+                strokeWidth={2}
+                style={{ cursor: 'move', pointerEvents: 'all' }}
+              />
+            </>
+          )}
+        </g>
+      );
+    }
+
+    return null;
+  };
+
+
+  const renderPreview = () => {
+    // Support both tempPoints-based preview (click-click) and touchDrawing preview (tap-hold-drag)
+    let startPixel: PixelPoint | null = null;
+    let endPixel: PixelPoint | null = null;
+
+    if (touchDrawing) {
+      startPixel = touchDrawing.startPoint;
+      endPixel = touchDrawing.currentPoint;
+    } else if (previewPoint && tempPoints.length > 0) {
+      startPixel = tempPoints[0];
+      endPixel = previewPoint;
+    }
+
+    if (!startPixel || !endPixel) return null;
+
+    // Use actual tool settings for preview so the line looks the same as the final
+    // placed drawing (color, thickness, style). TradingView shows the real appearance
+    // during preview, not a dull gray placeholder.
+    const previewColor = getNewDrawingColor();
+    const previewStroke = getNewDrawingStrokeWidth();
+    const previewLineStyle = getNewDrawingLineStyle();
+    const previewDash = previewLineStyle === 'dashed' ? '8,4' : previewLineStyle === 'dotted' ? '2,4' : 'none';
+    const previewOpacity = (getNewDrawingOpacity() / 100);
+
+    if (activeTool === 'trendRay') {
+      // Extend preview line forward to chart edges
+      const cw = (containerDims.width || 1000);
+      const ch = containerRef.current?.clientHeight || 600;
+      const chartW = cw - chartBounds.priceAxisWidth;
+      const dx = endPixel.x - startPixel.x;
+      const dy = endPixel.y - startPixel.y;
+      let eX1 = startPixel.x, eY1 = startPixel.y, eX2 = endPixel.x, eY2 = endPixel.y;
+      if (Math.abs(dx) < 0.001) {
+        eX2 = startPixel.x; eY2 = dy > 0 ? ch : 0;
+      } else {
+        const tCandidates: number[] = [
+          (0 - startPixel.x) / dx,
+          (chartW - startPixel.x) / dx,
+        ];
+        if (Math.abs(dy) > 0.001) {
+          tCandidates.push((0 - startPixel.y) / dy);
+          tCandidates.push((ch - startPixel.y) / dy);
+        }
+        let tMax = 1;
+        for (const t of tCandidates) {
+          const ix = startPixel.x + dx * t;
+          const iy = startPixel.y + dy * t;
+          if (ix >= -1 && ix <= chartW + 1 && iy >= -1 && iy <= ch + 1) {
+            if (t > tMax) tMax = t;
+          }
+        }
+        eX2 = startPixel.x + dx * tMax;
+        eY2 = startPixel.y + dy * tMax;
+      }
+      return (
+        <line
+          x1={eX1}
+          y1={eY1}
+          x2={eX2}
+          y2={eY2}
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    if (activeTool === 'trend' || activeTool === 'infoLine' || activeTool === 'trendAngle' || activeTool === 'extendedLine') {
+      // Simple segment preview, uses actual tool settings for WYSIWYG drawing
+      return (
+        <line
+          x1={startPixel.x}
+          y1={startPixel.y}
+          x2={endPixel.x}
+          y2={endPixel.y}
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    if (activeTool === 'line') {
+      // Lock Y to start point for horizontal constraint
+      const lockedEndY = startPixel.y;
+      return (
+        <line
+          x1={startPixel.x}
+          y1={startPixel.y}
+          x2={endPixel.x}
+          y2={lockedEndY}
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    if (activeTool === 'straightArrow') {
+      // Calculate arrowhead for preview
+      const angle = Math.atan2(endPixel.y - startPixel.y, endPixel.x - startPixel.x);
+      const arrowLength = 12;
+      const arrowAngle = Math.PI / 6;
+
+      const arrowX1 = endPixel.x - arrowLength * Math.cos(angle - arrowAngle);
+      const arrowY1 = endPixel.y - arrowLength * Math.sin(angle - arrowAngle);
+      const arrowX2 = endPixel.x - arrowLength * Math.cos(angle + arrowAngle);
+      const arrowY2 = endPixel.y - arrowLength * Math.sin(angle + arrowAngle);
+
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <line
+            x1={startPixel.x}
+            y1={startPixel.y}
+            x2={endPixel.x}
+            y2={endPixel.y}
+            stroke={previewColor}
+            strokeWidth={previewStroke}
+            strokeDasharray={previewDash}
+            opacity={previewOpacity}
+          />
+          <polygon
+            points={`${endPixel.x},${endPixel.y} ${arrowX1},${arrowY1} ${arrowX2},${arrowY2}`}
+            fill={previewColor}
+            opacity={previewOpacity * 0.7}
+          />
+        </g>
+      );
+    }
+
+    if (activeTool === 'rectangle') {
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+      const width = Math.abs(endPixel.x - startPixel.x);
+      const height = Math.abs(endPixel.y - startPixel.y);
+
+      return (
+        <rect
+          x={minX}
+          y={minY}
+          width={width}
+          height={height}
+          fill="none"
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    if (activeTool === 'square') {
+      // During drawing, enforce square constraint in pixels for visual feedback
+      const size = Math.max(Math.abs(endPixel.x - startPixel.x), Math.abs(endPixel.y - startPixel.y));
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+
+      return (
+        <rect
+          x={minX}
+          y={minY}
+          width={size}
+          height={size}
+          fill="none"
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    if (activeTool === 'circle') {
+      // Fixed proportions - perfect circle
+      const size = Math.max(Math.abs(endPixel.x - startPixel.x), Math.abs(endPixel.y - startPixel.y));
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+      const cx = minX + size / 2;
+      const cy = minY + size / 2;
+      const r = size / 2;
+
+      return (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={r}
+          fill="none"
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    if (activeTool === 'triangle') {
+      // Fixed proportions - equilateral triangle
+      const size = Math.max(Math.abs(endPixel.x - startPixel.x), Math.abs(endPixel.y - startPixel.y));
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+      const height = size * Math.sqrt(3) / 2; // Equilateral triangle height
+      const points = `${minX},${minY + height} ${minX + size / 2},${minY} ${minX + size},${minY + height}`;
+
+      return (
+        <polygon
+          points={points}
+          fill="none"
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    if (activeTool === 'oval') {
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+      const width = Math.abs(endPixel.x - startPixel.x);
+      const height = Math.abs(endPixel.y - startPixel.y);
+      const cx = minX + width / 2;
+      const cy = minY + height / 2;
+      const rx = width / 2;
+      const ry = height / 2;
+
+      return (
+        <ellipse
+          cx={cx}
+          cy={cy}
+          rx={rx}
+          ry={ry}
+          fill="none"
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    // Parallelogram preview
+    if (activeTool === 'parallelogram') {
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+      const width = Math.abs(endPixel.x - startPixel.x);
+      const height = Math.abs(endPixel.y - startPixel.y);
+      const skew = width * 0.25;
+      const points = `${minX + skew},${minY} ${minX + width + skew},${minY} ${minX + width},${minY + height} ${minX},${minY + height}`;
+
+      return (
+        <polygon
+          points={points}
+          fill="none"
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    // Octagon preview
+    if (activeTool === 'octagon') {
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+      const width = Math.abs(endPixel.x - startPixel.x);
+      const height = Math.abs(endPixel.y - startPixel.y);
+      const cx = minX + width / 2;
+      const cy = minY + height / 2;
+      const rx = width / 2;
+      const ry = height / 2;
+
+      const octagonPoints: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI / 8) + (i * Math.PI / 4);
+        const px = cx + rx * Math.cos(angle);
+        const py = cy + ry * Math.sin(angle);
+        octagonPoints.push(`${px},${py}`);
+      }
+      const points = octagonPoints.join(' ');
+
+      return (
+        <polygon
+          points={points}
+          fill="none"
+          stroke={previewColor}
+          strokeWidth={previewStroke}
+          strokeDasharray={previewDash}
+          opacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+      );
+    }
+
+    // New shapes preview: all use bounding box -> polygon, same logic as rendering
+    if (['diamond', 'pentagon', 'hexagon', 'star', 'cross', 'arrowBlock', 'wedge', 'heart'].includes(activeTool as string)) {
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const minY = Math.min(startPixel.y, endPixel.y);
+      const w = Math.abs(endPixel.x - startPixel.x);
+      const h = Math.abs(endPixel.y - startPixel.y);
+      const cx = minX + w / 2;
+      const cy = minY + h / 2;
+      const rx = w / 2;
+      const ry = h / 2;
+      let pts = '';
+
+      if (activeTool === 'diamond') {
+        pts = `${cx},${minY} ${minX + w},${cy} ${cx},${minY + h} ${minX},${cy}`;
+      } else if (activeTool === 'pentagon') {
+        const v: string[] = [];
+        for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i * 2 * Math.PI / 5); v.push(`${cx + rx * Math.cos(a)},${cy + ry * Math.sin(a)}`); }
+        pts = v.join(' ');
+      } else if (activeTool === 'hexagon') {
+        const v: string[] = [];
+        for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i * Math.PI / 3); v.push(`${cx + rx * Math.cos(a)},${cy + ry * Math.sin(a)}`); }
+        pts = v.join(' ');
+      } else if (activeTool === 'star') {
+        const v: string[] = [];
+        for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI / 5); const r = i % 2 === 0 ? 1 : 0.38; v.push(`${cx + rx * r * Math.cos(a)},${cy + ry * r * Math.sin(a)}`); }
+        pts = v.join(' ');
+      } else if (activeTool === 'cross') {
+        const t = 0.3;
+        pts = [`${cx-rx*t},${minY}`,`${cx+rx*t},${minY}`,`${cx+rx*t},${cy-ry*t}`,`${minX+w},${cy-ry*t}`,`${minX+w},${cy+ry*t}`,`${cx+rx*t},${cy+ry*t}`,`${cx+rx*t},${minY+h}`,`${cx-rx*t},${minY+h}`,`${cx-rx*t},${cy+ry*t}`,`${minX},${cy+ry*t}`,`${minX},${cy-ry*t}`,`${cx-rx*t},${cy-ry*t}`].join(' ');
+      } else if (activeTool === 'arrowBlock') {
+        const hs = minX + w * 0.6;
+        pts = [`${minX},${cy-ry*0.4}`,`${hs},${cy-ry*0.4}`,`${hs},${minY}`,`${minX+w},${cy}`,`${hs},${minY+h}`,`${hs},${cy+ry*0.4}`,`${minX},${cy+ry*0.4}`].join(' ');
+      } else if (activeTool === 'wedge') {
+        pts = `${minX},${cy} ${minX + w},${minY} ${minX + w},${minY + h}`;
+      } else if (activeTool === 'heart') {
+        const v: string[] = [];
+        for (let i = 0; i <= 16; i++) { const t = (i/16)*2*Math.PI; const hx = 16*Math.pow(Math.sin(t),3); const hy = -(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t)); v.push(`${cx+(hx/16)*rx},${cy+(hy/32)*ry*2-ry*0.1}`); }
+        pts = v.join(' ');
+      }
+
+      return (
+        <polygon points={pts} fill="none" stroke={previewColor} strokeWidth={previewStroke} strokeDasharray={previewDash} opacity={previewOpacity} style={{ pointerEvents: 'none' }} />
+      );
+    }
+
+    // Free Triangle preview - show partial triangle as user clicks
+    if (activeTool === 'freeTriangle') {
+      if (tempPoints.length === 1) {
+        return (
+          <line
+            x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y}
+            stroke={previewColor} strokeWidth={previewStroke} strokeDasharray={previewDash} opacity={previewOpacity} style={{ pointerEvents: 'none' }}
+          />
+        );
+      } else if (tempPoints.length === 2) {
+        const p1 = tempPoints[0];
+        const p2 = tempPoints[1];
+        const p3 = endPixel;
+        const points = `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`;
+        return (
+          <polygon
+            points={points} fill="none" stroke={previewColor} strokeWidth={previewStroke} strokeDasharray={previewDash} opacity={previewOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+        );
+      }
+    }
+
+    // Parallel Channel preview
+    if (activeTool === 'pitchfork' || activeTool === 'schiff' || activeTool === 'modifiedSchiff' || activeTool === 'flatChannel' || activeTool === 'fibChannel' || activeTool === 'fibPitchfan' || activeTool === 'trendBasedFibTime' || activeTool === 'innerFork') {
+      if (tempPoints.length === 1) {
+        return (
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth={previewStroke} strokeDasharray={previewDash} opacity={previewOpacity} style={{ pointerEvents: 'none' }} />
+        );
+      } else if (tempPoints.length === 2) {
+        const a = tempPoints[0], b = tempPoints[1], c = endPixel;
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={previewColor} strokeWidth={previewStroke} opacity={previewOpacity} />
+            <line x1={b.x} y1={b.y} x2={c.x} y2={c.y} stroke={previewColor} strokeWidth={previewStroke} opacity={previewOpacity} />
+            <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity * 0.6} />
+          </g>
+        );
+      }
+      return null;
+    }
+
+    if (activeTool === 'parallelChannel') {
+      if (tempPoints.length === 1) {
+        // First point placed, show base line to cursor
+        return (
+          <line
+            x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y}
+            stroke={previewColor} strokeWidth={previewStroke} strokeDasharray={previewDash} opacity={previewOpacity} style={{ pointerEvents: 'none' }}
+          />
+        );
+      } else if (tempPoints.length === 2) {
+        // Two points placed, show channel preview
+        const p1 = tempPoints[0];
+        const p2 = tempPoints[1];
+        const p3 = endPixel;
+        const dx = p3.x - p1.x;
+        const dy = p3.y - p1.y;
+        const q3 = { x: p2.x + dx, y: p2.y + dy };
+        const fillPoints = `${p1.x},${p1.y} ${p2.x},${p2.y} ${q3.x},${q3.y} ${p3.x},${p3.y}`;
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <polygon points={fillPoints} fill={previewColor} fillOpacity="0.06" stroke="none" />
+            <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={previewColor} strokeWidth={previewStroke} strokeDasharray={previewDash} opacity={previewOpacity} />
+            <line x1={p3.x} y1={p3.y} x2={q3.x} y2={q3.y} stroke={previewColor} strokeWidth={previewStroke} strokeDasharray={previewDash} opacity={previewOpacity} />
+          </g>
+        );
+      }
+    }
+
+    if (activeTool === 'long' || activeTool === 'short') {
+      const entryY = startPixel.y;
+      let targetY = endPixel.y;
+
+      // For shorts, if preview is above entry, flip it below
+      // For longs, if preview is below entry, flip it above
+      if (activeTool === 'short' && targetY < entryY) {
+        const distance = entryY - targetY;
+        targetY = entryY + distance;
+      } else if (activeTool === 'long' && targetY > entryY) {
+        const distance = targetY - entryY;
+        targetY = entryY - distance;
+      }
+
+      const distance = Math.abs(targetY - entryY);
+      const stopLossY = activeTool === 'long' ? entryY + distance : entryY - distance;
+
+      const minX = Math.min(startPixel.x, endPixel.x);
+      const maxX = Math.max(startPixel.x, endPixel.x);
+      const width = maxX - minX;
+
+      const isLong = activeTool === 'long';
+
+      // For long: profit box goes UP from entry, stop loss goes DOWN
+      // For short: profit box goes DOWN from entry, stop loss goes UP
+      const profitTop = isLong ? Math.min(entryY, targetY) : entryY;
+      const profitHeight = Math.abs(targetY - entryY);
+      const stopLossTop = isLong ? entryY : Math.min(entryY, stopLossY);
+      const stopLossHeight = Math.abs(stopLossY - entryY);
+
+      // Preview zones, clipped by outer div (overflow:hidden), no SVG clipPath needed
+      return (
+        <g>
+          {/* Profit box - always green */}
+          <rect
+            x={minX}
+            y={profitTop}
+            width={width}
+            height={profitHeight}
+            fill="#22c55e40"
+            stroke="#22c55e"
+            strokeWidth="2"
+            strokeDasharray="5,5"
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Stop loss box - always red */}
+          <rect
+            x={minX}
+            y={stopLossTop}
+            width={width}
+            height={stopLossHeight}
+            fill="#ef444440"
+            stroke="#ef4444"
+            strokeWidth="2"
+            strokeDasharray="5,5"
+            style={{ pointerEvents: 'none' }}
+          />
+        </g>
+      );
+    }
+
+    if (activeTool === 'gannFan') {
+      return (
+        <g>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth="1.5" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'gannBox' || activeTool === 'gannSquare' || activeTool === 'gannSquareFixed') {
+      const x0 = Math.min(startPixel.x, endPixel.x), y0 = Math.min(startPixel.y, endPixel.y);
+      return (
+        <g>
+          <rect x={x0} y={y0} width={Math.abs(endPixel.x - startPixel.x)} height={Math.abs(endPixel.y - startPixel.y)} fill="none" stroke={previewColor} strokeWidth="1.25" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'regressionTrend' || activeTool === 'cyclicLines' || activeTool === 'sineLine' || activeTool === 'timeArcs' || activeTool === 'splitChannel') {
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
+          <circle cx={startPixel.x} cy={startPixel.y} r={3} fill={previewColor} opacity={previewOpacity} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'fixedVolumeProfile') {
+      const x0 = Math.min(startPixel.x, endPixel.x), y0 = Math.min(startPixel.y, endPixel.y);
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <rect x={x0} y={y0} width={Math.abs(endPixel.x - startPixel.x)} height={Math.abs(endPixel.y - startPixel.y)} fill="#2dd4bf" fillOpacity={0.05} stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'callout') {
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
+          <circle cx={startPixel.x} cy={startPixel.y} r={3} fill={previewColor} opacity={previewOpacity} />
+          <rect x={endPixel.x} y={endPixel.y} width={70} height={22} rx={5} fill="none" stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
+        </g>
+      );
+    }
+
+    if (activeTool && MULTIPOINT_TOOLS[activeTool]) {
+      const mpPts = [...tempPoints, endPixel];
+      const mpPath = mpPts.map((p) => `${p.x},${p.y}`).join(' ');
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <polyline points={mpPath} fill="none" stroke={previewColor} strokeWidth={previewStroke} strokeDasharray="4,3" opacity={previewOpacity} />
+          {tempPoints.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r={3.5} fill={previewColor} opacity={previewOpacity} />
+          ))}
+        </g>
+      );
+    }
+
+    if (activeTool === 'fibCircles' || activeTool === 'fibArcs' || activeTool === 'fibSpiral' || activeTool === 'fibWedge') {
+      const R = Math.hypot(endPixel.x - startPixel.x, endPixel.y - startPixel.y);
+      return (
+        <g style={{ pointerEvents: 'none' }}>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
+          <circle cx={startPixel.x} cy={startPixel.y} r={R} fill="none" stroke={previewColor} strokeWidth={1} strokeDasharray="4,3" opacity={previewOpacity} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'fibFan') {
+      return (
+        <g>
+          <line x1={startPixel.x} y1={startPixel.y} x2={endPixel.x} y2={endPixel.y} stroke={previewColor} strokeWidth="1.5" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'fibTimeZones') {
+      return (
+        <g>
+          <line x1={startPixel.x} y1={0} x2={startPixel.x} y2={9999} stroke={previewColor} strokeWidth="1" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+          <line x1={endPixel.x} y1={0} x2={endPixel.x} y2={9999} stroke={previewColor} strokeWidth="1" opacity={previewOpacity} strokeDasharray="4,3" style={{ pointerEvents: 'none' }} />
+        </g>
+      );
+    }
+
+    if (activeTool === 'fibonacci' || activeTool === 'fibExtension') {
+      const levels = activeTool === 'fibExtension' ? [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.0, 2.618] : [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+      // fibExtension preview: max level lands on the second pointer so the
+      // dashed lines stay inside the rectangle defined by the two handles.
+      const maxLevel = activeTool === 'fibExtension' ? Math.max(...levels, 1) : 1;
+      return (
+        <g>
+          {levels.map((level) => {
+            const y = startPixel.y + (endPixel.y - startPixel.y) * (level / maxLevel);
+            return (
+              <line
+                key={level}
+                x1={Math.min(startPixel.x, endPixel.x)}
+                y1={y}
+                x2={Math.max(startPixel.x, endPixel.x)}
+                y2={y}
+                stroke={previewColor}
+                strokeWidth="1"
+                strokeDasharray="3,3"
+                opacity={previewOpacity}
+                style={{ pointerEvents: 'none' }}
+              />
+            );
+          })}
+        </g>
+      );
+    }
+
+    return null;
+  };
+
+  const renderBrushPreview = () => {
+    if (brushPath.length < 2) return null;
+
+    // Create smooth Catmull-Rom spline path for brush strokes (matches saved rendering)
+    const createSmoothPath = (points: PixelPoint[]): string => {
+      if (points.length < 2) return '';
+      if (points.length === 2) {
+        return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+      }
+
+      // Use Catmull-Rom to Bezier conversion for ultra-smooth curves
+      const tension = 0.5;
+
+      let path = `M ${points[0].x} ${points[0].y}`;
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[Math.max(0, i - 1)];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[Math.min(points.length - 1, i + 2)];
+
+        const cp1x = p1.x + (p2.x - p0.x) * tension / 3;
+        const cp1y = p1.y + (p2.y - p0.y) * tension / 3;
+        const cp2x = p2.x - (p3.x - p1.x) * tension / 3;
+        const cp2y = p2.y - (p3.y - p1.y) * tension / 3;
+
+        path += ` C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${p2.x} ${p2.y}`;
+      }
+
+      return path;
+    };
+
+    const pathData = createSmoothPath(brushPath);
+    // Use pre-placement settings bar values for preview so the user sees
+    // exactly what the brush will look like while drawing
+    const previewColor = toolSettings?.color ?? getBrushToolColor(activeTool);
+    const previewOpacity = (toolSettings?.opacity ?? getBrushToolOpacity(activeTool)) / 100;
+    const previewStrokeWidth = toolSettings?.strokeWidth ?? getBrushToolStrokeWidth(activeTool);
+
+    return (
+      <g>
+        <path
+          d={pathData}
+          stroke={previewColor}
+          strokeWidth={previewStrokeWidth}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeOpacity={previewOpacity}
+          style={{ pointerEvents: 'none' }}
+        />
+        {/* Arrow head preview for arrow tool */}
+        {activeTool === 'arrow' && brushPath.length >= 2 && (() => {
+          const last = brushPath[brushPath.length - 1];
+          const secondLast = brushPath[Math.max(0, brushPath.length - 5)];
+          const angle = Math.atan2(last.y - secondLast.y, last.x - secondLast.x);
+          const arrowSize = 12;
+          const arrowAngle = Math.PI / 6;
+          return (
+            <polygon
+              points={`
+                ${last.x},${last.y}
+                ${last.x - arrowSize * Math.cos(angle - arrowAngle)},${last.y - arrowSize * Math.sin(angle - arrowAngle)}
+                ${last.x - arrowSize * Math.cos(angle + arrowAngle)},${last.y - arrowSize * Math.sin(angle + arrowAngle)}
+              `}
+              fill={previewColor}
+              fillOpacity={previewOpacity}
+              style={{ pointerEvents: 'none' }}
+            />
+          );
+        })()}
+      </g>
+    );
+  };
+
+  const renderMeasurePreview = () => {
+    if (!measureState) return null;
+
+    const startPixel = measureState.start;
+    const endPixel = measureState.current;
+
+    // Convert pixels to chart coordinates for calculations
+    const startTime = converter.xToTime(startPixel.x);
+    const endTime = converter.xToTime(endPixel.x);
+    const startPrice = converter.yToPrice(startPixel.y);
+    const endPrice = converter.yToPrice(endPixel.y);
+
+    if (startTime === null || endTime === null) return null;
+
+    // Calculate stats
+    const timeDiffMs = Math.abs(endTime - startTime);
+    const priceDiff = endPrice - startPrice;
+    const percentChange = startPrice !== 0 ? ((priceDiff / startPrice) * 100) : 0;
+
+    // Calculate candles based on timeframe
+    const candleCount = Math.floor(timeDiffMs / timeframeMs);
+
+    // Calculate points/pips based on instrument type (IC Markets standard)
+    const sym = currentSymbol?.toUpperCase() || '';
+    const isGoldMeasure = sym.includes('XAU') || sym.includes('GOLD');
+    const isSilverMeasure = sym.includes('XAG') || sym.includes('SILVER');
+    const isIndexMeasure = sym.includes('SPX') || sym.includes('NAS') || sym.includes('DJI') || sym.includes('DAX') || sym.includes('FTSE') || sym.includes('NIK') || sym.includes('US500') || sym.includes('US100') || sym.includes('US30');
+    const isForexMeasure = sym.includes('/') && !sym.includes('BTC') && !sym.includes('ETH') && !sym.includes('LTC') && !sym.includes('XRP') && !sym.includes('SOL') && !sym.includes('DOGE') && !sym.includes('ADA') && !sym.includes('AVAX') && !sym.includes('DOT') && !sym.includes('LINK') && !sym.includes('BNB') && !isGoldMeasure && !isSilverMeasure && !isIndexMeasure;
+    const isJpyMeasure = isForexMeasure && sym.includes('JPY');
+
+    let pipMultiplier: number;
+    if (isGoldMeasure) {
+      pipMultiplier = 10;         // Gold: $1 = 10 pips
+    } else if (isSilverMeasure) {
+      pipMultiplier = 100;        // Silver: $1 = 100 pips
+    } else if (isIndexMeasure) {
+      pipMultiplier = 1;          // Indices: 1 point = 1 pt
+    } else if (isJpyMeasure) {
+      pipMultiplier = 100;        // JPY pairs: 0.01 = 1 pip
+    } else if (isForexMeasure) {
+      pipMultiplier = 10000;      // Standard forex: 0.0001 = 1 pip
+    } else {
+      // Crypto & stocks
+      if (startPrice >= 1000) {
+        pipMultiplier = 1;        // BTC: $1 = 1 pip
+      } else if (startPrice >= 10) {
+        pipMultiplier = 100;      // ETH/LTC: $0.01 = 1 pip
+      } else if (startPrice >= 0.1) {
+        pipMultiplier = 10000;    // SOL/XRP: $0.0001 = 1 pip
+      } else {
+        pipMultiplier = 100000;   // DOGE: $0.00001 = 1 pip
+      }
+    }
+    const pips = Math.abs(priceDiff) * pipMultiplier;
+
+    // Format time elapsed
+    const hours = Math.floor(timeDiffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((timeDiffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const days = Math.floor(hours / 24);
+    let timeStr = '';
+    if (days > 0) {
+      timeStr = `${days}d ${hours % 24}h`;
+    } else if (hours > 0) {
+      timeStr = `${hours}h ${minutes}m`;
+    } else {
+      timeStr = `${minutes}m`;
+    }
+
+    const isUp = priceDiff >= 0;
+    const boxColor = isUp ? '#2962ff' : '#2962ff'; // TradingView uses blue
+    const bgColor = 'rgba(41, 98, 255, 0.15)';
+
+    // Calculate box position
+    const minX = Math.min(startPixel.x, endPixel.x);
+    const maxX = Math.max(startPixel.x, endPixel.x);
+    const minY = Math.min(startPixel.y, endPixel.y);
+    const maxY = Math.max(startPixel.y, endPixel.y);
+    const width = Math.max(1, maxX - minX);
+    const height = Math.max(1, maxY - minY);
+
+    // Chart width for extended lines
+    const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
+
+    // Info box - position at top center of selection like TradingView
+    const infoWidth = 130;
+    const infoHeight = 68;
+    const infoCenterX = minX + width / 2;
+    const infoX = Math.max(5, Math.min(chartWidth - infoWidth - 5, infoCenterX - infoWidth / 2));
+    const infoY = Math.max(5, minY - infoHeight - 15);
+
+    // Format display values like TradingView: "70.7 (0.15%) 707"
+    const priceAbsDiff = Math.abs(priceDiff);
+    const priceDisplay = startPrice < 10 ? priceAbsDiff.toFixed(4) : priceAbsDiff.toFixed(2);
+    const percentDisplay = `${isUp ? '' : '-'}${Math.abs(percentChange).toFixed(2)}%`;
+    const pipsDisplay = Math.round(pips);
+
+    return (
+      <g style={{ pointerEvents: 'none' }}>
+        {/* Selection rectangle with fill */}
+        <rect
+          x={minX}
+          y={minY}
+          width={width}
+          height={height}
+          fill={bgColor}
+          stroke="none"
+        />
+
+        {/* Extended horizontal dashed lines */}
+        <line
+          x1={0}
+          y1={startPixel.y}
+          x2={chartWidth}
+          y2={startPixel.y}
+          stroke="#64748b"
+          strokeWidth="1"
+          strokeDasharray="4,4"
+        />
+        <line
+          x1={0}
+          y1={endPixel.y}
+          x2={chartWidth}
+          y2={endPixel.y}
+          stroke="#64748b"
+          strokeWidth="1"
+          strokeDasharray="4,4"
+        />
+
+        {/* Vertical dashed line at end */}
+        <line
+          x1={maxX}
+          y1={0}
+          x2={maxX}
+          y2={containerDims.height - chartBounds.timeAxisHeight}
+          stroke="#64748b"
+          strokeWidth="1"
+          strokeDasharray="4,4"
+        />
+
+        {/* Center arrow line */}
+        <line
+          x1={infoCenterX}
+          y1={minY}
+          x2={infoCenterX}
+          y2={infoY + infoHeight}
+          stroke={boxColor}
+          strokeWidth="1"
+        />
+
+        {/* Arrow head at top of selection box */}
+        <polygon
+          points={`${infoCenterX},${minY} ${infoCenterX - 4},${minY - 8} ${infoCenterX + 4},${minY - 8}`}
+          fill={boxColor}
+        />
+
+        {/* Info box with rounded corners like TradingView */}
+        <rect
+          x={infoX}
+          y={infoY}
+          width={infoWidth}
+          height={infoHeight}
+          fill={boxColor}
+          rx="6"
+          ry="6"
+        />
+
+        {/* Line 1: Price diff (percent) */}
+        <text
+          x={infoX + infoWidth / 2}
+          y={infoY + 18}
+          fill="#ffffff"
+          fontSize="12"
+          fontWeight="bold"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          textAnchor="middle"
+        >
+          {isUp ? '+' : '-'}{priceDisplay} ({percentDisplay})
+        </text>
+
+        {/* Line 2: pips */}
+        <text
+          x={infoX + infoWidth / 2}
+          y={infoY + 34}
+          fill="rgba(255,255,255,0.9)"
+          fontSize="11"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          textAnchor="middle"
+        >
+          {pipsDisplay} pips
+        </text>
+
+        {/* Line 3: bars, time */}
+        <text
+          x={infoX + infoWidth / 2}
+          y={infoY + 50}
+          fill="rgba(255,255,255,0.9)"
+          fontSize="11"
+          fontFamily="system-ui, -apple-system, sans-serif"
+          textAnchor="middle"
+        >
+          {candleCount} bars, {timeStr}
+        </text>
+      </g>
+    );
+  };
+
+  // Render dotted crosshair for precise drawing placement and dragging
+  // Matches the chart's native crosshair style (--electric-blue color)
+  const renderCrosshair = () => {
+    // Show crosshair when: tool is active (cursorPosition), placing drawing (previewPoint), or dragging
+    const crosshairPoint = cursorPosition || previewPoint;
+
+    const chartWidth = containerDims.width - chartBounds.priceAxisWidth;
+    const chartHeight = containerDims.height - chartBounds.timeAxisHeight;
+
+    // Use the same electric-blue color as the chart's native crosshair
+    const crosshairColor = 'rgba(0, 194, 255, 0.8)'; // --electric-blue equivalent
+
+    // Always render crosshair elements with stable IDs so direct DOM manipulation
+    // during drags can target them without React re-renders
+    const isVisible = !!crosshairPoint;
+
+    return (
+      <g style={{ pointerEvents: 'none' }}>
+        {/* Horizontal line */}
+        <line
+          id={`${clipId}_drawing-crosshair-h`}
+          x1={0}
+          y1={crosshairPoint?.y ?? 0}
+          x2={chartWidth}
+          y2={crosshairPoint?.y ?? 0}
+          stroke={crosshairColor}
+          strokeWidth="1"
+          strokeDasharray="4,4"
+          style={{ display: isVisible ? '' : 'none' }}
+        />
+        {/* Vertical line */}
+        <line
+          id={`${clipId}_drawing-crosshair-v`}
+          x1={crosshairPoint?.x ?? 0}
+          y1={0}
+          x2={crosshairPoint?.x ?? 0}
+          y2={chartHeight}
+          stroke={crosshairColor}
+          strokeWidth="1"
+          strokeDasharray="4,4"
+          style={{ display: isVisible ? '' : 'none' }}
+        />
+      </g>
+    );
+  };
+
+  // Only enable pointer events when actively drawing, dragging, or needing to handle deselection
+  // This ensures wheel/scroll events always pass through to the chart when not interacting
+  // Enable pointer events when: there's an active tool OR dragging OR placing a drawing
+  // For deselection: only enable if this overlay has the selection (not all overlays in multi-panel)
+  const isPlacingDrawing = tempPoints.length > 0 || touchDrawing !== null || isDrawingBrushRef.current;
+  const needsPointerEvents = activeTool !== null || draggingId !== null || isPlacingDrawing || (selectedDrawingId !== null && selectedDrawingId !== undefined) || measureState?.frozen;
+
+  // Only block touch actions when actively drawing (not for passive viewing)
+  // Include touchDrawing, isDrawing (brush), and measureState for all drawing scenarios
+  const blockTouchActions = activeTool !== null || draggingId !== null || touchDrawing !== null || isDrawingBrushRef.current || measureState !== null;
+
+  // When overlay only needs pointer-events for deselection (a drawing is selected
+  // but no tool is active), we keep the outer div pointer-events:none and instead
+  // add an inner event-capture div covering the full chart area. The OHLC zone
+  // pass-through is handled inside handleMouseDown (after the drawing hit-test),
+  // so this div can safely cover the entire area without creating a dead zone
+  // where drawings near the top of the chart can't be interacted with.
+  const onlyForDeselect = needsPointerEvents && !activeTool && !draggingId && !isPlacingDrawing && !measureState?.frozen;
+
+  return (
+    <div
+      ref={containerRef}
+      className={`absolute inset-0 ${className || ''}`}
+      onMouseMove={handleMouseMove}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      // Wheel events (zoom/scroll) must always pass through to the chart canvas
+      // underneath, even when a drawing is selected or hovered. Without this,
+      // hovering over a long/short position drawing (which has pointerEvents:'all'
+      // on its filled rects and handles) blocks wheel events from reaching the
+      // canvas, making zoom/pan impossible while the cursor is over a drawing.
+      // The overlay and chart canvas live in sibling component trees, so wheel
+      // events never naturally reach the canvas. We find the nearest canvas with
+      // class "cursor-crosshair" (ProChart's overlay canvas, which has the
+      // addEventListener('wheel') handler) and re-dispatch the event to it.
+      onWheel={(e) => {
+        const overlay = containerRef.current;
+        if (!overlay) return;
+        // Walk up to the nearest shared container and find the chart canvas.
+        // ProChart's overlay canvas has class "cursor-crosshair" and the wheel
+        // listener attached via addEventListener in a useEffect.
+        let searchRoot = overlay.parentElement;
+        let canvas: Element | null = null;
+        // Search up to 5 levels to find the canvas (handles different nesting depths)
+        for (let i = 0; i < 5 && searchRoot && !canvas; i++) {
+          canvas = searchRoot.querySelector('canvas.cursor-crosshair');
+          if (!canvas) searchRoot = searchRoot.parentElement;
+        }
+        if (canvas) {
+          canvas.dispatchEvent(new WheelEvent('wheel', {
+            deltaX: e.deltaX,
+            deltaY: e.deltaY,
+            deltaZ: e.deltaZ,
+            deltaMode: e.deltaMode,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            screenX: e.screenX,
+            screenY: e.screenY,
+            ctrlKey: e.ctrlKey,
+            shiftKey: e.shiftKey,
+            altKey: e.altKey,
+            metaKey: e.metaKey,
+            bubbles: true,
+            cancelable: true,
+          }));
+        }
+      }}
+      style={{
+        cursor: activeTool === 'eraser' ? ERASER_CURSOR : undefined,
+        pointerEvents: (needsPointerEvents && !onlyForDeselect) ? 'all' : 'none',
+        touchAction: blockTouchActions ? 'none' : 'auto',
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTouchCallout: 'none',
+        overscrollBehavior: blockTouchActions ? 'contain' : 'auto',
+        WebkitOverflowScrolling: 'touch',
+      }}
+    >
+      {/* Deselect capture div: covers the full chart area so clicking empty
+          space deselects the current drawing. Previously started at top:30 to
+          let OHLC toggle clicks pass through, but that created a 30px dead
+          zone where drawings near the top of the chart couldn't be selected
+          or dragged. Now starts at top:0 because the handleMouseDown handler
+          checks for drawings before falling through to the OHLC pass-through. */}
+      {onlyForDeselect && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: 'all',
+          }}
+        />
+      )}
+      {containerDims.width > 0 && containerDims.height > 0 && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: Math.max(0, containerDims.width - chartBounds.priceAxisWidth),
+              height: Math.max(0, containerDims.height - chartBounds.timeAxisHeight - (chartBounds.indicatorHeight ?? 0)),
+              overflow: 'hidden',
+            }}
+          >
+            <svg
+              width={Math.max(0, containerDims.width - chartBounds.priceAxisWidth)}
+              height={containerDims.height}
+              viewBox={`0 0 ${Math.max(0, containerDims.width - chartBounds.priceAxisWidth)} ${containerDims.height}`}
+              style={{
+                pointerEvents: 'none',
+                display: 'block',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+              }}
+            >
+              <g>
+                {renderCrosshair()}
+                {!isHidden && drawings.map(renderDrawing)}
+                {renderPreview()}
+                {renderBrushPreview()}
+                {renderMeasurePreview()}
+              </g>
+            </svg>
+          </div>
+        </>
+      )}
+
+      {/* DOM-driven Axis Badges (Phase 2 Rework) - Zero React Overhead! */}
+      {[0, 1, 2, 3].map(i => (
+        <Fragment key={i}>
+          <div 
+            id={`${clipId}_dom-price-badge-${i}`}
+            style={{ 
+              display: 'none', 
+              position: 'absolute', 
+              left: `calc(100% - ${chartBounds.priceAxisWidth - 3}px)`, 
+              transform: 'translateY(-50%)', 
+              backgroundColor: '#2962FF', /* TradingView Blue */
+              color: 'white', 
+              padding: '2px 4px', 
+              borderRadius: '4px', 
+              fontSize: '11px',
+              fontFamily: '"SF Mono", "Cascadia Code", Consolas, monospace',
+              pointerEvents: 'none',
+              zIndex: 50,
+              whiteSpace: 'nowrap'
+            }} 
+          />
+          <div 
+            id={`${clipId}_dom-time-badge-${i}`}
+            style={{ 
+              display: 'none', 
+              position: 'absolute', 
+              bottom: `${Math.max(0, (chartBounds.timeAxisHeight - 22) / 2)}px`, 
+              transform: 'translateX(-50%)', 
+              backgroundColor: '#2962FF',
+              color: 'white', 
+              padding: '4px 8px', 
+              borderRadius: '4px', 
+              fontSize: '11px',
+              fontFamily: '"SF Mono", "Cascadia Code", Consolas, monospace',
+              pointerEvents: 'none',
+              zIndex: 50,
+              whiteSpace: 'nowrap'
+            }} 
+          />
+        </Fragment>
+      ))}
+
+      {/* Drawing cursor preview badges (blue price/time on axes) are now rendered
+          on the chart canvas by the chart component. The overlay writes cursor position to
+          drawingCursorRef and triggers canvas redraw via requestRedrawRef. Canvas
+          rendering avoids z-index/overflow/React-reconciliation issues. */}
+
+      {textInput && (
+        <div
+          className="absolute"
+          style={{
+            left: textInput.x,
+            top: textInput.y,
+            transform: 'translate(-50%, -100%)',
+            pointerEvents: 'all',
+          }}
+        >
+          <input
+            type="text"
+            autoFocus
+            value={textInput.value}
+            onChange={(e) => setTextInput({ ...textInput, value: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleTextSubmit();
+              if (e.key === 'Escape') setTextInput(null);
+            }}
+            onBlur={handleTextSubmit}
+            className="px-2 py-1 bg-black/80 border border-gray-600 rounded text-white text-sm"
+            placeholder="Enter text..."
+          />
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+// Memoize to avoid re-renders from unrelated parent updates
+export const ChartDrawingOverlay = memo(ChartDrawingOverlayComponent);

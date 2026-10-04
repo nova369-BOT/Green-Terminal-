@@ -1,0 +1,178 @@
+/* Run via realtime_archive.html, served from the repository root, or pass
+   ?source=/path/to/realtime_archive.js for an existing WASM build server. */
+'use strict';
+document.querySelector('#run').onclick=async()=>{
+    const result=document.querySelector('#result');result.textContent='Running\n';
+    const log=s=>result.textContent+=s+'\n';
+    const check=(ok,msg)=>{if(!ok)throw Error(msg);log('PASS '+msg);};
+    let worker;
+    try {
+        const source=await (await fetch(new URLSearchParams(location.search).get('source') || '../../src/realtime_archive.js')).text();
+        const fn=source.slice(source.indexOf('function archiveWorker()'),source.indexOf('const states=new Map();'));
+        const name='edgedepth-rt-test-'+Date.now();
+        function make(extra='',budget=256*1024*1024) {
+            const code=fn.replace('edgedepth-rt-observed-v1',name).replace('256 * 1024 * 1024',String(budget));
+            return new Worker(URL.createObjectURL(new Blob([extra+'\n('+code+')()'],{type:'text/javascript'})));
+        }
+        worker=make();
+        const send=m=>new Promise((resolve,reject)=>{
+            const messages=[]; const timeout=setTimeout(()=>reject(Error('Worker timeout')),60000);
+            worker.onmessage=e=>{messages.push(e.data);if(e.data.type==='ack'){clearTimeout(timeout);resolve(messages);}};
+            worker.onerror=e=>{clearTimeout(timeout);reject(Error(e.message));};worker.postMessage(m);
+        });
+        const append=(id,records)=>send({type:'append',id,buffer:new Float64Array(records).buffer});
+        const query=(id,from,to,step=100,cutoff=to)=>send({type:'query',id,from,to,step,cutoff,tick:1,request:1});
+        const depth=(t,q=2,boundary=0)=>[1,t,11,boundary,100,101,2,100,q,101,3];
+        const trade=t=>[2,t,6,100,1.234567890123,1];
+        let messages=await append('roundtrip',[...depth(1001,2,1),...trade(1002),...trade(1002),...depth(1101,4)]);
+        check(!messages.some(m=>m.type==='error'),'compressed chunk committed in real IndexedDB');
+        messages=await query('roundtrip',1000,1200);
+        let view=messages.find(m=>m.type==='view'),a=new Float64Array(view.buffer);
+        check(view.tradeCount===2 && a.length===34,'same-timestamp trade multiplicity survives round-trip');
+        check(a[9]===101 && a[10]===3 && a[26]===1.234567890123,'depth and trade quantities retain Float64 precision');
+        messages=await query('roundtrip',1000,1200,100,1050);
+        view=messages.find(m=>m.type==='view');
+        check(view.depthCount===1,'replay cutoff excludes future observations');
+        await append('roundtrip',[3,1101,3,...depth(1401,6,1)]);
+        messages=await query('roundtrip',1000,1500);a=new Float64Array(messages.find(m=>m.type==='view').buffer);
+        check(a[12]===1401 && a[14]===1,'interruption removes final unknown bin; next seed starts a new segment');
+        messages=await query('roundtrip',1000,1500,500);a=new Float64Array(messages.find(m=>m.type==='view').buffer);
+        check(a[0]===1 && a[1]===1401 && a[3]===1 && a[8]===6,
+            'coarse boundary keeps only the new segment with its own quantities');
+        await send({type:'clear',id:'roundtrip'});
+        messages=await query('roundtrip',1000,1500);
+        check(messages.find(m=>m.type==='view').buffer.byteLength===0,'clear prevents stale session reads');
+        await append('recovery',[...depth(1000,2,1),3,1000,3,...trade(1500),...depth(3000,8,1),...depth(3500,10)]);
+        await send({type:'append',id:'recovery',seed:2,buffer:new Float64Array([
+            ...depth(1500,4,1),...depth(2500,6,1),3,3000,3]).buffer});
+        messages=await query('recovery',1000,3600,500);view=messages.find(m=>m.type==='view');a=new Float64Array(view.buffer);
+        const recoveredTimes=[];let recoveredQty=0;
+        for(let p=0;p<a.length;p+=a[p+2])if(a[p]===1) {recoveredTimes.push(a[p+1]);recoveredQty+=a[p+8];}
+        check(recoveredTimes.join(',')==='1500,2500,3000,3500' && recoveredQty===28 && view.tradeCount===1,
+            'late recovered depth merges chronologically without duplicating continuing trades or inventing upstream gap');
+        messages=await query('recovery',1000,3600,500,2000);a=new Float64Array(messages.find(m=>m.type==='view').buffer);
+        check(a[1]===1500 && !Array.from(a).includes(2500),'recovered depth obeys replay cutoff');
+        messages=await send({type:'query',id:'recovery',from:1000,to:3600,step:500,cutoff:3600,tick:5,native_tick:1,request:77});
+        check(messages.find(m=>m.type==='view').source_bucket_ticks===5,
+            'worker echoes the source price width belonging to the actual query');
+        await append('groups',[4,1000,9,100,7,1,98,103,5,4,1000,9,101,3,0,99,104,2,2,1150,6,100,2,1]);
+        messages=await query('groups',1000,1200,500);view=messages.find(m=>m.type==='view');a=new Float64Array(view.buffer);
+        let groupQty=0,groupLow=Infinity,groupHigh=0,groupCount=0;
+        for(let p=0;p<a.length;p+=a[p+2])if(a[p]===4) {groupQty+=a[p+4];groupLow=Math.min(groupLow,a[p+6]);groupHigh=Math.max(groupHigh,a[p+7]);groupCount+=a[p+8];}
+        check(view.grouped && groupQty===12 && groupLow===98 && groupHigh===104 && groupCount===8,
+            '100ms summaries preserve quantity, count and extremes with a raw tail');
+        messages=await query('groups',1000,1050,500);
+        check(messages.find(m=>m.type==='view').tradeCount===0,'a partial 100ms summary cannot leak trades beyond a query cutoff');
+        await append('seeded',[...depth(5001,7,1),...trade(5002),...depth(5501,8)]);
+        await send({type:'append',id:'seeded',seed:true,buffer:new Float64Array([
+            ...depth(3001,2,1),...depth(3501,4),...trade(3002),3,4001,3]).buffer});
+        messages=await query('seeded',3000,6000,500);a=new Float64Array(messages.find(m=>m.type==='view').buffer);
+        const times=[];for(let p=0;p<a.length;p+=a[p+2])if(a[p]===1)times.push(a[p+1]);
+        check(times.join(',')==='3001,3501,5001,5501','late seed is queried before live depth with a preserved seam');
+        check(messages.find(m=>m.type==='view').tradeCount===2,'seed and live trades both survive IndexedDB ordering');
+        await send({type:'clear',id:'seeded'});
+        for (const step of [500,1000,2000]) {
+            const id='join-'+step;
+            await append(id,[...depth(4000,7,1),...depth(4100,9)]);
+            await send({type:'append',id,seed:true,buffer:new Float64Array([
+                ...depth(3000,2,1),...depth(3500,4),3,4000,3]).buffer});
+            messages=await query(id,3000,4500,step);
+            a=new Float64Array(messages.find(m=>m.type==='view').buffer);
+            const books=[];for(let p=0;p<a.length;p+=a[p+2])if(a[p]===1)books.push(Array.from(a.slice(p,p+a[p+2])));
+            check(books.length>=2 && books.at(-2)[1]===(step===500?3500:3000) && books.at(-1)[1]===4000 && books.at(-1)[3]===1 && books.at(-1)[8]===8,
+                'startup join preserves its first timestamp and quantities at step '+step+' '+JSON.stringify(books.map(b=>[b[1],b[3],b[8]])));
+            await send({type:'clear',id});
+        }
+        await append('late-boundary',[...depth(4050,7,1),...depth(4450,9)]);
+        messages=await query('late-boundary',4000,4500,500);
+        a=new Float64Array(messages.find(m=>m.type==='view').buffer);
+        check(a[1]===4050 && a[3]===1 && a[8]===8,
+            'boundary retains the actual 50ms missing prefix, not a false 450ms gap');
+        await send({type:'clear',id:'late-boundary'});
+        const maximal=[];
+        for(let i=0;i<181;i++) {
+            maximal.push(1,i===0?10001:10000+i*500,2055,i===0?1:0,1000,1001,1024);
+            for(let j=0;j<1024;j++)maximal.push(489+j,2);
+        }
+        maximal.push(3,100001,3);
+        for(let i=0;i<16384;i++)maximal.push(2,10001+i,6,100,2,1);
+        check(maximal.length*8>1024*1024 && maximal.length*8<4*1024*1024,'maximal preload crosses a storage chunk but fits transport');
+        messages=await send({type:'append',id:'maximal',seed:true,buffer:new Float64Array(maximal).buffer});
+        check(!messages.some(m=>m.type==='error'),'maximal preload commits across storage chunks');
+        messages=await query('maximal',10001,100001,500);
+        view=messages.find(m=>m.type==='view');a=new Float64Array(view.buffer);
+        let retainedQty=0;for(let p=0;p<a.length;p+=a[p+2])if(a[p]===2 || a[p]===4)retainedQty+=a[p+4];
+        check(view.tradeCount===16384 && retainedQty===32768,'all 16384 preload trades and exact quantity survive archive round-trip');
+        await send({type:'clear',id:'maximal'});
+        // A slow historical read must not block live durability or change its
+        // as-of cutoff. Delay only fixture decompression, not production code.
+        worker.terminate();
+        worker=make("const NativeDecompression=DecompressionStream;DecompressionStream=function(format){const delay=new TransformStream({async transform(chunk,c){await new Promise(r=>setTimeout(r,250));c.enqueue(chunk);}});return {writable:delay.writable,readable:delay.readable.pipeThrough(new NativeDecompression(format))};};");
+        await append('concurrent',[...depth(1001,2,1),...trade(1002)]);
+        messages=await new Promise((resolve,reject)=>{
+            const events=[];let acknowledgements=0;
+            const timeout=setTimeout(()=>reject(Error('Concurrent worker timeout')),10000);
+            worker.onmessage=e=>{events.push(e.data);if(e.data.type==='ack' && ++acknowledgements===2){clearTimeout(timeout);resolve(events);}};
+            worker.postMessage({type:'query',id:'concurrent',from:1000,to:1100,cutoff:1100,step:100,tick:1,request:17});
+            worker.postMessage({type:'append',id:'concurrent',buffer:new Float64Array([...depth(1201,4),...trade(1202)]).buffer});
+        });
+        check(messages.findIndex(m=>m.type==='ack' && !m.request)<messages.findIndex(m=>m.type==='view'),
+            'live append is durable before a delayed archive query completes');
+        view=messages.find(m=>m.type==='view');
+        check(view.tradeCount===1 && view.depthCount===1,'concurrent live writes cannot leak past the query cutoff');
+        messages=await query('concurrent',1000,1300,100);
+        check(messages.find(m=>m.type==='view').tradeCount===2,'next zoom query includes the newly captured trade');
+        messages=await new Promise((resolve,reject)=>{
+            const events=[];let acknowledgements=0;
+            const timeout=setTimeout(()=>reject(Error('Reset worker timeout')),10000);
+            worker.onmessage=e=>{events.push(e.data);if(e.data.type==='ack' && ++acknowledgements===2){clearTimeout(timeout);resolve(events);}};
+            worker.postMessage({type:'query',id:'concurrent',from:1000,to:1300,cutoff:1300,step:100,tick:1,request:18});
+            worker.postMessage({type:'clear',id:'concurrent'});
+        });
+        check(!messages.some(m=>m.type==='view' && m.buffer.byteLength),
+            'reset during a delayed query cannot publish old observations');
+        worker.terminate();worker=make();
+        // Thirty minutes of 100ms, 1024-level books and 300 records/second.
+        // Deliberately labelled synthetic; not a hosted-throughput claim.
+        const t0=10000000, begin=performance.now(), timings=[];let rawBytes=0,status;
+        for(let chunk=0;chunk<360;chunk++) {
+            const data=new Float64Array(50*(2055+30*6));let p=0;
+            for(let j=0;j<50;j++) {
+                const sample=chunk*50+j,t=t0+sample*100;
+                data.set([1,t,2055,sample===0?1:0,10000,10001,1024],p);p+=7;
+                for(let k=0;k<1024;k++){data[p++]=9489+k;data[p++]=1+((sample*17+k*31)%997)/10;}
+                for(let k=0;k<30;k++){data.set([2,t+k,6,10000+(k%3),1+(k%7),k%2],p);p+=6;}
+            }
+            rawBytes+=data.byteLength;const before=performance.now();
+            messages=await send({type:'append',id:'busy',buffer:data.buffer});timings.push(performance.now()-before);
+            if(messages.some(m=>m.type==='error'))throw Error(JSON.stringify(messages));
+            status=messages.find(m=>m.type==='status');
+            if(chunk%60===0)log('Busy fixture: '+(chunk/12).toFixed(0)+' minutes');
+        }
+        check(status.last-status.first>=1799900,'30 minutes of observed market time retained within actual budget');
+        const qstart=performance.now();messages=await query('busy',t0,t0+1800000,1000);
+        view=messages.find(m=>m.type==='view');a=new Float64Array(view.buffer);
+        let columns=0,trades=0,qty=0;for(let p=0;p<a.length;p+=a[p+2]){if(a[p]===1)columns++;else {trades++;qty+=a[p+4];}}
+        check(columns===1800 && view.depthCount===18000,'30-minute overview has exactly 1800 aggregated columns');
+        check(view.tradeCount===540000 && view.grouped && trades<=3602,'all 540000 trade records contribute to bounded dense view');
+        check(qty===2070000,'dense trade aggregation preserves total base quantity');
+        const overviewMs=performance.now()-qstart;
+        messages=await query('busy',t0,t0+999,100);view=messages.find(m=>m.type==='view');
+        check(view.depthCount===10 && view.tradeCount===300 && !view.grouped,'earliest detail restores original trade records');
+        timings.sort((a,b)=>a-b);
+        log(JSON.stringify({rawBytes,archivedBytes:status.bytes,retainedMs:status.last-status.first,
+            compressionRatio:rawBytes/status.bytes,appendP50Ms:timings[180],appendP95Ms:timings[342],
+            appendMaxMs:timings[359],overviewMs,totalMs:performance.now()-begin},null,2));
+        await send({type:'clear',id:'busy'});worker.terminate();
+        // Force a quota error at the real storage write boundary.
+        worker=make("const originalPut=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(...args){if(this.name==='data')throw new DOMException('Fixture quota','QuotaExceededError');return originalPut.apply(this,args);};");
+        messages=await append('quota',depth(2000));
+        check(messages.some(m=>m.type==='error' && m.message.includes('QuotaExceededError')),'quota error is explicit and acknowledged');
+        worker.terminate();worker=make('',1000);
+        for(let i=0;i<10;i++)messages=await append('budget',depth(1000+i*100));
+        status=messages.find(m=>m.type==='status');
+        check(status.total<=1000 && status.first>1000,'global byte budget evicts oldest complete chunks');
+        await send({type:'clear',id:'budget'});worker.terminate();
+        log('ALL BROWSER ARCHIVE TESTS PASSED');
+    } catch(e) {log('FAIL '+e.stack);if(worker)worker.terminate();}
+};

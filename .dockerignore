@@ -1,0 +1,51 @@
+# Keep the image lean and avoid shipping junk / secrets / local state.
+.git
+.gitignore
+.venv
+.wvenv
+.env
+*.env
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+node_modules
+**/node_modules
+dist
+build
+!desktop/build
+*.egg-info
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.nox
+.next
+.nuxt
+.output
+.parcel-cache
+.vite
+.turbo
+
+# Local screenshots / notes / plans — not runtime.
+FOOTPRINT_*.png
+edgedepth-assets/
+EDGEDepth_RENDER_GUIDE.md
+ORDERFLOW_REBUILD_PLAN.md
+PHASE*.md
+*.log
+nohup.out
+
+# Desktop / frontend toolchains not needed for the Python server image.
+desktop/dist
+desktop/sidecar
+desktop/pyi-work
+desktop/pyi-dist
+frontend/node_modules
+tests/data/ts_truth.json
+
+# CI logs accidentally committed; not needed at runtime.
+ci-logs/

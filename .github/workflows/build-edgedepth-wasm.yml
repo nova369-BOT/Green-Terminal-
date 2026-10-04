@@ -1,0 +1,179 @@
+name: Build EdgeDepth WASM artifacts
+
+on:
+  push:
+    branches:
+      - arena/01a0fd01-green-terminal
+    paths:
+      - third_party/edgedepth-terminal/**
+      - .github/workflows/build-edgedepth-wasm.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten 4.0.15
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.15
+          actions-cache-folder: emsdk-cache
+
+      - name: Verify emcc
+        run: |
+          emcc --version
+          which emcmake emmake
+
+      - name: Install protoc 21.12
+        run: |
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protoc-21.12-linux-x86_64.zip"
+          sudo unzip -qo /tmp/protoc.zip -d /usr/local
+          protoc --version
+
+      - name: Build c_based_trader_client
+        working-directory: third_party/edgedepth-terminal
+        run: |
+          mkdir -p build
+          cd build
+          set -o pipefail
+          emcmake cmake -DCMAKE_BUILD_TYPE=Release .. 2>&1 | tee /tmp/cmake.log
+          emmake make -j"$(nproc)" c_based_trader_client 2>&1 | tee /tmp/make.log
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            /tmp/cmake.log
+            /tmp/make.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Annotate failure from logs
+        if: failure()
+        run: |
+          {
+            echo '### Build failed — cmake tail'
+            echo '```'
+            tail -n 40 /tmp/cmake.log 2>/dev/null || true
+            echo '```'
+            echo '### make tail'
+            echo '```'
+            tail -n 80 /tmp/make.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Also emit compact annotations (visible via API)
+          if [ -f /tmp/cmake.log ]; then
+            tail -n 5 /tmp/cmake.log | sed 's/^/::error cmake::/' || true
+          fi
+          if [ -f /tmp/make.log ]; then
+            # Surface first error lines
+            grep -E 'error:|Error |FAILED|fatal' /tmp/make.log | head -20 | sed 's/^/::error make::/' || \
+              tail -n 20 /tmp/make.log | sed 's/^/::error make::/' || true
+          fi
+
+      - name: Commit logs back to branch on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ci-logs
+          cp -f /tmp/cmake.log ci-logs/ 2>/dev/null || true
+          cp -f /tmp/make.log ci-logs/ 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ci-logs || true
+          if git diff --cached --quiet; then
+            echo 'no logs to commit'
+          else
+            git commit -m "ci-logs: EdgeDepth WASM build failure logs [skip ci]"
+            git push origin HEAD:arena/01a0fd01-green-terminal || true
+          fi
+
+      - name: Assert four artifacts
+        working-directory: third_party/edgedepth-terminal/build
+        run: |
+          ls -la
+          test -f index.html
+          test -f index.js
+          test -f index.wasm
+          test -f index.data
+
+      - name: Inject edgedepth-config.js + fix asset paths for GT mount
+        working-directory: third_party/edgedepth-terminal/build
+        run: |
+          sed -i 's|<head>|<head>\n<script src="edgedepth-config.js"></script>|' index.html
+          grep -q 'edgedepth-config.js' index.html
+          # Emscripten shell defaults to root-relative assets; GT mounts under /edgedepth/.
+          sed -i 's|locateFile:function(e){return"/"+e}|locateFile:function(e){return"/edgedepth/"+e}|' index.html
+          sed -i "s|locateFile: function(path) {|locateFile: function(path) {|" index.html
+          # Also handle pretty-printed shell variants
+          sed -i "s|return '/' + path;|return '/edgedepth/' + path;|" index.html
+          grep -q '/edgedepth/' index.html
+          echo 'locateFile fixed:'
+          grep -o 'locateFile[^,]*' index.html | head -5
+
+      - name: Stage artifacts for GT static dir
+        run: |
+          mkdir -p staged/edgedepth
+          cp third_party/edgedepth-terminal/build/index.html staged/edgedepth/
+          cp third_party/edgedepth-terminal/build/index.js staged/edgedepth/
+          cp third_party/edgedepth-terminal/build/index.wasm staged/edgedepth/
+          cp third_party/edgedepth-terminal/build/index.data staged/edgedepth/
+          ls -la staged/edgedepth/
+
+      - name: Upload artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: edgedepth-wasm
+          path: staged/edgedepth/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit artifacts into GT static/edgedepth
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DEST=lse_terminal/ui/static/edgedepth
+          mkdir -p "$DEST"
+          cp -f staged/edgedepth/index.html "$DEST/"
+          cp -f staged/edgedepth/index.js "$DEST/"
+          cp -f staged/edgedepth/index.wasm "$DEST/"
+          cp -f staged/edgedepth/index.data "$DEST/"
+          # Keep the static fallback config alongside runtime glue
+          ls -la "$DEST"
+          test -f "$DEST/index.html"
+          test -f "$DEST/index.js"
+          test -f "$DEST/index.wasm"
+          test -f "$DEST/index.data"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add "$DEST/index.html" "$DEST/index.js" "$DEST/index.wasm" "$DEST/index.data"
+          if git diff --cached --quiet; then
+            echo 'static/edgedepth already up to date'
+          else
+            git commit -m "ci: install EdgeDepth WASM artifacts into static/edgedepth [skip ci]"
+            # The gateway workflow may push to this branch at the same time;
+            # rebase and retry so the two commit-backs do not clobber each other.
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin arena/01a0fd01-green-terminal || git rebase --abort || true
+              if git push origin HEAD:arena/01a0fd01-green-terminal; then
+                echo "pushed on attempt $i"
+                break
+              fi
+              sleep 10
+            done
+          fi
