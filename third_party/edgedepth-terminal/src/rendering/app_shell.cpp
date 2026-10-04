@@ -720,9 +720,26 @@ namespace {
         const int current_tf = static_cast<int>(cur);
         const bool realtime = chart && chart->rt_mode();
         const bool rt_locked = chart && chart->rt_mode_locked();
-        // ?rt=0 (Green Terminal dock embed): the host chart owns Real-time
-        // now, so the pill is not drawn at all (set_rt_mode also refuses).
+        // ?rt=0 (Green Terminal dock embed): the host toolbar carries the
+        // Real-time button, so THIS pill is not drawn. Only the button is
+        // removed — the Real-time display itself stays fully functional and
+        // the host drives it through the __gtRtCmd bridge below.
         const bool rt_hidden = url_rt_disabled();
+#ifdef __EMSCRIPTEN__
+        // Host bridge: the embedding page writes window.__gtRtCmd (1 = RT
+        // on, 2 = RT off); the engine applies it here — the same
+        // set_rt_mode() path the pill click uses, entitlement gate and all —
+        // and reports truth back via window.__gtRtOn so the host button can
+        // never claim a state the engine is not in.
+        if (chart && rt_hidden) {
+            const int rt_cmd = EM_ASM_INT({
+                const c = (window.__gtRtCmd | 0); window.__gtRtCmd = 0; return c;
+            });
+            if (rt_cmd == 1 && !chart->rt_mode()) chart->set_rt_mode(true);
+            else if (rt_cmd == 2 && chart->rt_mode()) chart->set_rt_mode(false);
+            EM_ASM({ window.__gtRtOn = $0; }, chart->rt_mode() ? 1 : 0);
+        }
+#endif
         const bool compact = ImGui::GetContentRegionAvail().x < 760.0f;
         const std::span<const int> visible_favs = compact
             ? std::span<const int>(&current_tf, 1) : std::span<const int>(g_tf_favs);

@@ -8,7 +8,6 @@
 #include "core/entitlements.h"
 #include "replayer/replay_manager.h"
 #include "core/education_boot.h"
-#include "core/url_router.h"
 #include "ui/upsell_modal.h"
 #include "rendering/theme.h"
 #include <cmath>
@@ -27,11 +26,6 @@ bool ChartWidget::rt_mode_locked() const {
 }
 
 void ChartWidget::set_rt_mode(bool on) {
-    // ?rt=0 (Green Terminal dock embed): Real-time lives natively on the
-    // host's chart now; the embedded terminal must not open a duplicate.
-    // Single choke point — every entry path (pill, deep link, workspace
-    // restore, education view) funnels through here.
-    if (on && url_rt_disabled()) return;
     if (on && rt_mode_locked()) {
         ui::UpsellModal::instance().open(ui::UpsellModal::Trigger::Layer,
             "Live real-time mode (observed depth, every trade as a bubble, the spread) is a Pro view. Large prints still show as bubbles on your candles.", "realtime_depth");

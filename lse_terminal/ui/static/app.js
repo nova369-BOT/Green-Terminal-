@@ -20884,221 +20884,52 @@ try {
         window.LSEChart.mountGoToNavigator(gnEl);
       }
     } catch (e) { console.error("goto navigator", e); }
-    // Native Real-time order-flow view (EdgeDepth RT port — feature 1 of the
-    // one-by-one G-Flow→LSE migration). The shell owns the toolbar toggle and
-    // the EdgeDepth-style settings menu; the chart engine polls /api/rt/flow
-    // and draws. Settings persist in localStorage; LSEChart.update() merges
-    // partial props, so pushing only the rt keys never disturbs the chart.
+    // Real-time toggle: drives the G-Flow engine's own RT view through the
+    // __gtRtCmd/__gtRtOn window bridge (the engine's pill is hidden in the
+    // embed; only the button moved up here — see setupRtToggle below).
     try { setupRtToggle(); } catch (e) { console.error("rt toggle", e); }
   } else {
     setTimeout(mountLayoutBtn, 250);
   }
 })();
 
-// ── Real-time order-flow toggle (shell side) ────────────────────────────────
-// Full parity with the EdgeDepth RT settings panel: VIEW / DEPTH / TRADES /
-// LIQUIDATIONS / SESSION, including the live read-outs (grouping, auto min,
-// not-plotted, recorded span) polled from the chart's window.__gtRtInfo.
-const RT_LS_KEY = "gt-rt-view";
-function rtLoadSettings() {
-  try { return JSON.parse(localStorage.getItem(RT_LS_KEY) || "{}") || {}; }
-  catch (e) { return {}; }
-}
-const rtState = Object.assign(
-  {
-    enabled: false, pause: false, candles1s: false, tradeLine: true,
-    ladder: true, follow: true, autoFit: false,
-    heatmap: true, extend: true,
-    bubbles: true, autoSize: true, minVal: 10000,
-    liqs: true, liqMin: 0, strip: true,
-    recalNonce: 0, clearNonce: 0,
-  },
-  rtLoadSettings()
-);
-// Nonces are per-session commands, never replayed from storage — a persisted
-// clearNonce would wipe the recording on every boot.
-rtState.recalNonce = 0;
-rtState.clearNonce = 0;
-function rtSave() { try { localStorage.setItem(RT_LS_KEY, JSON.stringify(rtState)); } catch (e) {} }
-function rtPush() {
-  if (window.LSEChart && typeof window.LSEChart.update === "function") {
-    window.LSEChart.update({
-      rtEnabled: !!rtState.enabled,
-      rtSettings: {
-        heatmap: !!rtState.heatmap, ladder: !!rtState.ladder,
-        bubbles: !!rtState.bubbles, tradeLine: !!rtState.tradeLine,
-        pause: !!rtState.pause, candles1s: !!rtState.candles1s,
-        followPrice: !!rtState.follow, autoFit: !!rtState.autoFit,
-        extendDepth: !!rtState.extend,
-        liqs: !!rtState.liqs, liqMinNotional: Number(rtState.liqMin) || 0,
-        activityStrip: !!rtState.strip,
-        bubbleAuto: !!rtState.autoSize,
-        bubbleMinValue: Math.max(1, Number(rtState.minVal) || 10000),
-        recalNonce: Number(rtState.recalNonce) || 0,
-        clearNonce: Number(rtState.clearNonce) || 0,
-      },
-    });
-  }
-}
-// The Real-time button is a pure view toggle, same effect as in the G-Flow
-// terminal: the chart surface becomes the live RT view (own rolling seconds
-// scale, depth bands, trade line / 1s candles, bubbles, ladder, strip) and
-// toggling off reveals the user's chart EXACTLY as it was. It never touches
-// the timeframe rail, the bar-style selector or any saved chart state —
-// everything happens inside the chart's RT renderer via rtSettings.
-function rtFmtNum(v) {
-  if (!isFinite(v)) return "—";
-  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
-  if (v >= 1e3) return (v / 1e3).toFixed(1) + "k";
-  return String(Math.round(v * 100) / 100);
-}
-// Live read-outs while the menu is open — values come from the chart's
-// renderer/state via window.__gtRtInfo (real numbers or honest dashes).
-function rtRefreshDynamicLabels() {
-  const info = window.__gtRtInfo || null;
-  const set = (id, text) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
-  };
-  if (!info) {
-    set("rt-dyn-grouping", "Automatic grouping: — (RT view off)");
-    set("rt-dyn-automin", "min —");
-    set("rt-dyn-notplotted", "Not plotted as bubbles: 0 records");
-    set("rt-dyn-recorded", "Recorded 0.0 min · 0.00 MiB");
-    set("rt-dyn-liqsource", "");
-    const d = document.getElementById("rt-dyn-dropped");
-    if (d) d.classList.add("hidden");
-    return;
-  }
-  set("rt-dyn-grouping", "Automatic grouping: " +
-    (info.grouping && info.grouping !== "—"
-      ? info.grouping + " price units per row" : "—"));
-  set("rt-dyn-automin", "min " + rtFmtNum(Number(info.autoMin) || 0) +
-    (info.autoSettled ? "" : " (warming up)"));
-  set("rt-dyn-notplotted",
-    "Not plotted as bubbles: " + (Number(info.notPlotted) || 0) + " records");
-  set("rt-dyn-recorded",
-    "Recorded " + ((Number(info.recordedMs) || 0) / 60000).toFixed(1) +
-    " min · " + ((Number(info.bytes) || 0) / 1048576).toFixed(2) + " MiB");
-  set("rt-dyn-liqsource", info.liqSource ? "Source: " + info.liqSource : "");
-  const dropped = (Number(info.colsDropped) || 0) + (Number(info.tradesDropped) || 0);
-  const d = document.getElementById("rt-dyn-dropped");
-  if (d) {
-    if (dropped > 0) {
-      d.textContent = "Capture overload: " + dropped + " records missed; gaps kept";
-      d.classList.remove("hidden");
-    } else d.classList.add("hidden");
-  }
+// ── Real-time toggle (shell side) ──────────────────────────────────────────
+// ONE button, driving the G-Flow engine's OWN Real-time view. The engine's
+// toolbar pill is hidden in the embed (?rt=0) — only the button moved up
+// here; the Real-time display and every line of its code stay inside
+// G-Flow, fully functional. The bridge is two window flags on the engine
+// frame (same origin): __gtRtCmd (1 = on, 2 = off) is the command, and the
+// engine reports truth back in __gtRtOn every frame, so this button can
+// never claim a state the engine is not actually in (honesty doctrine).
+// RT settings: right-click the engine chart while Real-time is on.
+function rtFrameWin() {
+  const fr = document.getElementById("of-frame");
+  return (fr && fr.contentWindow) || null;
 }
 function setupRtToggle() {
   const btn = document.getElementById("rt-toggle");
-  const gear = document.getElementById("rt-gear");
-  const menu = document.getElementById("rt-menu");
-  if (!btn || !gear || !menu) return;
-  const paint = () => btn.classList.toggle("rt-on", !!rtState.enabled);
+  if (!btn) return;
+  const paint = (on) => btn.classList.toggle("rt-on", !!on);
   btn.addEventListener("click", () => {
-    rtState.enabled = !rtState.enabled;
-    paint(); rtSave(); rtPush();
-  });
-  let dynTimer = null;
-  gear.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const opening = menu.classList.contains("hidden");
-    if (opening) {
-      // Fixed-position drop: anchor under the gear, clamped to the viewport
-      // (the toolbar scrolls horizontally, so absolute would be clipped).
-      const r = gear.getBoundingClientRect();
-      menu.style.top = (r.bottom + 6) + "px";
-      menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 310)) + "px";
-      rtRefreshDynamicLabels();
-      if (dynTimer) clearInterval(dynTimer);
-      dynTimer = setInterval(rtRefreshDynamicLabels, 1000);
-    } else if (dynTimer) { clearInterval(dynTimer); dynTimer = null; }
-    menu.classList.toggle("hidden");
-  });
-  document.addEventListener("click", (e) => {
-    if (!menu.classList.contains("hidden") &&
-        !menu.contains(e.target) && e.target !== gear) {
-      menu.classList.add("hidden");
-      if (dynTimer) { clearInterval(dynTimer); dynTimer = null; }
+    const w = rtFrameWin();
+    if (!w) { status("order-flow engine not loaded yet"); return; }
+    const on = !!w.__gtRtOn;
+    if (!on) {
+      // The RT view lives in the dock: make sure it is on stage first.
+      try {
+        if (!ofDock.open) { ofDock.open = true; ofDockApply(); }
+      } catch (e) { console.error("rt dock open", e); }
+      w.__gtRtCmd = 1;
+    } else {
+      w.__gtRtCmd = 2;
     }
   });
-  const opts = [
-    ["rt-opt-pause", "pause"], ["rt-opt-tradeline", "tradeLine"],
-    ["rt-opt-heatmap", "heatmap"], ["rt-opt-ladder", "ladder"],
-    ["rt-opt-bubbles", "bubbles"], ["rt-opt-follow", "follow"],
-    ["rt-opt-autofit", "autoFit"], ["rt-opt-extend", "extend"],
-    ["rt-opt-liqs", "liqs"], ["rt-opt-strip", "strip"],
-    ["rt-opt-autosize", "autoSize"], ["rt-opt-1s", "candles1s"],
-  ];
-  const syncRows = () => {
-    const mv = document.getElementById("rt-minval-row");
-    if (mv) mv.classList.toggle("hidden", !!rtState.autoSize);
-    const am = document.getElementById("rt-dyn-automin");
-    if (am) am.classList.toggle("hidden", !rtState.autoSize);
-    const rc = document.getElementById("rt-btn-recal");
-    if (rc) rc.classList.toggle("hidden", !rtState.autoSize);
-    const lm = document.getElementById("rt-liqmin-row");
-    if (lm) lm.classList.toggle("hidden", !rtState.liqs);
-  };
-  for (const [id, key] of opts) {
-    const box = document.getElementById(id);
-    if (!box) continue;
-    box.checked = !!rtState[key];
-    box.addEventListener("change", () => {
-      rtState[key] = !!box.checked;
-      syncRows(); rtSave(); rtPush();
-    });
-  }
-  // VIEW buttons act on the RT view's OWN span (never the candle chart):
-  // Return live = back to the rolling last-30-seconds window; Whole session
-  // = everything retained this session. Both just flip the span setting the
-  // RT renderer reads; the Auto-fit checkbox mirrors it.
-  const autofitBox = document.getElementById("rt-opt-autofit");
-  const setSpan = (session) => {
-    rtState.autoFit = !!session;
-    if (autofitBox) autofitBox.checked = rtState.autoFit;
-    rtSave(); rtPush();
-  };
-  const liveBtn = document.getElementById("rt-btn-live");
-  if (liveBtn) liveBtn.addEventListener("click", () => setSpan(false));
-  const sessBtn = document.getElementById("rt-btn-session");
-  if (sessBtn) sessBtn.addEventListener("click", () => setSpan(true));
-  // TRADES: Recalibrate re-runs the auto-size percentile from current prints.
-  const recalBtn = document.getElementById("rt-btn-recal");
-  if (recalBtn) recalBtn.addEventListener("click", () => {
-    rtState.recalNonce = (Number(rtState.recalNonce) || 0) + 1;
-    rtSave(); rtPush();
-  });
-  // SESSION: Clear history wipes server + client buffers; recording continues.
-  const clearBtn = document.getElementById("rt-btn-clear");
-  if (clearBtn) clearBtn.addEventListener("click", () => {
-    rtState.clearNonce = (Number(rtState.clearNonce) || 0) + 1;
-    rtSave(); rtPush();
-  });
-  // ± steppers (old-PowerShell-simple, no free-text field to mis-parse).
-  const stepper = (decId, incId, valId, key, step, floor) => {
-    const dec = document.getElementById(decId);
-    const inc = document.getElementById(incId);
-    const out = document.getElementById(valId);
-    const show = () => { if (out) out.textContent = rtFmtNum(Number(rtState[key]) || 0); };
-    if (dec) dec.addEventListener("click", () => {
-      rtState[key] = Math.max(floor, (Number(rtState[key]) || 0) - step);
-      show(); rtSave(); rtPush();
-    });
-    if (inc) inc.addEventListener("click", () => {
-      rtState[key] = (Number(rtState[key]) || 0) + step;
-      show(); rtSave(); rtPush();
-    });
-    show();
-  };
-  stepper("rt-minval-dec", "rt-minval-inc", "rt-minval", "minVal", 1000, 1);
-  stepper("rt-liqmin-dec", "rt-liqmin-inc", "rt-liqmin", "liqMin", 100, 0);
-  syncRows();
-  paint();
-  // Re-apply the saved state once the chart is mounted (update merges, so
-  // this never clobbers symbol/candles the shell pushed meanwhile).
-  if (rtState.enabled) rtPush();
+  // Engine truth → button state (covers every path: our command, the
+  // engine's own exits, replays, education packs).
+  setInterval(() => {
+    const w = rtFrameWin();
+    paint(w ? !!w.__gtRtOn : false);
+  }, 500);
 }
 
 // The help panel's code template renders through the same tokenizer as the

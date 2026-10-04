@@ -315,13 +315,11 @@ inline bool url_watchlist_disabled() {
 #endif
 }
 
-// Embed flag: ?rt=0 removes Real-time mode from the terminal. Green
-// Terminal's G-Flow dock sets it because the RT view now lives natively on
-// the host's LSE chart (migration rule: once a view is ported, the dock
-// must not offer a duplicate). The toolbar pill is not drawn and
-// set_rt_mode() refuses to engage, so no path — boot deep link, saved
-// workspace, menu — can open a second Real-time. Standalone boots are
-// unaffected.
+// Embed flag: ?rt=0 hides the Real-time toolbar PILL — and only the pill.
+// Green Terminal's G-Flow dock sets it because the host carries its own
+// Real-time button; the RT display itself stays fully functional and is
+// driven by the host through the window.__gtRtCmd bridge (see
+// render_tf_control in app_shell.cpp). Standalone boots are unaffected.
 inline bool url_rt_disabled() {
 #ifdef __EMSCRIPTEN__
     return EM_ASM_INT({
