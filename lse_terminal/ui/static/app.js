@@ -21035,6 +21035,12 @@ function setupRtToggle() {
     }
     document.addEventListener("click", closeMenu);
     document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeMenu(); });
+    // Real defects found in audit: clicks inside the G-Flow iframe never
+    // reach document (menu stayed stuck open over the page), and the menu
+    // is viewport-pinned so a window resize left it floating at stale
+    // coordinates. Close on both.
+    window.addEventListener("blur", closeMenu);
+    window.addEventListener("resize", closeMenu);
   }
   // Engine truth → button state (covers every path: our command, the
   // engine's own exits, replays, education packs).
