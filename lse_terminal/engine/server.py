@@ -921,16 +921,25 @@ def create_app() -> FastAPI:
 
     @app.get("/api/rt/flow")
     async def rt_flow_poll(symbol: str, cols_after: float = 0.0,
-                           trades_after: float = 0.0):
+                           trades_after: float = 0.0, liqs_after: float = 0.0):
         """Native Real-time order-flow view (EdgeDepth RT port, LSE chart).
 
-        Incremental poll: depth heatmap columns and venue trades newer than
-        the cursors. Flow data only — chart candles never come from here
-        (data doctrine). Non-crypto symbols get an honest {"flow": "none"};
-        unreachable venues get the real error, never simulated data.
+        Incremental poll: depth heatmap columns, venue trades and reported
+        liquidations newer than the cursors, plus honest session accounting
+        (recorded span, bytes, dropped records). Flow data only — chart
+        candles never come from here (data doctrine). Non-crypto symbols get
+        an honest {"flow": "none"}; unreachable venues get the real error,
+        never simulated data.
         """
         from lse_terminal.engine.rt_flow import rt_flow_manager
-        return await rt_flow_manager.poll(symbol, cols_after, trades_after)
+        return await rt_flow_manager.poll(symbol, cols_after, trades_after,
+                                          liqs_after)
+
+    @app.post("/api/rt/clear")
+    def rt_flow_clear(symbol: str):
+        """Clear the RT session's recorded history (recording continues)."""
+        from lse_terminal.engine.rt_flow import rt_flow_manager
+        return rt_flow_manager.clear(symbol)
 
     @app.get("/edgedepth/edgedepth-config.js")
     def edgedepth_config_js():

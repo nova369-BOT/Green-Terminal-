@@ -5198,3 +5198,22 @@ body.gt-density-dense .indb-field { padding-top: 1px; padding-bottom: 1px; }
 #rt-menu label:hover { background: var(--hover); border-radius: 3px; }
 #rt-menu input[type="checkbox"] { accent-color: var(--accent-bar); }
 #rt-menu .rt-menu-note { color: var(--dim); font-size: 11px; line-height: 1.45; padding: 2px 2px 0; }
+/* v2 full-parity controls: button rows (Return live / Whole session /
+   Recalibrate / Clear history), ± steppers and the live dynamic read-outs
+   (grouping, auto min, not-plotted, recorded span). */
+#rt-menu { max-height: calc(100vh - 120px); overflow-y: auto; }
+#rt-menu .rt-menu-row { display: flex; align-items: center; gap: 6px; padding: 3px 2px; }
+#rt-menu .rt-menu-row.hidden { display: none; }
+#rt-menu .rt-menu-btn {
+  font-family: var(--mono); font-size: 11px; color: var(--text);
+  background: var(--hover); border: 1px solid var(--edge); border-radius: 3px;
+  padding: 3px 9px; cursor: pointer; white-space: nowrap;
+}
+#rt-menu .rt-menu-btn:hover { border-color: var(--accent-bar); color: var(--accent-bar); }
+#rt-menu .rt-menu-btn-sm { padding: 1px 7px; font-size: 10.5px; }
+#rt-menu .rt-menu-dyn {
+  font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+  padding: 2px 2px 0; line-height: 1.4;
+}
+#rt-menu .rt-menu-dyn.hidden { display: none; }
+#rt-menu .rt-menu-warn { color: #c9a227; }

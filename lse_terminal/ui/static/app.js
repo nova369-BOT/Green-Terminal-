@@ -13472,9 +13472,12 @@ function loadOrderFlowSymbol(sym) {
   if (fr && ofState.ready) {
     if (!cur || cur.symbol !== vsym) {
       // ?watchlist=0 — GT owns the watchlist (unified market list in the
-      // sidebar); the embedded terminal must not show a second one. The
-      // engine carries the flag across its own symbol/venue navigations.
-      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0";
+      // sidebar); the embedded terminal must not show a second one.
+      // &rt=0 — Real-time now lives natively on the LSE chart (toolbar
+      // toggle), so the dock's duplicate RT mode is removed (migration
+      // rule: port a view, then delete it from the dock). The engine
+      // carries both flags across its own symbol/venue navigations.
+      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0";
       // Fresh boot: the engine starts on its own default timeframe, so the
       // bridge pushes the chart's timeframe once the runtime is up.
       ofState.lastTfSec = 0;
@@ -20893,15 +20896,29 @@ try {
 })();
 
 // ── Real-time order-flow toggle (shell side) ────────────────────────────────
+// Full parity with the EdgeDepth RT settings panel: VIEW / DEPTH / TRADES /
+// LIQUIDATIONS / SESSION, including the live read-outs (grouping, auto min,
+// not-plotted, recorded span) polled from the chart's window.__gtRtInfo.
 const RT_LS_KEY = "gt-rt-view";
 function rtLoadSettings() {
   try { return JSON.parse(localStorage.getItem(RT_LS_KEY) || "{}") || {}; }
   catch (e) { return {}; }
 }
 const rtState = Object.assign(
-  { enabled: false, heatmap: true, ladder: true, bubbles: true, tradeLine: true, pause: false },
+  {
+    enabled: false, pause: false, candles1s: false, tradeLine: true,
+    ladder: true, follow: true, autoFit: false,
+    heatmap: true, extend: true,
+    bubbles: true, autoSize: true, minVal: 10000,
+    liqs: true, liqMin: 0, strip: true,
+    recalNonce: 0, clearNonce: 0, prevTf: null,
+  },
   rtLoadSettings()
 );
+// Nonces are per-session commands, never replayed from storage — a persisted
+// clearNonce would wipe the recording on every boot.
+rtState.recalNonce = 0;
+rtState.clearNonce = 0;
 function rtSave() { try { localStorage.setItem(RT_LS_KEY, JSON.stringify(rtState)); } catch (e) {} }
 function rtPush() {
   if (window.LSEChart && typeof window.LSEChart.update === "function") {
@@ -20911,8 +20928,78 @@ function rtPush() {
         heatmap: !!rtState.heatmap, ladder: !!rtState.ladder,
         bubbles: !!rtState.bubbles, tradeLine: !!rtState.tradeLine,
         pause: !!rtState.pause,
+        followPrice: !!rtState.follow, autoFit: !!rtState.autoFit,
+        extendDepth: !!rtState.extend,
+        liqs: !!rtState.liqs, liqMinNotional: Number(rtState.liqMin) || 0,
+        activityStrip: !!rtState.strip,
+        bubbleAuto: !!rtState.autoSize,
+        bubbleMinValue: Math.max(1, Number(rtState.minVal) || 10000),
+        recalNonce: Number(rtState.recalNonce) || 0,
+        clearNonce: Number(rtState.clearNonce) || 0,
       },
     });
+  }
+}
+// "1s candles": the LSE chart already builds native 1s bars, so parity here
+// is a timeframe switch, not a second candle engine (dedup doctrine). The
+// previous timeframe is remembered and restored when the box is unticked.
+function rtApply1sCandles(on) {
+  try {
+    if (on) {
+      if (state.timeframe !== "1s") {
+        rtState.prevTf = state.timeframe;
+        state.timeframe = "1s";
+        renderTimeframes(); loadChart(); saveShellState();
+      }
+    } else if (rtState.prevTf && state.timeframe === "1s") {
+      state.timeframe = rtState.prevTf;
+      rtState.prevTf = null;
+      renderTimeframes(); loadChart(); saveShellState();
+    }
+  } catch (e) { console.error("rt 1s candles", e); }
+}
+function rtFmtNum(v) {
+  if (!isFinite(v)) return "—";
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "k";
+  return String(Math.round(v * 100) / 100);
+}
+// Live read-outs while the menu is open — values come from the chart's
+// renderer/state via window.__gtRtInfo (real numbers or honest dashes).
+function rtRefreshDynamicLabels() {
+  const info = window.__gtRtInfo || null;
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  if (!info) {
+    set("rt-dyn-grouping", "Automatic grouping: — (RT view off)");
+    set("rt-dyn-automin", "min —");
+    set("rt-dyn-notplotted", "Not plotted as bubbles: 0 records");
+    set("rt-dyn-recorded", "Recorded 0.0 min · 0.00 MiB");
+    set("rt-dyn-liqsource", "");
+    const d = document.getElementById("rt-dyn-dropped");
+    if (d) d.classList.add("hidden");
+    return;
+  }
+  set("rt-dyn-grouping", "Automatic grouping: " +
+    (info.grouping && info.grouping !== "—"
+      ? info.grouping + " price units per row" : "—"));
+  set("rt-dyn-automin", "min " + rtFmtNum(Number(info.autoMin) || 0) +
+    (info.autoSettled ? "" : " (warming up)"));
+  set("rt-dyn-notplotted",
+    "Not plotted as bubbles: " + (Number(info.notPlotted) || 0) + " records");
+  set("rt-dyn-recorded",
+    "Recorded " + ((Number(info.recordedMs) || 0) / 60000).toFixed(1) +
+    " min · " + ((Number(info.bytes) || 0) / 1048576).toFixed(2) + " MiB");
+  set("rt-dyn-liqsource", info.liqSource ? "Source: " + info.liqSource : "");
+  const dropped = (Number(info.colsDropped) || 0) + (Number(info.tradesDropped) || 0);
+  const d = document.getElementById("rt-dyn-dropped");
+  if (d) {
+    if (dropped > 0) {
+      d.textContent = "Capture overload: " + dropped + " records missed; gaps kept";
+      d.classList.remove("hidden");
+    } else d.classList.add("hidden");
   }
 }
 function setupRtToggle() {
@@ -20925,6 +21012,7 @@ function setupRtToggle() {
     rtState.enabled = !rtState.enabled;
     paint(); rtSave(); rtPush();
   });
+  let dynTimer = null;
   gear.addEventListener("click", (e) => {
     e.stopPropagation();
     const opening = menu.classList.contains("hidden");
@@ -20934,29 +21022,102 @@ function setupRtToggle() {
       const r = gear.getBoundingClientRect();
       menu.style.top = (r.bottom + 6) + "px";
       menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 310)) + "px";
-    }
+      rtRefreshDynamicLabels();
+      if (dynTimer) clearInterval(dynTimer);
+      dynTimer = setInterval(rtRefreshDynamicLabels, 1000);
+    } else if (dynTimer) { clearInterval(dynTimer); dynTimer = null; }
     menu.classList.toggle("hidden");
   });
   document.addEventListener("click", (e) => {
     if (!menu.classList.contains("hidden") &&
         !menu.contains(e.target) && e.target !== gear) {
       menu.classList.add("hidden");
+      if (dynTimer) { clearInterval(dynTimer); dynTimer = null; }
     }
   });
   const opts = [
     ["rt-opt-pause", "pause"], ["rt-opt-tradeline", "tradeLine"],
     ["rt-opt-heatmap", "heatmap"], ["rt-opt-ladder", "ladder"],
-    ["rt-opt-bubbles", "bubbles"],
+    ["rt-opt-bubbles", "bubbles"], ["rt-opt-follow", "follow"],
+    ["rt-opt-autofit", "autoFit"], ["rt-opt-extend", "extend"],
+    ["rt-opt-liqs", "liqs"], ["rt-opt-strip", "strip"],
+    ["rt-opt-autosize", "autoSize"], ["rt-opt-1s", "candles1s"],
   ];
+  const syncRows = () => {
+    const mv = document.getElementById("rt-minval-row");
+    if (mv) mv.classList.toggle("hidden", !!rtState.autoSize);
+    const am = document.getElementById("rt-dyn-automin");
+    if (am) am.classList.toggle("hidden", !rtState.autoSize);
+    const rc = document.getElementById("rt-btn-recal");
+    if (rc) rc.classList.toggle("hidden", !rtState.autoSize);
+    const lm = document.getElementById("rt-liqmin-row");
+    if (lm) lm.classList.toggle("hidden", !rtState.liqs);
+  };
   for (const [id, key] of opts) {
     const box = document.getElementById(id);
     if (!box) continue;
     box.checked = !!rtState[key];
     box.addEventListener("change", () => {
       rtState[key] = !!box.checked;
-      rtSave(); rtPush();
+      if (key === "candles1s") rtApply1sCandles(rtState.candles1s);
+      // Follow price and Auto-fit are alternatives in effect (auto-fit wins
+      // while both are on, like the original's linked checkboxes).
+      syncRows(); rtSave(); rtPush();
     });
   }
+  // VIEW buttons: Return live = back to the live edge, following price.
+  // Whole session = frame everything retained this session.
+  const liveBtn = document.getElementById("rt-btn-live");
+  if (liveBtn) liveBtn.addEventListener("click", () => {
+    try { window.LSEChart.goToLatest(); } catch (e) { console.error("rt return live", e); }
+  });
+  const sessBtn = document.getElementById("rt-btn-session");
+  if (sessBtn) sessBtn.addEventListener("click", () => {
+    try {
+      const candles = window.LSEChart.getLoadedCandles() || [];
+      if (!candles.length) return;
+      const info = window.__gtRtInfo || {};
+      const recMs = Number(info.recordedMs) || 0;
+      let start = 0;
+      if (recMs > 0) {
+        const cutoff = candles[candles.length - 1].time - recMs;
+        start = candles.length - 1;
+        while (start > 0 && candles[start - 1].time >= cutoff) start--;
+      }
+      window.LSEChart.fitIndexRange(start, candles.length - 1);
+    } catch (e) { console.error("rt whole session", e); }
+  });
+  // TRADES: Recalibrate re-runs the auto-size percentile from current prints.
+  const recalBtn = document.getElementById("rt-btn-recal");
+  if (recalBtn) recalBtn.addEventListener("click", () => {
+    rtState.recalNonce = (Number(rtState.recalNonce) || 0) + 1;
+    rtSave(); rtPush();
+  });
+  // SESSION: Clear history wipes server + client buffers; recording continues.
+  const clearBtn = document.getElementById("rt-btn-clear");
+  if (clearBtn) clearBtn.addEventListener("click", () => {
+    rtState.clearNonce = (Number(rtState.clearNonce) || 0) + 1;
+    rtSave(); rtPush();
+  });
+  // ± steppers (old-PowerShell-simple, no free-text field to mis-parse).
+  const stepper = (decId, incId, valId, key, step, floor) => {
+    const dec = document.getElementById(decId);
+    const inc = document.getElementById(incId);
+    const out = document.getElementById(valId);
+    const show = () => { if (out) out.textContent = rtFmtNum(Number(rtState[key]) || 0); };
+    if (dec) dec.addEventListener("click", () => {
+      rtState[key] = Math.max(floor, (Number(rtState[key]) || 0) - step);
+      show(); rtSave(); rtPush();
+    });
+    if (inc) inc.addEventListener("click", () => {
+      rtState[key] = (Number(rtState[key]) || 0) + step;
+      show(); rtSave(); rtPush();
+    });
+    show();
+  };
+  stepper("rt-minval-dec", "rt-minval-inc", "rt-minval", "minVal", 1000, 1);
+  stepper("rt-liqmin-dec", "rt-liqmin-inc", "rt-liqmin", "liqMin", 100, 0);
+  syncRows();
   paint();
   // Re-apply the saved state once the chart is mounted (update merges, so
   // this never clobbers symbol/candles the shell pushed meanwhile).

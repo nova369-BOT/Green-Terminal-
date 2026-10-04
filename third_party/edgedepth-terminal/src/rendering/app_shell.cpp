@@ -14,6 +14,7 @@
 #include "rendering/theme.h"
 #include "rendering/layout.h"
 #include "core/workspace_manager.h"
+#include "core/url_router.h"
 #include "replayer/replay_manager.h"
 #include "core/symbol_metadata.h"
 #include "core/ticker_manager.h"
@@ -719,6 +720,9 @@ namespace {
         const int current_tf = static_cast<int>(cur);
         const bool realtime = chart && chart->rt_mode();
         const bool rt_locked = chart && chart->rt_mode_locked();
+        // ?rt=0 (Green Terminal dock embed): the host chart owns Real-time
+        // now, so the pill is not drawn at all (set_rt_mode also refuses).
+        const bool rt_hidden = url_rt_disabled();
         const bool compact = ImGui::GetContentRegionAvail().x < 760.0f;
         const std::span<const int> visible_favs = compact
             ? std::span<const int>(&current_tf, 1) : std::span<const int>(g_tf_favs);
@@ -734,7 +738,7 @@ namespace {
         const float rt_w = rt_padx + rt_dot + rt_dot_gap + rt_label_w + rt_trail_w + rt_padx;
         float total = caretw + 1.0f;
         for (int sec : visible_favs) total += ImGui::CalcTextSize(tf_label(sec)).x + padx * 2.0f;
-        total += rt_gap + rt_w;
+        if (!rt_hidden) total += rt_gap + rt_w;
         const ImVec2 p0 = ImGui::GetCursorScreenPos();
         // Flat favourites share the toolbar surface; selection carries the accent.
 
@@ -791,6 +795,7 @@ namespace {
         //          (set_rt_mode owns that gate, so replay and local packs
         //          stay open without a second copy of the rule here).
         const float rx = x + rt_gap;
+        if (!rt_hidden) {
         const ImVec2 rp0(rx + 3.0f, p0.y + 3.0f), rp1(rx + rt_w - 3.0f, p0.y + h - 3.0f);
         ImGui::SetCursorScreenPos(ImVec2(rx, p0.y));
         const bool rt_clicked = ImGui::InvisibleButton("##rt_pill", ImVec2(rt_w, h));
@@ -837,6 +842,7 @@ namespace {
             if (on_caret) ImGui::OpenPopup("##rt_settings");
             else          chart->toggle_rt_mode();
         }
+        }  // !rt_hidden — pill block
         ImGui::PopFont();
 
         // layout anchor so the next SameLine item flows from the bar's right edge

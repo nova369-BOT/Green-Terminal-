@@ -367,8 +367,14 @@ const ProChart: React.FC<ProChartProps> = ({
   // honest venue state (LIVE / unreachable / no crypto venue), always shown.
   const [rtColumns, setRtColumns] = useState<any[]>([]);
   const [rtTrades, setRtTrades] = useState<any[]>([]);
+  const [rtLiqs, setRtLiqs] = useState<any[]>([]);
   const [rtStatus, setRtStatus] = useState<any>(null);
-  const rtCursorRef = useRef({ cols: 0, trades: 0 });
+  const rtCursorRef = useRef({ cols: 0, trades: 0, liqs: 0 });
+  // Sticky auto-calibrated bubble minimum ("Auto size min N"): calibrated once
+  // per symbol from real prints, held until the user hits Recalibrate
+  // (recalNonce changes) or the symbol changes.
+  const rtBubbleMinRef = useRef<{ key: string; value: number | null }>({ key: '', value: null });
+  const rtClearNonceRef = useRef<number>(0);
   const hoveredCandleIndexRef = useRef<number | null>(null);
   const crosshairRAFRef = useRef<number | null>(null);
   // Economic event marker hover + click-to-pin tracking
@@ -741,8 +747,8 @@ const ProChart: React.FC<ProChartProps> = ({
   // resets all order-flow state (doctrine): buffers, cursors and status are
   // cleared before the first fetch for the new symbol.
   useEffect(() => {
-    setRtColumns([]); setRtTrades([]); setRtStatus(null);
-    rtCursorRef.current = { cols: 0, trades: 0 };
+    setRtColumns([]); setRtTrades([]); setRtLiqs([]); setRtStatus(null);
+    rtCursorRef.current = { cols: 0, trades: 0, liqs: 0 };
     if (!rtEnabled || !symbol) return;
     let stopped = false;
     const paused = () => !!(rtSettings && rtSettings.pause);
@@ -753,6 +759,7 @@ const ProChart: React.FC<ProChartProps> = ({
         u.searchParams.set('symbol', symbol);
         u.searchParams.set('cols_after', String(rtCursorRef.current.cols));
         u.searchParams.set('trades_after', String(rtCursorRef.current.trades));
+        u.searchParams.set('liqs_after', String(rtCursorRef.current.liqs));
         const res = await fetch(u.toString());
         if (!res.ok) throw new Error(`rt flow: HTTP ${res.status}`);
         const j = await res.json();
@@ -766,6 +773,10 @@ const ProChart: React.FC<ProChartProps> = ({
           rtCursorRef.current.trades = j.trades[j.trades.length - 1].t;
           setRtTrades((prev) => [...prev, ...j.trades].slice(-8000));
         }
+        if (Array.isArray(j.liqs) && j.liqs.length > 0) {
+          rtCursorRef.current.liqs = j.liqs[j.liqs.length - 1].t;
+          setRtLiqs((prev) => [...prev, ...j.liqs].slice(-1000));
+        }
       } catch (err) {
         // Honest failure state — the chip shows the real error, nothing fake.
         if (!stopped) setRtStatus({ flow: 'error', error: String(err) });
@@ -775,6 +786,19 @@ const ProChart: React.FC<ProChartProps> = ({
     const interval = setInterval(tick, 1000);
     return () => { stopped = true; clearInterval(interval); };
   }, [symbol, rtEnabled, rtSettings?.pause]);
+
+  // "Clear history" (SESSION section): wipe the server recording AND the
+  // client buffers, keep recording live. Nonce-driven so repeat clicks work.
+  useEffect(() => {
+    const nonce = Number((rtSettings as any)?.clearNonce) || 0;
+    if (nonce === rtClearNonceRef.current) return;
+    rtClearNonceRef.current = nonce;
+    if (!rtEnabled || !symbol || nonce === 0) return;
+    setRtColumns([]); setRtTrades([]); setRtLiqs([]);
+    rtCursorRef.current = { cols: 0, trades: 0, liqs: 0 };
+    fetch(`/api/rt/clear?symbol=${encodeURIComponent(symbol)}`, { method: 'POST' })
+      .catch(() => { /* next poll's chip shows any real connectivity error */ });
+  }, [(rtSettings as any)?.clearNonce, rtEnabled, symbol]);
 
   // Cleanup RAFs on unmount
   useEffect(() => {
@@ -1872,12 +1896,50 @@ const ProChart: React.FC<ProChartProps> = ({
     // whenever the mode is ON — honest about LIVE vs unreachable vs
     // "no crypto venue for this symbol".
     if (rtEnabled) {
-      renderRTView(heatmapCtx, rtColumns as any, rtTrades as any, {
-        heatmap: !rtSettings || rtSettings.heatmap !== false,
-        ladder: !rtSettings || rtSettings.ladder !== false,
-        bubbles: !rtSettings || rtSettings.bubbles !== false,
-        tradeLine: !rtSettings || rtSettings.tradeLine !== false,
+      const s: any = rtSettings || {};
+      // Sticky "Auto size min N": calibrate once from real prints, hold
+      // until Recalibrate (recalNonce) or a symbol change rotates the key.
+      const recalKey = `${symbol}:${Number(s.recalNonce) || 0}`;
+      if (rtBubbleMinRef.current.key !== recalKey) {
+        rtBubbleMinRef.current = { key: recalKey, value: null };
+      }
+      const info = renderRTView(heatmapCtx, rtColumns as any, rtTrades as any, rtLiqs as any, {
+        heatmap: s.heatmap !== false,
+        extendDepth: s.extendDepth !== false,
+        ladder: s.ladder !== false,
+        bubbles: s.bubbles !== false,
+        tradeLine: s.tradeLine !== false,
+        liqs: s.liqs !== false,
+        liqMinNotional: Number(s.liqMinNotional) || 0,
+        activityStrip: s.activityStrip !== false,
+        // "Auto size" ON (default): sticky 75th-percentile notional, held
+        // until Recalibrate. OFF: the user's manual "Minimum value".
+        bubbleMin: s.bubbleAuto === false
+          ? Math.max(1, Number(s.bubbleMinValue) || 10000)
+          : rtBubbleMinRef.current.value,
       }, rtStatus);
+      if (s.bubbleAuto !== false && rtBubbleMinRef.current.value == null
+          && rtTrades.length >= 32 && info.autoMin > 0) {
+        rtBubbleMinRef.current.value = info.autoMin;
+      }
+      // Live truths for the shell's RT settings menu (grouping, auto min,
+      // not-plotted count, recorded span/bytes, liq source, drops). Read-only
+      // channel; the shell polls it while the menu is open.
+      (window as any).__gtRtInfo = {
+        grouping: info.groupingLabel,
+        autoMin: rtBubbleMinRef.current.value ?? info.autoMin,
+        autoSettled: rtBubbleMinRef.current.value != null,
+        notPlotted: info.notPlotted,
+        recordedMs: rtStatus?.recorded_ms || 0,
+        bytes: rtStatus?.approx_bytes || 0,
+        liqSource: rtStatus?.liq_source || null,
+        colsDropped: rtStatus?.cols_dropped || 0,
+        tradesDropped: rtStatus?.trades_dropped || 0,
+        venue: rtStatus?.venue || null,
+        connected: !!rtStatus?.connected,
+        trades: rtTrades.length,
+        liqs: rtLiqs.length,
+      };
     }
 
     // ── Trading session boxes (Tokyo, London, New York) ──
@@ -5461,7 +5523,7 @@ const ProChart: React.FC<ProChartProps> = ({
 
     // Drawing preview shading and badges have been moved to DOM overlays
     // in ChartDrawingOverlay to avoid canvas redraw latency.
-  }, [dimensions, candles, livePrice, viewState, colors, indicatorData, indicatorHeightRatio, getVisibleCandles, getPriceRange, formatPrice, formatTime, formatDate, formatWeekday, pulsePhase, dpr, countdown, indicators, chartType, priceToY, economicEvents, l2DepthData, clickedIndicatorKey, drawings, selectedDrawingId, rtEnabled, rtSettings, rtColumns, rtTrades, rtStatus]);
+  }, [dimensions, candles, livePrice, viewState, colors, indicatorData, indicatorHeightRatio, getVisibleCandles, getPriceRange, formatPrice, formatTime, formatDate, formatWeekday, pulsePhase, dpr, countdown, indicators, chartType, priceToY, economicEvents, l2DepthData, clickedIndicatorKey, drawings, selectedDrawingId, rtEnabled, rtSettings, rtColumns, rtTrades, rtLiqs, rtStatus]);
 
   // Store drawChart in a ref for stable access during scroll.
   // Updated synchronously during render to ensure wheel RAFs firing right
@@ -8084,6 +8146,30 @@ const ProChart: React.FC<ProChartProps> = ({
     if (disableAutoFollow) return; // replay owns its own position
     setViewState(prev => ({ ...prev, autoFollowLatest: true }));
   }, [followLatest, disableAutoFollow]);
+
+  // ── RT view: "Follow price" + "Auto-fit visible history" (EdgeDepth RT) ──
+  // Follow price keeps the live edge pinned (auto-follow) as new 1 Hz columns
+  // land; Auto-fit continuously frames the whole recorded session — from the
+  // candle holding the first recorded column to the newest bar — reusing the
+  // exact fit math above. Both act only while the RT view is on and are
+  // re-evaluated per new column, so they track the session as it grows.
+  useEffect(() => {
+    if (!rtEnabled || rtColumns.length === 0) return;
+    const s: any = rtSettings || {};
+    if (s.autoFit) {
+      const chartWidth = dimensions.width - PRICE_AXIS_WIDTH;
+      if (chartWidth <= 0 || candles.length === 0) return;
+      const t0 = Number(rtColumns[0].t) || 0;
+      let startIndex = candles.length - 1;
+      while (startIndex > 0 && candles[startIndex - 1].time >= t0) startIndex--;
+      const count = Math.max(1, candles.length - startIndex);
+      let cw = (chartWidth * 0.92) / (count * (1 + CANDLE_GAP_RATIO));
+      cw = Math.min(MAX_CANDLE_WIDTH, Math.max(FIT_MIN_CANDLE_WIDTH, cw));
+      setViewState(prev => ({ ...prev, startIndex, candleWidth: cw, autoFollowLatest: false }));
+    } else if (s.followPrice) {
+      setViewState(prev => (prev.autoFollowLatest ? prev : { ...prev, autoFollowLatest: true }));
+    }
+  }, [rtColumns, rtEnabled, rtSettings?.followPrice, rtSettings?.autoFit]);
 
   useEffect(() => {
     // Skip during active scroll: the scroll RAF (wheelRAFRef) already calls

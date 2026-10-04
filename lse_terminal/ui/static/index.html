@@ -360,23 +360,57 @@ def my_ind(df, length=20):
   <span id="rt-slot">
     <button id="rt-toggle" title="Real-time order flow — live depth heatmap, trade-price line and trade bubbles from a crypto venue. Honest 'no flow' on non-crypto symbols.">Real-time</button
     ><button id="rt-gear" title="Real-time settings" aria-haspopup="true">▾</button>
+    <!-- Real-time settings — same sections, same order, same wording as the
+         EdgeDepth RT panel (VIEW / DEPTH / TRADES / LIQUIDATIONS / SESSION).
+         Dynamic lines (grouping, auto min, not-plotted, recorded) are filled
+         from the chart's live __gtRtInfo while the menu is open. -->
     <div id="rt-menu" class="hidden" role="menu">
       <div class="rt-menu-head">REAL-TIME SETTINGS</div>
       <div class="rt-menu-sec">VIEW</div>
       <label><input type="checkbox" id="rt-opt-pause"> Pause display</label>
+      <label title="One-second candles built from the broker feed, in place of the trade-price line. Uses the chart's own 1s timeframe (already native here)."><input type="checkbox" id="rt-opt-1s"> 1s candles</label>
       <label><input type="checkbox" id="rt-opt-tradeline" checked> Trade-price line</label>
+      <label title="Order book ladder on the chart's own price rows: resting depth from the live book."><input type="checkbox" id="rt-opt-ladder" checked> Depth ladder</label>
+      <label title="Keeps the live edge pinned as new flow lands. Drag the chart to stop following; re-tick to resume."><input type="checkbox" id="rt-opt-follow" checked> Follow price</label>
+      <label title="Fits the recorded session in the visible window, grouping price rows to stay readable."><input type="checkbox" id="rt-opt-autofit"> Auto-fit visible history</label>
+      <div class="rt-menu-row">
+        <button type="button" id="rt-btn-live" class="rt-menu-btn" title="Back to the live edge, following price.">Return live</button>
+        <button type="button" id="rt-btn-session" class="rt-menu-btn" title="Zoom out to everything retained this session.">Whole session</button>
+      </div>
       <div class="rt-menu-sec">DEPTH</div>
       <label><input type="checkbox" id="rt-opt-heatmap" checked> Depth heatmap</label>
-      <label><input type="checkbox" id="rt-opt-ladder" checked> Depth ladder</label>
+      <label title="Projects the last sampled book into the right margin. A held current book — not future orders or recorded history."><input type="checkbox" id="rt-opt-extend" checked> Extend current depth</label>
+      <div class="rt-menu-dyn" id="rt-dyn-grouping">Automatic grouping: —</div>
       <div class="rt-menu-sec">TRADES</div>
       <label><input type="checkbox" id="rt-opt-bubbles" checked> Trade bubbles</label>
-      <div class="rt-menu-note">Bubble size auto-calibrates to the top decile
-        of recorded prints.</div>
+      <div class="rt-menu-row">
+        <label style="flex:1" title="75th percentile of received trade values; settles after 32 records, then stays fixed until Recalibrate."><input type="checkbox" id="rt-opt-autosize" checked> Auto size</label>
+        <span class="rt-menu-dyn" id="rt-dyn-automin">min —</span>
+        <button type="button" id="rt-btn-recal" class="rt-menu-btn rt-menu-btn-sm">Recalibrate</button>
+      </div>
+      <div class="rt-menu-row hidden" id="rt-minval-row">
+        <span class="rt-menu-dyn">Minimum value</span>
+        <button type="button" id="rt-minval-dec" class="rt-menu-btn rt-menu-btn-sm">−</button>
+        <span class="rt-menu-dyn" id="rt-minval">10000</span>
+        <button type="button" id="rt-minval-inc" class="rt-menu-btn rt-menu-btn-sm">+</button>
+      </div>
+      <div class="rt-menu-dyn" id="rt-dyn-notplotted" title="Prints under the size threshold; the trade-price line and activity strip still include them.">Not plotted as bubbles: 0 records</div>
       <div class="rt-menu-sec">LIQUIDATIONS</div>
-      <div class="rt-menu-note">Honest gap: Binance spot and Hyperliquid
-        publish no public liquidation feed on this route. Reported
-        liquidations arrive with the Bybit flow feed.</div>
-      <div class="rt-menu-sec">DATA</div>
+      <label title="Diamonds at reported liquidations. Reports are venue truth only; missing liquidations are not estimated."><input type="checkbox" id="rt-opt-liqs" checked> Reported liquidations</label>
+      <div class="rt-menu-row" id="rt-liqmin-row">
+        <span class="rt-menu-dyn">Minimum notional</span>
+        <button type="button" id="rt-liqmin-dec" class="rt-menu-btn rt-menu-btn-sm">−</button>
+        <span class="rt-menu-dyn" id="rt-liqmin">0</span>
+        <button type="button" id="rt-liqmin-inc" class="rt-menu-btn rt-menu-btn-sm">+</button>
+      </div>
+      <label><input type="checkbox" id="rt-opt-strip" checked> Activity strip</label>
+      <div class="rt-menu-dyn" id="rt-dyn-liqsource"></div>
+      <div class="rt-menu-sec">SESSION</div>
+      <div class="rt-menu-dyn" id="rt-dyn-recorded">Recorded 0.0 min · 0.00 MiB</div>
+      <div class="rt-menu-dyn rt-menu-warn hidden" id="rt-dyn-dropped"></div>
+      <div class="rt-menu-row">
+        <button type="button" id="rt-btn-clear" class="rt-menu-btn" title="Clears the recorded session; recording continues live.">Clear history</button>
+      </div>
       <div class="rt-menu-note">Flow is recorded live from Binance (or
         Hyperliquid when Binance is unreachable). Chart candles stay on the
         broker feed — flow never feeds candles. Non-crypto symbols show an

@@ -163,6 +163,18 @@ export interface ProChartProps {
   scrollOffsetRef?: React.MutableRefObject<number>; // Scroll offset in pixels for CSS transform sync
   optionsPdfEnabled?: boolean; // Whether to show the Options PDF probability cloud
   heatmapEnabled?: boolean; // Whether to show the Order Book L2 Heatmap
+  // Native Real-time order-flow view (EdgeDepth RT port). Flow data only —
+  // candles never come from it (data doctrine). Toggles mirror the original
+  // RT settings panel: VIEW / DEPTH / TRADES / LIQUIDATIONS / SESSION.
+  rtEnabled?: boolean;
+  rtSettings?: {
+    heatmap?: boolean; ladder?: boolean; bubbles?: boolean;
+    tradeLine?: boolean; pause?: boolean;
+    followPrice?: boolean; autoFit?: boolean; extendDepth?: boolean;
+    liqs?: boolean; liqMinNotional?: number; activityStrip?: boolean;
+    bubbleAuto?: boolean; bubbleMinValue?: number;
+    recalNonce?: number; clearNonce?: number;
+  } | null;
   externalDimensions?: { width: number; height: number }; // Override internal ResizeObserver with explicit dimensions
   economicEvents?: EconomicEvent[]; // Economic events to display as vertical markers
   positionLines?: Array<{ id: string; price: number; side: 'buy' | 'sell'; quantity: number; symbol: string; pnl?: number; stopLoss?: number; takeProfit?: number }>;

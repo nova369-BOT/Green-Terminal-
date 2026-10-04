@@ -50,6 +50,11 @@ log = logging.getLogger(__name__)
 HL_WS_URL = "wss://api.hyperliquid.xyz/ws"
 HL_INFO_URL = "https://api.hyperliquid.xyz/info"
 BINANCE_PING_URL = "https://api.binance.com/api/v3/ping"
+# Reported liquidations: Binance spot has none, but the SAME coin's perp on
+# Binance futures publishes forced orders — real reports, clearly labelled as
+# the perp market's. Hyperliquid has no public liquidation feed (repo rule) —
+# that gap is reported honestly, never filled with guesses.
+BINANCE_FUTURES_WS = "wss://fstream.binance.com/ws"
 
 # Book considered stale (connection trouble) after this many ms without an
 # update — sampling pauses and status turns honest-amber.
@@ -58,6 +63,7 @@ SAMPLE_SECONDS = 1.0
 DEPTH_LEVELS = 60          # price levels kept per side per column
 COLUMN_RING = 900          # ≈15 minutes of 1 Hz columns
 TRADE_RING = 20_000
+LIQ_RING = 5_000
 SESSION_IDLE_STOP_S = 600  # stop recording when nobody polled for 10 min
 
 # Coins with a real market on the venue chain. The list is deliberately
@@ -132,6 +138,30 @@ def parse_hl_l2book(data: dict) -> tuple[dict, dict, int]:
     return bids, asks, int(data.get("time") or 0)
 
 
+def parse_binance_force_order(raw: dict) -> Optional[dict]:
+    """Binance futures forceOrder event → normalized liquidation dict.
+
+    ``{"e":"forceOrder","o":{"s":"BTCUSDT","S":"SELL","q":"0.014",
+    "ap":"84321.1","T":1700000000000,...}}``. S is the LIQUIDATION order's
+    side (provider truth): SELL = a long was liquidated, BUY = a short was.
+    """
+    o = raw.get("o") or {}
+    try:
+        qty = float(o.get("q") or 0)
+        price = float(o.get("ap") or o.get("p") or 0)
+    except (TypeError, ValueError):
+        return None
+    if qty <= 0 or price <= 0:
+        return None
+    return {
+        "t": int(o.get("T") or 0),
+        "p": price,
+        "q": qty,
+        "side": "sell" if (o.get("S") == "SELL") else "buy",
+        "notional": qty * price,
+    }
+
+
 def parse_hl_trades(data: list) -> list[dict]:
     """Hyperliquid trades message → normalized trade dicts.
 
@@ -179,12 +209,28 @@ class RTSession:
         self.error: Optional[str] = None
         self.columns: Deque[dict] = deque(maxlen=COLUMN_RING)
         self.trades: Deque[dict] = deque(maxlen=TRADE_RING)
+        self.liqs: Deque[dict] = deque(maxlen=LIQ_RING)
         self.book_bids: dict = {}
         self.book_asks: dict = {}
         self.book_at_ms: int = 0
         self.last_poll = time.time()
+        self.started_ms = _now_ms()
+        # Honest capture accounting: ring overflow DROPS the oldest records.
+        # The UI shows the real count instead of pretending nothing was lost.
+        self.cols_dropped = 0
+        self.trades_dropped = 0
         self._tasks: list[asyncio.Task] = []
         self._started = False
+
+    def clear(self) -> None:
+        """User-requested Clear history: recorded data goes, the live
+        connection stays (the session keeps recording from now)."""
+        self.columns.clear()
+        self.trades.clear()
+        self.liqs.clear()
+        self.cols_dropped = 0
+        self.trades_dropped = 0
+        self.started_ms = _now_ms()
 
     # ── lifecycle ────────────────────────────────────────────────────────
     def ensure_started(self) -> None:
@@ -201,6 +247,12 @@ class RTSession:
     @property
     def connected(self) -> bool:
         return bool(self.venue) and (_now_ms() - self.book_at_ms) < STALE_MS
+
+    def _push_trades(self, trades: list[dict]) -> None:
+        for tr in trades:
+            if len(self.trades) == TRADE_RING:
+                self.trades_dropped += 1
+            self.trades.append(tr)
 
     # ── main driver: pick a reachable venue, then record ────────────────
     async def _run(self) -> None:
@@ -249,16 +301,21 @@ class RTSession:
                 continue
             col = build_column(self.book_bids, self.book_asks, _now_ms())
             if col is not None:
+                if len(self.columns) == COLUMN_RING:
+                    self.cols_dropped += 1
                 self.columns.append(col)
 
     # ── Binance spot: sequence-checked depth + aggTrade prints ──────────
     async def _run_binance(self) -> None:
         pair = binance_normalise_symbol(self.coin + "USDT")
-        depth = asyncio.get_running_loop().create_task(self._binance_depth(pair))
+        loop = asyncio.get_running_loop()
+        depth = loop.create_task(self._binance_depth(pair))
+        liqs = loop.create_task(self._binance_liquidations(pair))
         try:
             await self._binance_trades(pair)
         finally:
             depth.cancel()
+            liqs.cancel()
 
     async def _binance_depth(self, pair: str) -> None:
         async for ev in BinanceDepthStream(pair, levels=1000).events():
@@ -294,14 +351,38 @@ class RTSession:
                     backoff = 1.0
                     async for raw in sock:
                         tick = parse_agg_trade(json.loads(raw))
-                        self.trades.append({
+                        self._push_trades([{
                             "t": tick.time_ms, "p": tick.price,
                             "q": tick.size, "side": tick.side,
-                        })
+                        }])
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 log.warning("binance aggTrade %s reset: %s", pair, exc)
+                await asyncio.sleep(backoff)
+                backoff = min(30.0, backoff * 2)
+
+    async def _binance_liquidations(self, pair: str) -> None:
+        """Reported liquidations from the coin's Binance futures perp.
+
+        Real forced orders from the venue, labelled as the perp market's.
+        Spot has no liquidations; nothing is invented for it.
+        """
+        import websockets
+        url = f"{BINANCE_FUTURES_WS}/{pair.lower()}@forceOrder"
+        backoff = 1.0
+        while True:
+            try:
+                async with websockets.connect(url, ping_interval=20, close_timeout=5) as sock:
+                    backoff = 1.0
+                    async for raw in sock:
+                        liq = parse_binance_force_order(json.loads(raw))
+                        if liq is not None:
+                            self.liqs.append(liq)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("binance forceOrder %s reset: %s", pair, exc)
                 await asyncio.sleep(backoff)
                 backoff = min(30.0, backoff * 2)
 
@@ -331,7 +412,7 @@ class RTSession:
                             self.book_bids, self.book_asks, at = parse_hl_l2book(msg.get("data") or {})
                             self.book_at_ms = at or _now_ms()
                         elif channel == "trades":
-                            self.trades.extend(parse_hl_trades(msg.get("data") or []))
+                            self._push_trades(parse_hl_trades(msg.get("data") or []))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -340,10 +421,19 @@ class RTSession:
                 backoff = min(30.0, backoff * 2)
 
     # ── poll payload ─────────────────────────────────────────────────────
-    def payload(self, cols_after: float, trades_after: float) -> dict:
+    def payload(self, cols_after: float, trades_after: float,
+                liqs_after: float = 0.0) -> dict:
         self.last_poll = time.time()
         cols = [c for c in self.columns if c["t"] > cols_after]
         trds = [t for t in self.trades if t["t"] > trades_after][-4000:]
+        lqs = [x for x in self.liqs if x["t"] > liqs_after][-1000:]
+        # Session accounting (honest): real recorded span and a byte estimate
+        # of what is held, so the SESSION row shows the truth.
+        recorded_ms = 0
+        if self.columns:
+            recorded_ms = self.columns[-1]["t"] - self.columns[0]["t"]
+        approx_bytes = len(self.columns) * (DEPTH_LEVELS * 2 * 16 + 96) \
+            + len(self.trades) * 40 + len(self.liqs) * 48
         return {
             "flow": "ok" if self.venue else "error",
             "coin": self.coin,
@@ -352,6 +442,16 @@ class RTSession:
             "error": self.error,
             "columns": cols,
             "trades": trds,
+            "liqs": lqs,
+            # Liquidation provenance, stated plainly: real reports from the
+            # Binance perp, or an honest "none published" on Hyperliquid.
+            "liq_source": ("binance-futures perp reports" if self.venue == "binance"
+                           else "none — Hyperliquid publishes no public liquidation feed"
+                           if self.venue == "hyperliquid" else None),
+            "recorded_ms": recorded_ms,
+            "approx_bytes": approx_bytes,
+            "cols_dropped": self.cols_dropped,
+            "trades_dropped": self.trades_dropped,
             "now": _now_ms(),
         }
 
@@ -367,7 +467,8 @@ class RTFlowManager:
         self.sessions: dict[str, RTSession] = {}
         self._gc_task: Optional[asyncio.Task] = None
 
-    async def poll(self, symbol: str, cols_after: float, trades_after: float) -> dict:
+    async def poll(self, symbol: str, cols_after: float, trades_after: float,
+                   liqs_after: float = 0.0) -> dict:
         coin = normalise_coin(symbol)
         if coin is None:
             return {
@@ -378,7 +479,7 @@ class RTFlowManager:
                     f"needs live venue depth and trades, and nothing is simulated "
                     f"in their place. Chart candles are unaffected."
                 ),
-                "columns": [], "trades": [], "now": _now_ms(),
+                "columns": [], "trades": [], "liqs": [], "now": _now_ms(),
             }
         if self._gc_task is None:
             self._gc_task = asyncio.get_running_loop().create_task(self._gc_loop())
@@ -386,7 +487,15 @@ class RTFlowManager:
         if sess is None:
             sess = self.sessions[coin] = RTSession(coin)
         sess.ensure_started()
-        return sess.payload(cols_after, trades_after)
+        return sess.payload(cols_after, trades_after, liqs_after)
+
+    def clear(self, symbol: str) -> dict:
+        """Clear history for the symbol's session (keeps recording live)."""
+        coin = normalise_coin(symbol)
+        sess = self.sessions.get(coin) if coin else None
+        if sess is not None:
+            sess.clear()
+        return {"cleared": bool(sess), "coin": coin}
 
     async def _gc_loop(self) -> None:
         while True:

@@ -109,6 +109,10 @@ export interface ChartProps {
   rtSettings?: {
     heatmap?: boolean; ladder?: boolean; bubbles?: boolean;
     tradeLine?: boolean; pause?: boolean;
+    followPrice?: boolean; autoFit?: boolean; extendDepth?: boolean;
+    liqs?: boolean; liqMinNotional?: number; activityStrip?: boolean;
+    bubbleAuto?: boolean; bubbleMinValue?: number;
+    recalNonce?: number; clearNonce?: number;
   } | null;
 }
 

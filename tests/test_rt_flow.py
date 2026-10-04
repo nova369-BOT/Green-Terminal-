@@ -122,3 +122,98 @@ def test_rt_flow_endpoint_non_crypto_is_honest():
     assert body["columns"] == [] and body["trades"] == []
     assert "no crypto venue" in body["reason"]
     assert "simulated" in body["reason"]  # the honesty sentence stays
+
+
+# ── v2 parity: liquidations, session accounting, clear ─────────────────────
+
+def test_parse_binance_force_order_provider_truth():
+    from lse_terminal.engine.rt_flow import parse_binance_force_order
+    # S is the LIQUIDATION order's side (provider truth): SELL = a long was
+    # liquidated → normalized side "sell"; BUY = a short was → "buy".
+    out = parse_binance_force_order({"e": "forceOrder", "o": {
+        "s": "BTCUSDT", "S": "SELL", "q": "0.5", "ap": "84000", "p": "83999",
+        "T": 1700000000000,
+    }})
+    assert out == {"t": 1700000000000, "p": 84000.0, "q": 0.5,
+                   "side": "sell", "notional": 42000.0}
+    out = parse_binance_force_order({"o": {
+        "S": "BUY", "q": "2", "ap": "", "p": "3000", "T": 5,
+    }})
+    assert out["side"] == "buy" and out["p"] == 3000.0  # ap fallback → p
+
+
+def test_parse_binance_force_order_rejects_garbage():
+    from lse_terminal.engine.rt_flow import parse_binance_force_order
+    assert parse_binance_force_order({}) is None
+    assert parse_binance_force_order({"o": {"S": "SELL", "q": "0", "ap": "1"}}) is None
+    assert parse_binance_force_order({"o": {"S": "SELL", "q": "x", "ap": "1"}}) is None
+
+
+def test_session_payload_v2_fields_and_clear():
+    from lse_terminal.engine.rt_flow import RTSession
+    s = RTSession("BTC")
+    s.venue = "binance"
+    s.columns.extend([
+        {"t": 1000, "bids_prices": [1.0], "bids_sizes": [2.0],
+         "asks_prices": [1.1], "asks_sizes": [3.0], "mid": 1.05},
+        {"t": 61000, "bids_prices": [1.0], "bids_sizes": [2.0],
+         "asks_prices": [1.1], "asks_sizes": [3.0], "mid": 1.05},
+    ])
+    s._push_trades([{"t": 500, "p": 1.0, "q": 1.0, "side": "buy"}])
+    s.liqs.append({"t": 700, "p": 1.0, "q": 9.0, "side": "sell", "notional": 9.0})
+    body = s.payload(0.0, 0.0, 0.0)
+    assert body["recorded_ms"] == 60000
+    assert body["approx_bytes"] > 0
+    assert body["cols_dropped"] == 0 and body["trades_dropped"] == 0
+    assert body["liqs"] == [{"t": 700, "p": 1.0, "q": 9.0,
+                             "side": "sell", "notional": 9.0}]
+    assert body["liq_source"] == "binance-futures perp reports"
+    # liqs_after cursor filters like the other cursors
+    assert s.payload(0.0, 0.0, 700)["liqs"] == []
+    # Clear history: data gone, accounting reset, connection fields untouched.
+    s.clear()
+    assert not s.columns and not s.trades and not s.liqs
+    assert s.venue == "binance"
+    body = s.payload(0.0, 0.0, 0.0)
+    assert body["recorded_ms"] == 0 and body["liqs"] == []
+
+
+def test_hl_session_states_liq_gap_honestly():
+    from lse_terminal.engine.rt_flow import RTSession
+    s = RTSession("BTC")
+    s.venue = "hyperliquid"
+    src = s.payload(0.0, 0.0, 0.0)["liq_source"]
+    assert "no public liquidation feed" in src
+
+
+def test_trade_ring_overflow_counts_drops():
+    from lse_terminal.engine import rt_flow as rf
+    s = rf.RTSession("BTC")
+    # Shrink the ring for the test (deque maxlen is fixed at construction).
+    import collections
+    s.trades = collections.deque(maxlen=3)
+    old_ring = rf.TRADE_RING
+    rf.TRADE_RING = 3
+    try:
+        s._push_trades([{"t": i, "p": 1.0, "q": 1.0, "side": "buy"}
+                        for i in range(5)])
+    finally:
+        rf.TRADE_RING = old_ring
+    assert len(s.trades) == 3
+    assert s.trades_dropped == 2  # honest loss count, not silence
+
+
+def test_rt_clear_endpoint():
+    from starlette.testclient import TestClient
+    from lse_terminal.engine.server import create_app
+
+    client = TestClient(create_app(), headers={"host": "127.0.0.1"})
+    # No session yet → honest cleared:false, never a fake success.
+    r = client.post("/api/rt/clear", params={"symbol": "DEMO:BTC"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["coin"] == "BTC"
+    assert body["cleared"] is False
+    # Non-crypto symbol → no coin, nothing cleared.
+    r = client.post("/api/rt/clear", params={"symbol": "DEMO:GOLD"})
+    assert r.json() == {"cleared": False, "coin": None}
