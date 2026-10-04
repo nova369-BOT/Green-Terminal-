@@ -20881,10 +20881,87 @@ try {
         window.LSEChart.mountGoToNavigator(gnEl);
       }
     } catch (e) { console.error("goto navigator", e); }
+    // Native Real-time order-flow view (EdgeDepth RT port — feature 1 of the
+    // one-by-one G-Flow→LSE migration). The shell owns the toolbar toggle and
+    // the EdgeDepth-style settings menu; the chart engine polls /api/rt/flow
+    // and draws. Settings persist in localStorage; LSEChart.update() merges
+    // partial props, so pushing only the rt keys never disturbs the chart.
+    try { setupRtToggle(); } catch (e) { console.error("rt toggle", e); }
   } else {
     setTimeout(mountLayoutBtn, 250);
   }
 })();
+
+// ── Real-time order-flow toggle (shell side) ────────────────────────────────
+const RT_LS_KEY = "gt-rt-view";
+function rtLoadSettings() {
+  try { return JSON.parse(localStorage.getItem(RT_LS_KEY) || "{}") || {}; }
+  catch (e) { return {}; }
+}
+const rtState = Object.assign(
+  { enabled: false, heatmap: true, ladder: true, bubbles: true, tradeLine: true, pause: false },
+  rtLoadSettings()
+);
+function rtSave() { try { localStorage.setItem(RT_LS_KEY, JSON.stringify(rtState)); } catch (e) {} }
+function rtPush() {
+  if (window.LSEChart && typeof window.LSEChart.update === "function") {
+    window.LSEChart.update({
+      rtEnabled: !!rtState.enabled,
+      rtSettings: {
+        heatmap: !!rtState.heatmap, ladder: !!rtState.ladder,
+        bubbles: !!rtState.bubbles, tradeLine: !!rtState.tradeLine,
+        pause: !!rtState.pause,
+      },
+    });
+  }
+}
+function setupRtToggle() {
+  const btn = document.getElementById("rt-toggle");
+  const gear = document.getElementById("rt-gear");
+  const menu = document.getElementById("rt-menu");
+  if (!btn || !gear || !menu) return;
+  const paint = () => btn.classList.toggle("rt-on", !!rtState.enabled);
+  btn.addEventListener("click", () => {
+    rtState.enabled = !rtState.enabled;
+    paint(); rtSave(); rtPush();
+  });
+  gear.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const opening = menu.classList.contains("hidden");
+    if (opening) {
+      // Fixed-position drop: anchor under the gear, clamped to the viewport
+      // (the toolbar scrolls horizontally, so absolute would be clipped).
+      const r = gear.getBoundingClientRect();
+      menu.style.top = (r.bottom + 6) + "px";
+      menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 310)) + "px";
+    }
+    menu.classList.toggle("hidden");
+  });
+  document.addEventListener("click", (e) => {
+    if (!menu.classList.contains("hidden") &&
+        !menu.contains(e.target) && e.target !== gear) {
+      menu.classList.add("hidden");
+    }
+  });
+  const opts = [
+    ["rt-opt-pause", "pause"], ["rt-opt-tradeline", "tradeLine"],
+    ["rt-opt-heatmap", "heatmap"], ["rt-opt-ladder", "ladder"],
+    ["rt-opt-bubbles", "bubbles"],
+  ];
+  for (const [id, key] of opts) {
+    const box = document.getElementById(id);
+    if (!box) continue;
+    box.checked = !!rtState[key];
+    box.addEventListener("change", () => {
+      rtState[key] = !!box.checked;
+      rtSave(); rtPush();
+    });
+  }
+  paint();
+  // Re-apply the saved state once the chart is mounted (update merges, so
+  // this never clobbers symbol/candles the shell pushed meanwhile).
+  if (rtState.enabled) rtPush();
+}
 
 // The help panel's code template renders through the same tokenizer as the
 // editors, so the reference reads as real code, not a grey slab (part of

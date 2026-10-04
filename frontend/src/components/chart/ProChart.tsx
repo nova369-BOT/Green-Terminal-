@@ -50,6 +50,7 @@ import { transformSeries } from '@/engine/transforms';
 import { toLineBreak, toKagi, toPointFigure } from '@/engine/priceCharts';
 import { renderGenericSubplots, renderPhase2Overlays, renderSubplotSelectionDots, type SubplotRenderContext } from "./renderers/subplotRenderer";
 import { renderOptionsPdfHeatmap, renderOrderBookHeatmap, renderL2DepthOverlay, type HeatmapRenderContext } from "./renderers/heatmapRenderer";
+import { renderRTView } from "./renderers/rtFlowRenderer";
 import { renderPositionLines, renderSelectedPositionSLTP, type PositionRenderContext } from "./renderers/positionRenderer";
 import { renderCrosshair, type CrosshairContext } from "./renderers/crosshairRenderer";
 
@@ -147,6 +148,10 @@ const ProChart: React.FC<ProChartProps> = ({
   scrollOffsetRef,
   optionsPdfEnabled = false,
   heatmapEnabled = false,
+  // Native Real-time order-flow view (EdgeDepth RT port): engine-recorded
+  // depth heatmap + venue trades. Flow data only — candles never come from it.
+  rtEnabled = false,
+  rtSettings = null,
   externalDimensions,
   economicEvents,
   positionLines,
@@ -357,6 +362,13 @@ const ProChart: React.FC<ProChartProps> = ({
 
   // Heatmap State
   const [heatmapData, setHeatmapData] = useState<any[]>([]);
+  // ── Native Real-time order-flow view (EdgeDepth RT port) ──
+  // Columns/trades recorded live by the engine (/api/rt/flow); status is the
+  // honest venue state (LIVE / unreachable / no crypto venue), always shown.
+  const [rtColumns, setRtColumns] = useState<any[]>([]);
+  const [rtTrades, setRtTrades] = useState<any[]>([]);
+  const [rtStatus, setRtStatus] = useState<any>(null);
+  const rtCursorRef = useRef({ cols: 0, trades: 0 });
   const hoveredCandleIndexRef = useRef<number | null>(null);
   const crosshairRAFRef = useRef<number | null>(null);
   // Economic event marker hover + click-to-pin tracking
@@ -723,6 +735,46 @@ const ProChart: React.FC<ProChartProps> = ({
     const interval = setInterval(fetchHeatmap, 5000); // Polling every 5s for now
     return () => clearInterval(interval);
   }, [symbol, heatmapEnabled]);
+
+  // ── Native Real-time order-flow poll (EdgeDepth RT port) ──
+  // 1 Hz incremental poll against the engine recorder. A symbol change fully
+  // resets all order-flow state (doctrine): buffers, cursors and status are
+  // cleared before the first fetch for the new symbol.
+  useEffect(() => {
+    setRtColumns([]); setRtTrades([]); setRtStatus(null);
+    rtCursorRef.current = { cols: 0, trades: 0 };
+    if (!rtEnabled || !symbol) return;
+    let stopped = false;
+    const paused = () => !!(rtSettings && rtSettings.pause);
+    const tick = async () => {
+      if (stopped || paused()) return;
+      try {
+        const u = new URL('/api/rt/flow', window.location.origin);
+        u.searchParams.set('symbol', symbol);
+        u.searchParams.set('cols_after', String(rtCursorRef.current.cols));
+        u.searchParams.set('trades_after', String(rtCursorRef.current.trades));
+        const res = await fetch(u.toString());
+        if (!res.ok) throw new Error(`rt flow: HTTP ${res.status}`);
+        const j = await res.json();
+        if (stopped) return;
+        setRtStatus(j);
+        if (Array.isArray(j.columns) && j.columns.length > 0) {
+          rtCursorRef.current.cols = j.columns[j.columns.length - 1].t;
+          setRtColumns((prev) => [...prev, ...j.columns].slice(-900));
+        }
+        if (Array.isArray(j.trades) && j.trades.length > 0) {
+          rtCursorRef.current.trades = j.trades[j.trades.length - 1].t;
+          setRtTrades((prev) => [...prev, ...j.trades].slice(-8000));
+        }
+      } catch (err) {
+        // Honest failure state — the chip shows the real error, nothing fake.
+        if (!stopped) setRtStatus({ flow: 'error', error: String(err) });
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => { stopped = true; clearInterval(interval); };
+  }, [symbol, rtEnabled, rtSettings?.pause]);
 
   // Cleanup RAFs on unmount
   useEffect(() => {
@@ -1812,6 +1864,20 @@ const ProChart: React.FC<ProChartProps> = ({
     // Live L2 depth overlay (horizontal bid/ask bars)
     if (l2DepthData && (l2DepthData.bids.length > 0 || l2DepthData.asks.length > 0)) {
       renderL2DepthOverlay(heatmapCtx, l2DepthData);
+    }
+
+    // ── Native Real-time order-flow view (EdgeDepth RT port) ──
+    // Depth heatmap columns + trade-price line + trade bubbles + depth
+    // ladder, from engine-recorded venue data. The status chip is drawn
+    // whenever the mode is ON — honest about LIVE vs unreachable vs
+    // "no crypto venue for this symbol".
+    if (rtEnabled) {
+      renderRTView(heatmapCtx, rtColumns as any, rtTrades as any, {
+        heatmap: !rtSettings || rtSettings.heatmap !== false,
+        ladder: !rtSettings || rtSettings.ladder !== false,
+        bubbles: !rtSettings || rtSettings.bubbles !== false,
+        tradeLine: !rtSettings || rtSettings.tradeLine !== false,
+      }, rtStatus);
     }
 
     // ── Trading session boxes (Tokyo, London, New York) ──
@@ -5395,7 +5461,7 @@ const ProChart: React.FC<ProChartProps> = ({
 
     // Drawing preview shading and badges have been moved to DOM overlays
     // in ChartDrawingOverlay to avoid canvas redraw latency.
-  }, [dimensions, candles, livePrice, viewState, colors, indicatorData, indicatorHeightRatio, getVisibleCandles, getPriceRange, formatPrice, formatTime, formatDate, formatWeekday, pulsePhase, dpr, countdown, indicators, chartType, priceToY, economicEvents, l2DepthData, clickedIndicatorKey, drawings, selectedDrawingId]);
+  }, [dimensions, candles, livePrice, viewState, colors, indicatorData, indicatorHeightRatio, getVisibleCandles, getPriceRange, formatPrice, formatTime, formatDate, formatWeekday, pulsePhase, dpr, countdown, indicators, chartType, priceToY, economicEvents, l2DepthData, clickedIndicatorKey, drawings, selectedDrawingId, rtEnabled, rtSettings, rtColumns, rtTrades, rtStatus]);
 
   // Store drawChart in a ref for stable access during scroll.
   // Updated synchronously during render to ensure wheel RAFs firing right

@@ -102,6 +102,14 @@ export interface ChartProps {
   scrollNonce?: number;
   fitRange?: { startIndex: number; endIndex: number; nonce: number } | null;
   followLatest?: { nonce: number } | null;
+  // Native Real-time order-flow view (EdgeDepth RT port). The shell owns the
+  // toolbar toggle + settings menu; the chart polls the engine recorder and
+  // draws. Flow data only — candles NEVER come from it (data doctrine).
+  rtEnabled?: boolean;
+  rtSettings?: {
+    heatmap?: boolean; ladder?: boolean; bubbles?: boolean;
+    tradeLine?: boolean; pause?: boolean;
+  } | null;
 }
 
 interface TerminalChartProps extends ChartProps {
@@ -778,6 +786,8 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           timeframe={timeframe}
           chartType={chartType}
           livePrice={livePrice}
+          rtEnabled={(props as any).rtEnabled ?? false}
+          rtSettings={(props as any).rtSettings ?? null}
           countdown={countdown}
           timezone={chartTimezone}
           // The terminal has no RightToolbar icon strip overlaying the price

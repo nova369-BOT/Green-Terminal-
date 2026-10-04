@@ -353,6 +353,36 @@ def my_ind(df, length=20):
        groups, with search + live descriptions. Mounted by the chart bundle
        (LSEChart.mountChartTypeMenu); drives state.chartType only. -->
   <span id="chart-type-slot" title="Chart / bar style"></span>
+  <!-- Native Real-time order-flow view (EdgeDepth RT port, feature 1 of the
+       one-by-one migration): live depth heatmap + trade bubbles drawn ON the
+       LSE chart from engine-recorded crypto-venue data. The ▾ opens the RT
+       settings menu (same sections as the EdgeDepth original). -->
+  <span id="rt-slot">
+    <button id="rt-toggle" title="Real-time order flow — live depth heatmap, trade-price line and trade bubbles from a crypto venue. Honest 'no flow' on non-crypto symbols.">Real-time</button
+    ><button id="rt-gear" title="Real-time settings" aria-haspopup="true">▾</button>
+    <div id="rt-menu" class="hidden" role="menu">
+      <div class="rt-menu-head">REAL-TIME SETTINGS</div>
+      <div class="rt-menu-sec">VIEW</div>
+      <label><input type="checkbox" id="rt-opt-pause"> Pause display</label>
+      <label><input type="checkbox" id="rt-opt-tradeline" checked> Trade-price line</label>
+      <div class="rt-menu-sec">DEPTH</div>
+      <label><input type="checkbox" id="rt-opt-heatmap" checked> Depth heatmap</label>
+      <label><input type="checkbox" id="rt-opt-ladder" checked> Depth ladder</label>
+      <div class="rt-menu-sec">TRADES</div>
+      <label><input type="checkbox" id="rt-opt-bubbles" checked> Trade bubbles</label>
+      <div class="rt-menu-note">Bubble size auto-calibrates to the top decile
+        of recorded prints.</div>
+      <div class="rt-menu-sec">LIQUIDATIONS</div>
+      <div class="rt-menu-note">Honest gap: Binance spot and Hyperliquid
+        publish no public liquidation feed on this route. Reported
+        liquidations arrive with the Bybit flow feed.</div>
+      <div class="rt-menu-sec">DATA</div>
+      <div class="rt-menu-note">Flow is recorded live from Binance (or
+        Hyperliquid when Binance is unreachable). Chart candles stay on the
+        broker feed — flow never feeds candles. Non-crypto symbols show an
+        honest “no flow” chip; nothing is simulated.</div>
+    </div>
+  </span>
   <!-- Hidden <select> kept in the DOM as the workspace load/save source of
        truth for the chart type. The Bar-style menu writes its .value and fires
        change; the shell reads it on save/restore. -->

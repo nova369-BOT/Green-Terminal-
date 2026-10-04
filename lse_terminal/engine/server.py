@@ -919,6 +919,19 @@ def create_app() -> FastAPI:
         _ed_venues_cache["body"] = body
         return body
 
+    @app.get("/api/rt/flow")
+    async def rt_flow_poll(symbol: str, cols_after: float = 0.0,
+                           trades_after: float = 0.0):
+        """Native Real-time order-flow view (EdgeDepth RT port, LSE chart).
+
+        Incremental poll: depth heatmap columns and venue trades newer than
+        the cursors. Flow data only — chart candles never come from here
+        (data doctrine). Non-crypto symbols get an honest {"flow": "none"};
+        unreachable venues get the real error, never simulated data.
+        """
+        from lse_terminal.engine.rt_flow import rt_flow_manager
+        return await rt_flow_manager.poll(symbol, cols_after, trades_after)
+
     @app.get("/edgedepth/edgedepth-config.js")
     def edgedepth_config_js():
         """Dynamic runtime config: browser WS URL points at the managed
