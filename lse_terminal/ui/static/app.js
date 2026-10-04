@@ -20930,21 +20930,114 @@ function setupRtToggle() {
       w.__gtRtCmd = 2;
     }
   });
-  // ▾ — open the engine's own REAL-TIME SETTINGS dropdown in the dock (the
-  // same menu the hidden pill's caret opens; bridge cmd 3).
-  if (caret) caret.addEventListener("click", () => {
+  // ▾ — the GT Real-time dropdown, anchored right under the button. It
+  // never touches the dock (no pop-out): it is a remote control for the
+  // engine's settings over the __gtRtQ/__gtRtState bridge.
+  const menu = document.getElementById("rt-menu");
+  const send = (code, val) => {
     const w = rtFrameWin();
-    if (!w || !w.__gtRtOn) return;
-    try {
-      if (!ofDock.open) { ofDock.open = true; ofDockApply(); }
-    } catch (e) { console.error("rt dock open", e); }
-    w.__gtRtCmd = 3;
-  });
+    if (!w) return;
+    (w.__gtRtQ = w.__gtRtQ || []).push([code | 0, +val || 0]);
+  };
+  const state = () => {
+    const w = rtFrameWin();
+    if (!w || !w.__gtRtState) return null;
+    try { return JSON.parse(w.__gtRtState); } catch (e) { return null; }
+  };
+  let menuTimer = 0;
+  const renderMenu = () => {
+    const s = state();
+    if (!s) return;
+    for (const row of menu.querySelectorAll(".rtm-row[data-c]")) {
+      const c = +row.dataset.c;
+      const on = c === 10 ? s.pause : c === 11 ? s.cand : c === 12 ? s.line
+        : c === 13 ? s.ladder : c === 14 ? s.follow : c === 15 ? s.fit
+        : c === 18 ? s.extend : c === 19 ? s.bub : c === 20 ? s.asize
+        : c === 23 ? s.liq : c === 25 ? s.strip : 0;
+      row.classList.toggle("on", !!on);
+    }
+    document.getElementById("rtm-pause").hidden = !!s.replay;
+    document.getElementById("rtm-follow-lbl").textContent = s.followLabel || "Follow price";
+    document.getElementById("rtm-whole").hidden = !s.arch;
+    document.getElementById("rtm-grouping").textContent = s.grouping || "";
+    document.getElementById("rtm-amin-row").hidden = !s.asize;
+    document.getElementById("rtm-amin").textContent = s.amin || "";
+    document.getElementById("rtm-minval-row").hidden = !!s.asize;
+    const mv = document.getElementById("rtm-minval");
+    if (document.activeElement !== mv) mv.value = Math.round(s.minval || 0);
+    const np = document.getElementById("rtm-np");
+    np.hidden = !(s.np > 0);
+    if (s.np > 0) np.textContent = "Not plotted as bubbles: " + s.np + " records";
+    document.getElementById("rtm-liqmin-row").hidden = !s.liq;
+    const lm = document.getElementById("rtm-liqmin");
+    if (document.activeElement !== lm) lm.value = Math.round(s.liqmin || 0);
+    document.getElementById("rtm-session").hidden = !s.arch;
+    document.getElementById("rtm-rec").textContent = s.rec || "";
+    const warn = document.getElementById("rtm-warn");
+    const wtxt = [s.warn, s.err].filter(Boolean).join(" · ");
+    warn.hidden = !wtxt;
+    warn.textContent = wtxt;
+  };
+  const closeMenu = () => {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    clearInterval(menuTimer);
+  };
+  if (caret && menu) {
+    caret.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (!menu.hidden) { closeMenu(); return; }
+      const w = rtFrameWin();
+      if (!w || !w.__gtRtOn) return;
+      renderMenu();
+      menu.hidden = false;
+      // Engine applies commands next frame; keep the painted state honest.
+      menuTimer = setInterval(renderMenu, 300);
+    });
+    menu.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const row = ev.target.closest(".rtm-row[data-c]");
+      if (row) {
+        const s = state();
+        if (!s) return;
+        const c = +row.dataset.c;
+        const cur = c === 10 ? s.pause : c === 11 ? s.cand : c === 12 ? s.line
+          : c === 13 ? s.ladder : c === 14 ? s.follow : c === 15 ? s.fit
+          : c === 18 ? s.extend : c === 19 ? s.bub : c === 20 ? s.asize
+          : c === 23 ? s.liq : c === 25 ? s.strip : 0;
+        send(c, cur ? 0 : 1);
+        return;
+      }
+      const act = ev.target.closest(".rtm-btn[data-a]");
+      if (act) { send(+act.dataset.a, 0); return; }
+      const step = ev.target.closest("[data-nstep]");
+      if (step) {
+        const wrap = step.closest(".rtm-inline");
+        const input = wrap.querySelector("input");
+        const liq = input.id === "rtm-liqmin";
+        const inc = (liq ? 100 : 1000) * +step.dataset.nstep;
+        const next = Math.max(liq ? 0 : 1, (+input.value || 0) + inc);
+        send(liq ? 24 : 22, next);
+      }
+    });
+    for (const input of menu.querySelectorAll(".rtm-num input")) {
+      input.addEventListener("change", () => {
+        const liq = input.id === "rtm-liqmin";
+        const v = Math.max(liq ? 0 : 1, +input.value || 0);
+        send(liq ? 24 : 22, v);
+        input.blur();
+      });
+    }
+    document.addEventListener("click", closeMenu);
+    document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeMenu(); });
+  }
   // Engine truth → button state (covers every path: our command, the
   // engine's own exits, replays, education packs).
   setInterval(() => {
     const w = rtFrameWin();
-    paint(w ? !!w.__gtRtOn : false);
+    const on = w ? !!w.__gtRtOn : false;
+    paint(on);
+    if (!on) closeMenu();
   }, 500);
 }
 

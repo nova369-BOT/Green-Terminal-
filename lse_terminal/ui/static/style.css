@@ -5170,8 +5170,75 @@ body.gt-density-dense .indb-field { padding-top: 1px; padding-bottom: 1px; }
 #rt-slot button:hover { color: var(--text); background: var(--hover); }
 #rt-toggle.rt-on { color: #0a0f0c; background: var(--accent-bar); }
 /* Settings caret — exists only while Real-time is on (mirrors the engine
-   pill's trailing caret); opens the engine's REAL-TIME SETTINGS dropdown. */
+   pill's trailing caret); opens the GT Real-time dropdown below. */
 #rt-caret { padding: 3px 4px; margin-left: -2px; }
 #rt-caret[hidden] { display: none; }
+
+/* ── Real-time dropdown ──
+   Anchored under the button. A remote control for the engine's own RT
+   settings: states are painted from engine truth (__gtRtState), commands go
+   back over the bridge. Switch pills instead of checkboxes; GT palette. */
+#rt-menu {
+  position: absolute; top: calc(100% + 7px); left: 0; z-index: 320;
+  width: 284px; max-height: min(72vh, 620px); overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 4px;
+  box-shadow: 0 14px 34px rgba(0,0,0,.55); padding: 4px 0 8px;
+  font-family: var(--mono); font-size: 11.5px; text-align: left;
+}
+#rt-menu[hidden] { display: none; }
+.rtm-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 8px 12px 7px; border-bottom: 1px solid var(--edge);
+  color: var(--text); font-size: 11px; letter-spacing: .14em;
+}
+.rtm-head span { color: var(--dim); font-size: 10px; letter-spacing: .04em; }
+.rtm-sec {
+  padding: 9px 12px 3px; color: var(--accent-bar);
+  font-size: 9.5px; letter-spacing: .18em; text-transform: uppercase;
+}
+#rt-menu .rtm-row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 5px 12px; margin: 0; border: 0; border-radius: 0;
+  background: transparent; color: var(--text); font: inherit; cursor: pointer;
+}
+#rt-menu .rtm-row:hover { background: var(--hover); }
+.rtm-sw {
+  flex: none; width: 26px; height: 14px; border-radius: 7px;
+  background: #22302a; border: 1px solid var(--edge); position: relative;
+  transition: background .12s ease;
+}
+.rtm-sw::after {
+  content: ""; position: absolute; top: 1px; left: 1px; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--dim); transition: left .12s ease, background .12s ease;
+}
+#rt-menu .rtm-row.on .rtm-sw { background: var(--accent-bar); border-color: var(--accent-bar); }
+#rt-menu .rtm-row.on .rtm-sw::after { left: 13px; background: #0a0f0c; }
+.rtm-acts { display: flex; gap: 6px; padding: 5px 12px 2px; }
+#rt-menu .rtm-btn {
+  padding: 3px 9px; border: 1px solid var(--edge); border-radius: 3px;
+  background: transparent; color: var(--dim); font: inherit; font-size: 10.5px;
+  cursor: pointer;
+}
+#rt-menu .rtm-btn:hover { color: var(--text); background: var(--hover); }
+.rtm-dim { padding: 3px 12px 2px; color: var(--dim); font-size: 10.5px; }
+.rtm-warn { padding: 3px 12px 2px; color: #c9a227; font-size: 10.5px; }
+.rtm-inline {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 12px; color: var(--text);
+}
+.rtm-num { display: inline-flex; align-items: center; gap: 0; }
+.rtm-num button {
+  width: 20px; padding: 2px 0; border: 1px solid var(--edge); background: transparent;
+  color: var(--dim); font: inherit; cursor: pointer;
+}
+.rtm-num button:first-child { border-radius: 3px 0 0 3px; }
+.rtm-num button:last-child { border-radius: 0 3px 3px 0; border-left: 0; }
+.rtm-num button:hover { color: var(--text); background: var(--hover); }
+.rtm-num input {
+  width: 64px; padding: 2px 6px; border: 1px solid var(--edge); border-left: 0;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 11px;
+  text-align: right; outline: none;
+}
+#rt-menu [hidden] { display: none; }
 /* (RT settings menu CSS removed: the button now drives the G-Flow
    engine's own Real-time view; settings live in the engine itself.) */

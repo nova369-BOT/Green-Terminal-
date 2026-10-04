@@ -361,7 +361,42 @@ def my_ind(df, length=20):
        pill) and opens the engine's REAL-TIME SETTINGS dropdown in the dock. -->
   <span id="rt-slot">
     <button id="rt-toggle" title="Real-time — the G-Flow engine's live order-flow view (observed depth, every trade as a bubble). Opens the dock and switches it to Real-time; click again to return it to candles.">Real-time</button
-    ><button id="rt-caret" hidden title="Real-time settings — trade bubbles, 1s candles, depth" aria-haspopup="true">▾</button>
+    ><button id="rt-caret" hidden title="Real-time settings" aria-haspopup="true">▾</button>
+    <!-- GT-styled Real-time settings dropdown, anchored to the button. It is
+         a REMOTE CONTROL for the engine's own settings: every switch pushes
+         a [code,value] command onto the engine frame's __gtRtQ and every
+         painted state comes from the engine's __gtRtState truth — the two
+         menus (this one and the one inside G-Flow) can never disagree. -->
+    <div id="rt-menu" hidden>
+      <div class="rtm-head">REAL-TIME<span>G-Flow engine · live</span></div>
+      <div class="rtm-sec">View</div>
+      <button class="rtm-row" id="rtm-pause" data-c="10"><span>Pause display</span><span class="rtm-sw"></span></button>
+      <button class="rtm-row" data-c="11"><span>1s candles</span><span class="rtm-sw"></span></button>
+      <button class="rtm-row" data-c="12"><span>Trade-price line</span><span class="rtm-sw"></span></button>
+      <button class="rtm-row" data-c="13"><span>Depth ladder</span><span class="rtm-sw"></span></button>
+      <button class="rtm-row" data-c="14"><span id="rtm-follow-lbl">Follow price</span><span class="rtm-sw"></span></button>
+      <button class="rtm-row" data-c="15"><span>Auto-fit visible history</span><span class="rtm-sw"></span></button>
+      <div class="rtm-acts"><button class="rtm-btn" data-a="16">Return live</button><button class="rtm-btn" id="rtm-whole" data-a="17">Whole session</button></div>
+      <div class="rtm-sec">Depth</div>
+      <button class="rtm-row" data-c="18"><span>Extend current depth</span><span class="rtm-sw"></span></button>
+      <div class="rtm-dim" id="rtm-grouping"></div>
+      <div class="rtm-sec">Trades</div>
+      <button class="rtm-row" data-c="19"><span>Trade bubbles</span><span class="rtm-sw"></span></button>
+      <button class="rtm-row" data-c="20"><span>Auto size</span><span class="rtm-sw"></span></button>
+      <div class="rtm-inline" id="rtm-amin-row"><span class="rtm-dim" id="rtm-amin"></span><button class="rtm-btn" data-a="21">Recalibrate</button></div>
+      <div class="rtm-inline" id="rtm-minval-row" hidden><span>Minimum value</span><span class="rtm-num"><button type="button" data-nstep="-1">−</button><input id="rtm-minval" inputmode="numeric" spellcheck="false"><button type="button" data-nstep="1">+</button></span></div>
+      <div class="rtm-dim" id="rtm-np" hidden></div>
+      <div class="rtm-sec">Liquidations</div>
+      <button class="rtm-row" data-c="23"><span>Reported liquidations</span><span class="rtm-sw"></span></button>
+      <div class="rtm-inline" id="rtm-liqmin-row"><span>Minimum notional</span><span class="rtm-num"><button type="button" data-nstep="-1">−</button><input id="rtm-liqmin" inputmode="numeric" spellcheck="false"><button type="button" data-nstep="1">+</button></span></div>
+      <button class="rtm-row" data-c="25"><span>Activity strip</span><span class="rtm-sw"></span></button>
+      <div id="rtm-session" hidden>
+        <div class="rtm-sec">Session</div>
+        <div class="rtm-dim" id="rtm-rec"></div>
+        <div class="rtm-warn" id="rtm-warn" hidden></div>
+        <div class="rtm-acts"><button class="rtm-btn" data-a="26">Clear history</button></div>
+      </div>
+    </div>
   </span>
   <!-- Hidden <select> kept in the DOM as the workspace load/save source of
        truth for the chart type. The Bar-style menu writes its .value and fires

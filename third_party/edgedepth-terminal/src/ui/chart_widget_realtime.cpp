@@ -216,6 +216,123 @@ void ChartWidget::render_realtime_settings() {
     if (ImGui::SmallButton("Clear history")) rt_archive_->reset();
 }
 
+// ── Green Terminal embed bridge ─────────────────────────────────────────────
+// The host page's Real-time dropdown (anchored to the host toolbar button)
+// is a remote control for the SAME settings render_realtime_settings edits.
+// Each case mirrors the corresponding ImGui control above — same fields,
+// same side effects — so the two menus can never disagree about behavior.
+void ChartWidget::apply_rt_setting(int code, double v) {
+    const bool on = v != 0;
+    switch (code) {
+        case 10:  // Pause display (hidden during replay, like the checkbox)
+            if (ctx_.replay_mgr().is_active() || rt_paused_ == on) break;
+            rt_paused_ = on;
+            if (rt_paused_) {
+                rt_paused_trades_ = candles().realtime_trades().trades();
+                rt_paused_liquidations_ = ctx_.liq_heatmap_mgr().observed_events(pair_);
+                if (rt_archive_) rt_archive_->cancel_view();
+                rt_query_from_ = 0;  // A cancelled request is not loaded coverage.
+            } else { rt_paused_trades_.clear(); rt_paused_liquidations_.clear(); }
+            break;
+        case 11:  // 1s candles (menu couples chart_type_ to this flag)
+            rt_candles_ = on;
+            chart_type_ = rt_candles_ ? ChartType::Candles : ChartType::Line;
+            break;
+        case 12: rt_trade_line_ = on; break;        // Trade-price line
+        case 13: rt_dom_shown_ = on; break;         // Depth ladder
+        case 14: rt_auto_price_ = on; break;        // Follow price / Auto-fit price
+        case 15:  // Auto-fit visible history (+ the checkbox's reset side effects)
+            rt_auto_fit_history_ = on;
+            rt_auto_fit_ = {}; rt_price_window_ = {}; rt_auto_price_ = true;
+            rt_effective_multiplier_ = rt_bucket_multiplier_;
+            break;
+        case 16:  // Return live
+            rt_span_ms_ = realtime_default_span_ms; rt_auto_price_ = true;
+            rt_price_window_ = {}; rt_auto_fit_ = {};
+            candles().set_follow_live(true);
+            break;
+        case 17:  // Whole session
+            if (!rt_archive_) break;
+            rt_span_ms_ = double(RealtimeArchive::target_ms) / 0.88;
+            candles().set_follow_live(true);
+            break;
+        case 18: rt_extend_depth_ = on; break;      // Extend current depth
+        case 19: rt_bubbles_ = on; break;           // Trade bubbles
+        case 20: rt_auto_bubbles_ = on; break;      // Auto size
+        case 21: rt_bubble_scale_ = {}; break;      // Recalibrate
+        case 22:  // Minimum value (manual bubble filter; same clamps)
+            rt_min_notional_ = static_cast<float>(v);
+            if (!std::isfinite(rt_min_notional_)) rt_min_notional_ = 10000;
+            rt_min_notional_ = std::max(1.0f, rt_min_notional_);
+            break;
+        case 23: liq_observed_enabled_ = on; break; // Reported liquidations
+        case 24:  // Liquidation minimum notional (same clamps)
+            liq_obs_min_usd_ = static_cast<float>(v);
+            if (!std::isfinite(liq_obs_min_usd_)) liq_obs_min_usd_ = 0;
+            liq_obs_min_usd_ = std::clamp(liq_obs_min_usd_, 0.0f, 1e15f);
+            break;
+        case 25: rt_liq_strip_ = on; break;         // Activity strip
+        case 26: if (rt_archive_) rt_archive_->reset(); break;  // Clear history
+        default: break;
+    }
+}
+
+std::string ChartWidget::rt_settings_state_json() const {
+    const auto esc = [](const std::string& s) {
+        std::string o; o.reserve(s.size());
+        for (char c : s) {
+            if (c == '"' || c == '\\') { o += ' '; }
+            else if (static_cast<unsigned char>(c) < 0x20) o += ' ';
+            else o += c;
+        }
+        return o;
+    };
+    char head[640];
+    char amin[48] = "";
+    snprintf(amin, sizeof(amin), "min %.4g%s", double(rt_bubble_scale_.minimum()),
+             rt_bubble_scale_.settled() ? "" : " (warming up)");
+    unsigned long long np = 0;
+    if (rt_archive_) {
+        const auto& b = rt_archive_->bubbles();
+        np = b.approximate_records + b.late_records + b.overflow_records;
+    }
+    snprintf(head, sizeof(head),
+        "{\"on\":%d,\"replay\":%d,\"pause\":%d,\"cand\":%d,\"line\":%d,\"ladder\":%d,"
+        "\"follow\":%d,\"followLabel\":\"%s\",\"fit\":%d,\"extend\":%d,"
+        "\"grouping\":\"%s grouping: %d native ticks per row\","
+        "\"bub\":%d,\"asize\":%d,\"amin\":\"%s\",\"minval\":%.0f,\"np\":%llu,"
+        "\"liq\":%d,\"liqmin\":%.0f,\"strip\":%d,\"arch\":%d",
+        rt_mode_ ? 1 : 0, ctx_.replay_mgr().is_active() ? 1 : 0,
+        rt_paused_ ? 1 : 0, rt_candles_ ? 1 : 0, rt_trade_line_ ? 1 : 0,
+        rt_dom_shown_ ? 1 : 0,
+        rt_auto_price_ ? 1 : 0, rt_dom_linked_ ? "Follow price" : "Auto-fit price",
+        rt_auto_fit_history_ ? 1 : 0, rt_extend_depth_ ? 1 : 0,
+        rt_auto_fit_history_ && rt_dom_linked_ ? "Automatic" : "Fixed",
+        rt_effective_multiplier_,
+        rt_bubbles_ ? 1 : 0, rt_auto_bubbles_ ? 1 : 0, amin,
+        double(rt_min_notional_), np,
+        liq_observed_enabled_ ? 1 : 0, double(liq_obs_min_usd_),
+        rt_liq_strip_ ? 1 : 0, rt_archive_ ? 1 : 0);
+    std::string out = head;
+    if (rt_archive_) {
+        const auto& a = *rt_archive_;
+        char rec[96];
+        snprintf(rec, sizeof(rec), "Recorded %.1f min \\u00b7 %.2f MiB",
+                 double(std::max(int64_t(0), a.last - a.first)) / 60000,
+                 a.bytes / 1048576);
+        out += ",\"rec\":\""; out += rec; out += "\"";
+        if (a.dropped) {
+            char warn[96];
+            snprintf(warn, sizeof(warn),
+                     "Capture overload: %zu records missed; depth gaps kept", a.dropped);
+            out += ",\"warn\":\""; out += warn; out += "\"";
+        }
+        if (!a.error.empty()) { out += ",\"err\":\""; out += esc(a.error); out += "\""; }
+    }
+    out += "}";
+    return out;
+}
+
 void ChartWidget::on_rewind(int64_t) {
     // The replay owner restores/replays depth separately. Never keep future
     // samples or GPU cells from the preceding traversal.

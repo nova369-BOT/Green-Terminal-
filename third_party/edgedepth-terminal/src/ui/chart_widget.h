@@ -189,6 +189,14 @@ public:
     // is still the one place that enforces it.
     bool rt_mode_locked() const;
     void render_realtime_settings();
+    // Green Terminal embed bridge (?rt=0): the host's Real-time dropdown is
+    // a thin remote control for THIS widget's RT settings. apply_rt_setting
+    // mutates the same fields the in-engine menu mutates (same side
+    // effects); rt_settings_state_json publishes their current truth so the
+    // host menu can only ever display the engine's real state. Codes are
+    // documented at the implementation (chart_widget_realtime.cpp).
+    void apply_rt_setting(int code, double v);
+    std::string rt_settings_state_json() const;
     // Green Terminal embed (?rt=0): the host's Real-time caret asks for the
     // same "REAL-TIME SETTINGS" dropdown the hidden pill's caret opens. The
     // request is latched here by the main_loop bridge and consumed by

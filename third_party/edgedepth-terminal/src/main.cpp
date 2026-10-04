@@ -1540,6 +1540,28 @@ void main_loop() {
                 // 3 = open the REAL-TIME SETTINGS dropdown (the hidden
                 // pill's caret menu); only meaningful while RT is on.
                 else if (rt_cmd == 3 && bridge_chart->rt_mode()) bridge_chart->request_rt_settings_popup();
+                // Host RT-settings remote: the GT dropdown pushes
+                // [code, value] pairs onto window.__gtRtQ; drain a few per
+                // frame into the SAME setters the in-engine menu uses, then
+                // publish the settings truth for the host menu to render.
+                for (int i = 0; i < 8; ++i) {
+                    const int set_code = EM_ASM_INT({
+                        const q = window.__gtRtQ;
+                        if (!q || !q.length) return -1;
+                        window.__gtRtCur = q.shift();
+                        return window.__gtRtCur[0] | 0;
+                    });
+                    if (set_code < 0) break;
+                    const double set_val = EM_ASM_DOUBLE({
+                        const c = window.__gtRtCur;
+                        return c && c.length > 1 ? +c[1] || 0 : 0;
+                    });
+                    bridge_chart->apply_rt_setting(set_code, set_val);
+                }
+                {
+                    const std::string rt_state = bridge_chart->rt_settings_state_json();
+                    EM_ASM({ window.__gtRtState = UTF8ToString($0); }, rt_state.c_str());
+                }
             }
             EM_ASM({ window.__gtRtOn = $0; },
                    (bridge_chart && bridge_chart->rt_mode()) ? 1 : 0);
