@@ -5169,5 +5169,9 @@ body.gt-density-dense .indb-field { padding-top: 1px; padding-bottom: 1px; }
 }
 #rt-slot button:hover { color: var(--text); background: var(--hover); }
 #rt-toggle.rt-on { color: #0a0f0c; background: var(--accent-bar); }
+/* Settings caret — exists only while Real-time is on (mirrors the engine
+   pill's trailing caret); opens the engine's REAL-TIME SETTINGS dropdown. */
+#rt-caret { padding: 3px 4px; margin-left: -2px; }
+#rt-caret[hidden] { display: none; }
 /* (RT settings menu CSS removed: the button now drives the G-Flow
    engine's own Real-time view; settings live in the engine itself.) */

@@ -1537,6 +1537,9 @@ void main_loop() {
                 });
                 if (rt_cmd == 1 && !bridge_chart->rt_mode()) bridge_chart->set_rt_mode(true);
                 else if (rt_cmd == 2 && bridge_chart->rt_mode()) bridge_chart->set_rt_mode(false);
+                // 3 = open the REAL-TIME SETTINGS dropdown (the hidden
+                // pill's caret menu); only meaningful while RT is on.
+                else if (rt_cmd == 3 && bridge_chart->rt_mode()) bridge_chart->request_rt_settings_popup();
             }
             EM_ASM({ window.__gtRtOn = $0; },
                    (bridge_chart && bridge_chart->rt_mode()) ? 1 : 0);

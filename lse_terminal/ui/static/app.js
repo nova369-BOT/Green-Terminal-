@@ -20909,7 +20909,13 @@ function rtFrameWin() {
 function setupRtToggle() {
   const btn = document.getElementById("rt-toggle");
   if (!btn) return;
-  const paint = (on) => btn.classList.toggle("rt-on", !!on);
+  const caret = document.getElementById("rt-caret");
+  const paint = (on) => {
+    btn.classList.toggle("rt-on", !!on);
+    // Mirror the engine pill exactly: the settings caret exists only while
+    // Real-time is on.
+    if (caret) caret.hidden = !on;
+  };
   btn.addEventListener("click", () => {
     const w = rtFrameWin();
     if (!w) { status("order-flow engine not loaded yet"); return; }
@@ -20923,6 +20929,16 @@ function setupRtToggle() {
     } else {
       w.__gtRtCmd = 2;
     }
+  });
+  // ▾ — open the engine's own REAL-TIME SETTINGS dropdown in the dock (the
+  // same menu the hidden pill's caret opens; bridge cmd 3).
+  if (caret) caret.addEventListener("click", () => {
+    const w = rtFrameWin();
+    if (!w || !w.__gtRtOn) return;
+    try {
+      if (!ofDock.open) { ofDock.open = true; ofDockApply(); }
+    } catch (e) { console.error("rt dock open", e); }
+    w.__gtRtCmd = 3;
   });
   // Engine truth → button state (covers every path: our command, the
   // engine's own exits, replays, education packs).

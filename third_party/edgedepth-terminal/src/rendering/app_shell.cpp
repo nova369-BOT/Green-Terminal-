@@ -846,6 +846,13 @@ namespace {
             else          chart->toggle_rt_mode();
         }
         }  // !rt_hidden — pill block
+        // Green Terminal embed: the host toolbar's Real-time caret requested
+        // the settings dropdown (bridge cmd 3, latched on the chart by
+        // main_loop). Open the exact popup the pill's caret opens — same ID
+        // scope, same body — pinned under the bar like the original.
+        if (rt_hidden && chart && chart->consume_rt_settings_popup_request() &&
+            realtime && !rt_locked)
+            ImGui::OpenPopup("##rt_settings");
         ImGui::PopFont();
 
         // layout anchor so the next SameLine item flows from the bar's right edge

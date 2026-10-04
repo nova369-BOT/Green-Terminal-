@@ -357,9 +357,11 @@ def my_ind(df, length=20):
        engine itself (the dock opens if needed) — the engine's own RT pill is
        hidden in the embed (?rt=0), but the RT display and all its code stay
        fully functional inside G-Flow; this button is simply its switch.
-       RT settings: right-click the engine chart while Real-time is on. -->
+       While Real-time is on, a caret appears (just like the engine's own
+       pill) and opens the engine's REAL-TIME SETTINGS dropdown in the dock. -->
   <span id="rt-slot">
-    <button id="rt-toggle" title="Real-time — the G-Flow engine's live order-flow view (observed depth, every trade as a bubble). Opens the dock and switches it to Real-time; click again to return it to candles.">Real-time</button>
+    <button id="rt-toggle" title="Real-time — the G-Flow engine's live order-flow view (observed depth, every trade as a bubble). Opens the dock and switches it to Real-time; click again to return it to candles.">Real-time</button
+    ><button id="rt-caret" hidden title="Real-time settings — trade bubbles, 1s candles, depth" aria-haspopup="true">▾</button>
   </span>
   <!-- Hidden <select> kept in the DOM as the workspace load/save source of
        truth for the chart type. The Bar-style menu writes its .value and fires

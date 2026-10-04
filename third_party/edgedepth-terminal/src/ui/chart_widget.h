@@ -189,6 +189,16 @@ public:
     // is still the one place that enforces it.
     bool rt_mode_locked() const;
     void render_realtime_settings();
+    // Green Terminal embed (?rt=0): the host's Real-time caret asks for the
+    // same "REAL-TIME SETTINGS" dropdown the hidden pill's caret opens. The
+    // request is latched here by the main_loop bridge and consumed by
+    // render_tf_control (app_shell.cpp), which owns the popup's ID scope.
+    void request_rt_settings_popup() { rt_settings_popup_pending_ = true; }
+    bool consume_rt_settings_popup_request() {
+        const bool v = rt_settings_popup_pending_;
+        rt_settings_popup_pending_ = false;
+        return v;
+    }
     void on_rewind(int64_t cutoff_ms) override;
 
     float liq_opacity() const { return liq_opacity_; }   // liq-heatmap opacity (Tweaks panel)
@@ -406,6 +416,7 @@ private:
     int64_t rt_unhealthy_since_ms_ = 0;
     bool    rt_mode_    = false;
     bool    rt_was_on_  = false;
+    bool    rt_settings_popup_pending_ = false;  // host-caret bridge latch (see request_rt_settings_popup)
     bool rt_candles_ = false, rt_bubbles_ = true, rt_book_valid_ = false;
     bool rt_paused_ = false, rt_trade_line_ = false;
     bool rt_extend_depth_ = true;
