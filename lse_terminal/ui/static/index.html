@@ -630,7 +630,10 @@ def my_ind(df, length=20):
           <span class="of-sep"></span>
           <span class="of-k">FLOW</span><span id="ofd-flow" class="of-v">—</span>
           <span class="of-k">GW</span><span id="ofd-gw" class="of-v off" title="EdgeDepth gateway reachability">—</span>
-          <span class="of-k">RT</span><span id="ofd-art" class="of-v off" title="Engine runtime artifacts">—</span>
+          <!-- "WASM", not "RT": this chip reports engine runtime artifacts.
+               It used to read RT, which now collides with the Real-time
+               feature that was deliberately deleted from this dock. -->
+          <span class="of-k">WASM</span><span id="ofd-art" class="of-v off" title="Engine runtime artifacts">—</span>
           <span class="of-flex"></span>
           <button type="button" class="of-link" id="ofd-tfsync"
                   title="Follow the chart timeframe inside the engine">TF: on</button>

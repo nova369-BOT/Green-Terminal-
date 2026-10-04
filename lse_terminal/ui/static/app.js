@@ -20940,22 +20940,43 @@ function rtPush() {
     });
   }
 }
-// "1s candles": the LSE chart already builds native 1s bars, so parity here
-// is a timeframe switch, not a second candle engine (dedup doctrine). The
-// previous timeframe is remembered and restored when the box is unticked.
-function rtApply1sCandles(on) {
+// Entering Real-time is a real MODE SWITCH, exactly like EdgeDepth: the
+// chart drops to the native 1s timeframe with the trade-price line as the
+// price trace (or 1s candles when that box is ticked), lands on the live
+// edge, and the flow layers (depth bands, bubbles, ladder, liquidations,
+// activity strip) draw on top. Leaving restores exactly what the user had.
+function rtSyncTypeSelect() {
+  const ct = document.getElementById("chart-type");
+  if (ct) ct.value = state.chartType;
+}
+function rtEnterMode() {
   try {
-    if (on) {
-      if (state.timeframe !== "1s") {
-        rtState.prevTf = state.timeframe;
-        state.timeframe = "1s";
-        renderTimeframes(); loadChart(); saveShellState();
-      }
-    } else if (rtState.prevTf && state.timeframe === "1s") {
-      state.timeframe = rtState.prevTf;
-      rtState.prevTf = null;
-      renderTimeframes(); loadChart(); saveShellState();
-    }
+    rtState.prevTf = state.timeframe;
+    rtState.prevType = state.chartType;
+    state.timeframe = "1s";
+    state.chartType = rtState.candles1s ? "candles" : "line";
+    rtSyncTypeSelect(); renderTimeframes(); loadChart(); saveShellState();
+    // Land on the live edge once the 1s series is in (update merges, so a
+    // slightly early call is harmless).
+    setTimeout(() => { try { window.LSEChart.goToLatest(); } catch (e) {} }, 1200);
+  } catch (e) { console.error("rt enter", e); }
+}
+function rtExitMode() {
+  try {
+    if (rtState.prevTf) state.timeframe = rtState.prevTf;
+    if (rtState.prevType) state.chartType = rtState.prevType;
+    rtState.prevTf = null; rtState.prevType = null;
+    rtSyncTypeSelect(); renderTimeframes(); loadChart(); saveShellState();
+  } catch (e) { console.error("rt exit", e); }
+}
+// "1s candles" while RT is on: candles vs the trade-price line as the price
+// trace — the chart TYPE flips, the timeframe stays 1s (EdgeDepth parity:
+// chart_type = rt_candles ? Candles : Line). No data round-trip needed.
+function rtApply1sCandles(on) {
+  if (!rtState.enabled) return;
+  try {
+    state.chartType = on ? "candles" : "line";
+    rtSyncTypeSelect(); pushToChart(); saveShellState(); syncBarTypeSelector();
   } catch (e) { console.error("rt 1s candles", e); }
 }
 function rtFmtNum(v) {
@@ -21010,6 +21031,8 @@ function setupRtToggle() {
   const paint = () => btn.classList.toggle("rt-on", !!rtState.enabled);
   btn.addEventListener("click", () => {
     rtState.enabled = !rtState.enabled;
+    // The switch: ON = live seconds-scale flow view, OFF = your chart back.
+    if (rtState.enabled) rtEnterMode(); else rtExitMode();
     paint(); rtSave(); rtPush();
   });
   let dynTimer = null;
