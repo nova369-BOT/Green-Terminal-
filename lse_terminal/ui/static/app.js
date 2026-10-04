@@ -20990,6 +20990,11 @@ function setupRtToggle() {
       const w = rtFrameWin();
       if (!w || !w.__gtRtOn) return;
       renderMenu();
+      // Pin directly under the Real-time button (fixed: the toolbar clips
+      // absolutely-positioned children, so anchor against the viewport).
+      const r = document.getElementById("rt-slot").getBoundingClientRect();
+      menu.style.top = Math.round(r.bottom + 7) + "px";
+      menu.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 300))) + "px";
       menu.hidden = false;
       // Engine applies commands next frame; keep the painted state honest.
       menuTimer = setInterval(renderMenu, 300);

@@ -5179,7 +5179,8 @@ body.gt-density-dense .indb-field { padding-top: 1px; padding-bottom: 1px; }
    settings: states are painted from engine truth (__gtRtState), commands go
    back over the bridge. Switch pills instead of checkboxes; GT palette. */
 #rt-menu {
-  position: absolute; top: calc(100% + 7px); left: 0; z-index: 320;
+  /* fixed + JS-placed under the button: the toolbar clips absolute children */
+  position: fixed; z-index: 2000;
   width: 284px; max-height: min(72vh, 620px); overflow-y: auto;
   background: var(--panel); border: 1px solid var(--edge); border-radius: 4px;
   box-shadow: 0 14px 34px rgba(0,0,0,.55); padding: 4px 0 8px;
