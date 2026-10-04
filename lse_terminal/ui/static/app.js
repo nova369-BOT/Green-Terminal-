@@ -13307,7 +13307,9 @@ function ofStartPortal() {
    The complete engine (its own chart, DOM, heatmap, tape, footprint,
    replay, workspaces — everything the WASM terminal ships) docked beside
    the LSE chart. Open state / width / TF-sync persist per browser. */
-const ofDock = { open: true, w: 0, max: false, tfSync: true, bound: false };
+// rtForced: transient (never persisted) — Real-time auto-max is a mode
+// takeover, restored on exit; never a saved user preference.
+const ofDock = { open: true, w: 0, max: false, tfSync: true, bound: false, rtForced: false };
 
 function ofDockLoadPrefs() {
   try {
@@ -13327,11 +13329,28 @@ function ofDockSavePrefs() {
   } catch (e) { /* storage unavailable */ }
 }
 
+// The widest the dock may ever be while sharing the stage: the info rail
+// keeps its fixed width and the chart column keeps at least 320px, so the
+// chart's floating chrome can never be crushed out over the engine (the
+// bug a giant SAVED width produced). Saved/dragged/resized widths all pass
+// through this cap.
+function ofDockMaxWidth() {
+  const stage = $("chart-stage");
+  if (!stage) return 0;
+  const rail = $("info-rail");
+  const railW = rail && !rail.classList.contains("hidden") ? rail.offsetWidth : 0;
+  return Math.max(320, stage.clientWidth - railW - 320);
+}
+
 function ofDockApply() {
   const d = $("of-dock");
   if (!d) return;
   d.classList.toggle("hidden", !ofDock.open);
-  if (ofDock.w > 0) d.style.flexBasis = ofDock.w + "px";
+  if (ofDock.w > 0) {
+    const cap = ofDockMaxWidth();
+    if (cap > 0 && ofDock.w > cap) ofDock.w = cap;
+    d.style.flexBasis = ofDock.w + "px";
+  }
   const stage = $("chart-stage");
   if (stage) stage.classList.toggle("ofd-max", !!(ofDock.open && ofDock.max));
   const t = $("of-dock-toggle");
@@ -13354,7 +13373,10 @@ function ofBindDock() {
   const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
   on("of-dock-toggle", () => { ofDock.open = !ofDock.open; ofDockSavePrefs(); ofDockApply(); });
   on("ofd-close", () => { ofDock.open = false; ofDockSavePrefs(); ofDockApply(); });
-  on("ofd-max", () => { ofDock.max = !ofDock.max; ofDockSavePrefs(); ofDockApply(); });
+  // A manual Max/Restore is the user's deliberate choice: if Real-time
+  // auto-maxed the surface, cancel its auto-restore so exiting RT doesn't
+  // fight the user.
+  on("ofd-max", () => { ofDock.max = !ofDock.max; ofDock.rtForced = false; ofDockSavePrefs(); ofDockApply(); });
   on("ofd-tfsync", () => {
     ofDock.tfSync = !ofDock.tfSync; ofDockSavePrefs(); ofDockApply();
     if (ofDock.tfSync) ofPushTimeframe(true);
@@ -13371,7 +13393,8 @@ function ofBindDock() {
       const move = (ev) => {
         if (!stage) return;
         const r = stage.getBoundingClientRect();
-        const w = Math.max(320, Math.min(r.right - ev.clientX, r.width * 0.78));
+        const cap = ofDockMaxWidth() || r.width * 0.78;
+        const w = Math.max(320, Math.min(r.right - ev.clientX, cap));
         ofDock.w = Math.round(w);
         const d = $("of-dock");
         if (d) d.style.flexBasis = ofDock.w + "px";
@@ -13388,6 +13411,18 @@ function ofBindDock() {
       grip.addEventListener("pointerup", up);
     });
   }
+  // A window resize can invalidate a saved/dragged width (smaller stage):
+  // re-clamp so the chart never gets crushed after the fact.
+  window.addEventListener("resize", () => {
+    if (!ofDock.open || ofDock.max || ofDock.w <= 0) return;
+    const cap = ofDockMaxWidth();
+    if (cap > 0 && ofDock.w > cap) {
+      ofDock.w = cap;
+      const d = $("of-dock");
+      if (d) d.style.flexBasis = cap + "px";
+      ofSyncPortal();
+    }
+  });
   ofDock.bound = true;
 }
 
@@ -20942,9 +20977,17 @@ function setupRtToggle() {
     if (!w) { status("order-flow engine not loaded yet"); return; }
     const on = !!w.__gtRtOn;
     if (!on) {
-      // The RT view lives in the dock: make sure it is on stage first.
+      // Takeover: Real-time owns the whole chart surface. The chart column
+      // and info rail step aside so NONE of their chrome (drawing toolbar,
+      // instrument chips, stale rail numbers) can paint beside/over the
+      // engine; exiting RT restores exactly what was there. ofDock.rtForced
+      // marks that WE maxed it (never persisted to prefs; a manual
+      // Max/Restore click is the user's choice and cancels the restore).
       try {
-        if (!ofDock.open) { ofDock.open = true; ofDockApply(); }
+        let dirty = false;
+        if (!ofDock.open) { ofDock.open = true; dirty = true; }
+        if (!ofDock.max) { ofDock.max = true; ofDock.rtForced = true; dirty = true; }
+        if (dirty) ofDockApply();
       } catch (e) { console.error("rt dock open", e); }
       w.__gtRtCmd = 1;
     } else {
@@ -21064,11 +21107,22 @@ function setupRtToggle() {
     window.addEventListener("resize", closeMenu);
   }
   // Engine truth → button state (covers every path: our command, the
-  // engine's own exits, replays, education packs).
+  // engine's own exits, replays, education packs). The takeover is driven
+  // by the engine's REAL state — the surface maxes exactly while RT truly
+  // runs, and restores when it ends from any path.
+  let wasOn = false;
   setInterval(() => {
     const w = rtFrameWin();
     const on = w ? !!w.__gtRtOn : false;
     paint(on);
+    if (on && !wasOn) {
+      if (!ofDock.max) { ofDock.max = true; ofDock.rtForced = true; ofDockApply(); }
+    } else if (!on && wasOn && ofDock.rtForced) {
+      ofDock.rtForced = false;
+      ofDock.max = false;
+      ofDockApply();
+    }
+    wasOn = on;
     if (!on) closeMenu();
   }, 500);
 }

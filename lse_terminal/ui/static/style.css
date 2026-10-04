@@ -4993,9 +4993,14 @@ body { padding-bottom: 22px; padding-left: 62px; }
 #of-dock {
   display: flex;
   flex-direction: row;
-  flex: 0 0 var(--ofd-w, 46%);
+  /* shrink=1: when space is tight the dock yields BEFORE the chart column
+     is crushed to a sliver — a crushed chart's floating chrome painted over
+     the engine (the wide-dock ghosting bug). Px widths are clamped in JS so
+     the chart always keeps at least 320px. */
+  flex: 0 1 auto;
+  flex-basis: var(--ofd-w, 46%);
   min-width: 320px;
-  max-width: 78%;
+  max-width: none;
   min-height: 0;
   background: #05080a;
   border-left: 1px solid #2c3b32;
@@ -5071,11 +5076,18 @@ body { padding-bottom: 22px; padding-left: 62px; }
   position: relative;
   background: #05080a;
 }
+/* The chart column never crushes to a sliver while the dock shares the
+   stage: below 320px its floating toolbars/chips overflow and paint over
+   the engine. The dock (shrink=1, JS clamp) gives way instead. */
+#chart-stage:not(.ofd-max) > #chart-col { min-width: 320px; }
+
 /* Maximise: the dock takes the whole stage; the chart column and the info
-   rail step aside until restored. Chart state is untouched (display only). */
+   rail step aside until restored. Chart state is untouched (display only).
+   Real-time mode engages this automatically (one clean live surface). */
 #chart-stage.ofd-max > #chart-col,
 #chart-stage.ofd-max > #info-rail { display: none !important; }
 #chart-stage.ofd-max > #of-dock { flex: 1 1 auto; max-width: none; border-left: 0; }
+#chart-stage.ofd-max > #of-dock > #ofd-resize { display: none; }
 /* Toolbar toggle carries an "on" state like other latching chrome. */
 #of-dock-toggle.on { color: #f4f1e8; border-color: #b08d57; }
 
