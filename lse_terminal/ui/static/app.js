@@ -940,6 +940,8 @@ async function loadChart() {
   const tfIsSeconds = /^\d+s$/.test(state.timeframe);
   const enterSecondsTape = () => {
     state.candleData = [];
+    // An empty live-forward tape IS the requested series (it owns the key).
+    state.candleSeriesKey = `${state.provider}|${state.symbol}|${state.timeframe}`;
     state.engineIndicators = {};
     state.lastBar = null;
     pushToChart();
@@ -971,6 +973,23 @@ async function loadChart() {
     let detail = res ? res.status : "network";
     try { detail = (await res.json()).detail || detail; } catch (e) { /* keep status */ }
     if (seq === state.loadSeq) status(`error: ${detail}`);
+    // Honesty on failure: if the series in hand belongs to a DIFFERENT
+    // symbol/timeframe than the one just requested, it must not stay on
+    // screen — stale candles under a new title painted one instrument's
+    // OHLC next to another's live quotes (seen in the wild: gold OVERVIEW
+    // beside BTC bid/ask). Clear to the empty state; the rail shows — and
+    // the chart shows nothing rather than the wrong market. A failed
+    // refresh of the SAME series keeps its data (right instrument, right
+    // resolution — just not newer).
+    const key = `${state.provider}|${state.symbol}|${state.timeframe}`;
+    if (seq === state.loadSeq && state.candleSeriesKey !== key) {
+      state.candleData = [];
+      state.lastBar = null;
+      state.serverIndicators = {};
+      state.engineIndicators = {};
+      pushToChart();
+      updateInstrumentBar();
+    }
     return;
   }
   const data = await res.json();
@@ -985,6 +1004,8 @@ async function loadChart() {
   // pane from this field, where the classic view uses a separate series.
   state.candleData = rawCandles.map(([t, o, h, l, c, v]) =>
     ({ time: t, open: o, high: h, low: l, close: c, volume: v }));
+  // The honesty check above keys stale-series detection off this stamp.
+  state.candleSeriesKey = `${state.provider}|${state.symbol}|${state.timeframe}`;
   // Python-computed indicators (built-ins and the user's own) ride along and
   // are drawn by the chart as precomputed series. In hosted mode the server
   // sends none, so the core set is computed client-side and merged in here;
