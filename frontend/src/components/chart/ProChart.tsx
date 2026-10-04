@@ -50,7 +50,7 @@ import { transformSeries } from '@/engine/transforms';
 import { toLineBreak, toKagi, toPointFigure } from '@/engine/priceCharts';
 import { renderGenericSubplots, renderPhase2Overlays, renderSubplotSelectionDots, type SubplotRenderContext } from "./renderers/subplotRenderer";
 import { renderOptionsPdfHeatmap, renderOrderBookHeatmap, renderL2DepthOverlay, type HeatmapRenderContext } from "./renderers/heatmapRenderer";
-import { renderRTView } from "./renderers/rtFlowRenderer";
+import { renderRTTakeover } from "./renderers/rtFlowRenderer";
 import { renderPositionLines, renderSelectedPositionSLTP, type PositionRenderContext } from "./renderers/positionRenderer";
 import { renderCrosshair, type CrosshairContext } from "./renderers/crosshairRenderer";
 
@@ -375,6 +375,8 @@ const ProChart: React.FC<ProChartProps> = ({
   // (recalNonce changes) or the symbol changes.
   const rtBubbleMinRef = useRef<{ key: string; value: number | null }>({ key: '', value: null });
   const rtClearNonceRef = useRef<number>(0);
+  // Last price window the RT takeover drew — "Follow price" OFF freezes it.
+  const rtPriceWinRef = useRef<{ pMin: number; pMax: number } | null>(null);
   const hoveredCandleIndexRef = useRef<number | null>(null);
   const crosshairRAFRef = useRef<number | null>(null);
   // Economic event marker hover + click-to-pin tracking
@@ -749,6 +751,7 @@ const ProChart: React.FC<ProChartProps> = ({
   useEffect(() => {
     setRtColumns([]); setRtTrades([]); setRtLiqs([]); setRtStatus(null);
     rtCursorRef.current = { cols: 0, trades: 0, liqs: 0 };
+    rtPriceWinRef.current = null;  // full reset on symbol change (doctrine)
     if (!rtEnabled || !symbol) return;
     let stopped = false;
     const paused = () => !!(rtSettings && rtSettings.pause);
@@ -1895,52 +1898,9 @@ const ProChart: React.FC<ProChartProps> = ({
     // ladder, from engine-recorded venue data. The status chip is drawn
     // whenever the mode is ON — honest about LIVE vs unreachable vs
     // "no crypto venue for this symbol".
-    if (rtEnabled) {
-      const s: any = rtSettings || {};
-      // Sticky "Auto size min N": calibrate once from real prints, hold
-      // until Recalibrate (recalNonce) or a symbol change rotates the key.
-      const recalKey = `${symbol}:${Number(s.recalNonce) || 0}`;
-      if (rtBubbleMinRef.current.key !== recalKey) {
-        rtBubbleMinRef.current = { key: recalKey, value: null };
-      }
-      const info = renderRTView(heatmapCtx, rtColumns as any, rtTrades as any, rtLiqs as any, {
-        heatmap: s.heatmap !== false,
-        extendDepth: s.extendDepth !== false,
-        ladder: s.ladder !== false,
-        bubbles: s.bubbles !== false,
-        tradeLine: s.tradeLine !== false,
-        liqs: s.liqs !== false,
-        liqMinNotional: Number(s.liqMinNotional) || 0,
-        activityStrip: s.activityStrip !== false,
-        // "Auto size" ON (default): sticky 75th-percentile notional, held
-        // until Recalibrate. OFF: the user's manual "Minimum value".
-        bubbleMin: s.bubbleAuto === false
-          ? Math.max(1, Number(s.bubbleMinValue) || 10000)
-          : rtBubbleMinRef.current.value,
-      }, rtStatus);
-      if (s.bubbleAuto !== false && rtBubbleMinRef.current.value == null
-          && rtTrades.length >= 32 && info.autoMin > 0) {
-        rtBubbleMinRef.current.value = info.autoMin;
-      }
-      // Live truths for the shell's RT settings menu (grouping, auto min,
-      // not-plotted count, recorded span/bytes, liq source, drops). Read-only
-      // channel; the shell polls it while the menu is open.
-      (window as any).__gtRtInfo = {
-        grouping: info.groupingLabel,
-        autoMin: rtBubbleMinRef.current.value ?? info.autoMin,
-        autoSettled: rtBubbleMinRef.current.value != null,
-        notPlotted: info.notPlotted,
-        recordedMs: rtStatus?.recorded_ms || 0,
-        bytes: rtStatus?.approx_bytes || 0,
-        liqSource: rtStatus?.liq_source || null,
-        colsDropped: rtStatus?.cols_dropped || 0,
-        tradesDropped: rtStatus?.trades_dropped || 0,
-        venue: rtStatus?.venue || null,
-        connected: !!rtStatus?.connected,
-        trades: rtTrades.length,
-        liqs: rtLiqs.length,
-      };
-    }
+    // (The RT view itself is drawn LAST in this pipeline — see the
+    // renderRTTakeover call just before the double-buffer blit. It owns the
+    // whole surface while on, exactly like G-Flow's Real-time mode.)
 
     // ── Trading session boxes (Tokyo, London, New York) ──
     // Rendered behind candles so the semi-transparent colored rectangles
@@ -5488,6 +5448,74 @@ const ProChart: React.FC<ProChartProps> = ({
       }
     }
 
+    // ── Real-time TAKEOVER (EdgeDepth RT port, G-Flow behaviour) ──
+    // Drawn LAST, over the whole surface: while Real-time is on, the chart
+    // area IS the RT view — its own rolling live time scale and auto-fitted
+    // price scale, depth bands, trade line / 1s candles, bubbles, ladder,
+    // liquidations and activity strip. The candle pipeline above still ran
+    // on untouched state (timeframe, bar style, viewport all stay the
+    // user's), so toggling off reveals the chart exactly as it was.
+    if (rtEnabled) {
+      const s: any = rtSettings || {};
+      // Sticky "Auto size min N": calibrate once from real prints, hold
+      // until Recalibrate (recalNonce) or a symbol change rotates the key.
+      const recalKey = `${symbol}:${Number(s.recalNonce) || 0}`;
+      if (rtBubbleMinRef.current.key !== recalKey) {
+        rtBubbleMinRef.current = { key: recalKey, value: null };
+      }
+      const info = renderRTTakeover(ctx, {
+        width: dimensions.width,
+        height: dimensions.height,
+        axisWidth: PRICE_AXIS_WIDTH,
+        background: colors.background || '#0a0f0c',
+      }, rtColumns as any, rtTrades as any, rtLiqs as any, {
+        heatmap: s.heatmap !== false,
+        extendDepth: s.extendDepth !== false,
+        ladder: s.ladder !== false,
+        bubbles: s.bubbles !== false,
+        tradeLine: s.tradeLine !== false,
+        candles1s: s.candles1s === true,
+        liqs: s.liqs !== false,
+        liqMinNotional: Number(s.liqMinNotional) || 0,
+        activityStrip: s.activityStrip !== false,
+        // "Auto size" ON (default): sticky 75th-percentile notional, held
+        // until Recalibrate. OFF: the user's manual "Minimum value".
+        bubbleMin: s.bubbleAuto === false
+          ? Math.max(1, Number(s.bubbleMinValue) || 10000)
+          : rtBubbleMinRef.current.value,
+        spanMode: s.autoFit ? 'session' : 'live',
+        pause: s.pause === true,
+        followPrice: s.followPrice !== false,
+      }, rtStatus, rtPriceWinRef.current);
+      if (s.bubbleAuto !== false && rtBubbleMinRef.current.value == null
+          && rtTrades.length >= 32 && info.autoMin > 0) {
+        rtBubbleMinRef.current.value = info.autoMin;
+      }
+      // Remember the drawn price window so unticking "Follow price" freezes
+      // exactly what is on screen (refreshed every frame while following).
+      if (s.followPrice !== false && info.pMax > info.pMin) {
+        rtPriceWinRef.current = { pMin: info.pMin, pMax: info.pMax };
+      }
+      // Live truths for the shell's RT settings menu (grouping, auto min,
+      // not-plotted count, recorded span/bytes, liq source, drops). Read-only
+      // channel; the shell polls it while the menu is open.
+      (window as any).__gtRtInfo = {
+        grouping: info.groupingLabel,
+        autoMin: rtBubbleMinRef.current.value ?? info.autoMin,
+        autoSettled: rtBubbleMinRef.current.value != null,
+        notPlotted: info.notPlotted,
+        recordedMs: rtStatus?.recorded_ms || 0,
+        bytes: rtStatus?.approx_bytes || 0,
+        liqSource: rtStatus?.liq_source || null,
+        colsDropped: rtStatus?.cols_dropped || 0,
+        tradesDropped: rtStatus?.trades_dropped || 0,
+        venue: rtStatus?.venue || null,
+        connected: !!rtStatus?.connected,
+        trades: rtTrades.length,
+        liqs: rtLiqs.length,
+      };
+    }
+
     // DOUBLE-BUFFER BLIT: Copy the fully-drawn offscreen canvas to the visible
     // canvas in one atomic operation. The visible canvas is never in a half-drawn
     // state because we only touch it here, after all drawing is complete.
@@ -5551,6 +5579,14 @@ const ProChart: React.FC<ProChartProps> = ({
     const canvas = overlayCanvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
+    // Real-time takeover active: the surface shows the RT view's own
+    // time/price scales, so the candle-domain crosshair would print WRONG
+    // prices and times over it. Clear and skip — honesty over decoration.
+    if (rtEnabled) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
 
     // Build the context object with all current ref/state values.
     // Refs are dereferenced here so the renderer receives plain values,
@@ -5618,7 +5654,7 @@ const ProChart: React.FC<ProChartProps> = ({
     };
 
     renderCrosshair(crosshairCtx);
-  }, [dimensions, candles, viewState, colors, indicatorData, indicators, indicatorHeightRatio, getVisibleCandles, getPriceRange, yToPrice, xToIndex, indexToX, formatPrice, formatTime, formatDate, onCrosshairMove, dpr, showOHLC, syncedCrosshairTime]);
+  }, [dimensions, candles, viewState, colors, indicatorData, indicators, indicatorHeightRatio, getVisibleCandles, getPriceRange, yToPrice, xToIndex, indexToX, formatPrice, formatTime, formatDate, onCrosshairMove, dpr, showOHLC, syncedCrosshairTime, rtEnabled]);
 
   useEffect(() => {
     drawCrosshairRef.current = drawCrosshair;
@@ -8147,29 +8183,9 @@ const ProChart: React.FC<ProChartProps> = ({
     setViewState(prev => ({ ...prev, autoFollowLatest: true }));
   }, [followLatest, disableAutoFollow]);
 
-  // ── RT view: "Follow price" + "Auto-fit visible history" (EdgeDepth RT) ──
-  // Follow price keeps the live edge pinned (auto-follow) as new 1 Hz columns
-  // land; Auto-fit continuously frames the whole recorded session — from the
-  // candle holding the first recorded column to the newest bar — reusing the
-  // exact fit math above. Both act only while the RT view is on and are
-  // re-evaluated per new column, so they track the session as it grows.
-  useEffect(() => {
-    if (!rtEnabled || rtColumns.length === 0) return;
-    const s: any = rtSettings || {};
-    if (s.autoFit) {
-      const chartWidth = dimensions.width - PRICE_AXIS_WIDTH;
-      if (chartWidth <= 0 || candles.length === 0) return;
-      const t0 = Number(rtColumns[0].t) || 0;
-      let startIndex = candles.length - 1;
-      while (startIndex > 0 && candles[startIndex - 1].time >= t0) startIndex--;
-      const count = Math.max(1, candles.length - startIndex);
-      let cw = (chartWidth * 0.92) / (count * (1 + CANDLE_GAP_RATIO));
-      cw = Math.min(MAX_CANDLE_WIDTH, Math.max(FIT_MIN_CANDLE_WIDTH, cw));
-      setViewState(prev => ({ ...prev, startIndex, candleWidth: cw, autoFollowLatest: false }));
-    } else if (s.followPrice) {
-      setViewState(prev => (prev.autoFollowLatest ? prev : { ...prev, autoFollowLatest: true }));
-    }
-  }, [rtColumns, rtEnabled, rtSettings?.followPrice, rtSettings?.autoFit]);
+  // (No RT viewState coupling: the RT takeover view owns its own time/price
+  // scales inside renderRTTakeover and never touches the candle viewport —
+  // the user's chart must come back exactly as it was.)
 
   useEffect(() => {
     // Skip during active scroll: the scroll RAF (wheelRAFRef) already calls

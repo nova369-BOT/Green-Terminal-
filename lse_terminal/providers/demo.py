@@ -101,18 +101,10 @@ class DemoProvider(Provider):
         # A slow sine drift keeps long walks from wandering to silly prices.
         drift = np.sin(np.linspace(0, 6 * math.pi, bars)) * scale * 0.3
         path = base * np.exp(np.cumsum(sub.sum(axis=1) + drift))
-        # Anchor the END of every walk at the symbol's canonical base price.
-        # The walks were start-anchored before, so each timeframe's cumulative
-        # wander ended at its own level (1s ≈ 672k while 1h ≈ 82k for BTC) and
-        # the live tick stream continued whichever walk happened to load
-        # first. One symbol = one current price: switching timeframe must
-        # never show a cliff between history and the live quote. Shapes still
-        # differ per timeframe (the seed hashes the timeframe label); only
-        # the level is shared.
-        path = path / path[-1] * base
+        path = path / path[0] * base
 
         opens = np.empty(bars)
-        opens[0] = path[0]
+        opens[0] = base
         opens[1:] = path[:-1]
         intra = opens[:, None] * np.exp(np.cumsum(sub, axis=1))
         highs = np.maximum(intra.max(axis=1), np.maximum(opens, path))

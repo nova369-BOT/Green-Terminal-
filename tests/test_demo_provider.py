@@ -50,27 +50,3 @@ def test_stream_emits_ticks():
     ticks = asyncio.run(take_three())
     assert all(t["symbol"] in ("DEMO:BTC", "DEMO:VIX") for t in ticks)
     assert all(t["price"] > 0 for t in ticks)
-
-
-def test_timeframes_share_one_price_level():
-    """One symbol = one current price, on every timeframe.
-
-    The walks used to be start-anchored, so each timeframe's cumulative
-    wander ended at its own level (1s ended ~10x away from 1h for BTC).
-    Switching the chart to seconds then showed a price cliff between
-    history and the live quote — exposed the day Real-time mode started
-    switching charts to 1s. Walks are end-anchored at the symbol's base
-    price now; shapes still differ per timeframe, the level is shared.
-    """
-    from lse_terminal.providers.demo import DemoProvider, _UNIVERSE
-
-    p = DemoProvider()
-    base = _UNIVERSE["DEMO:BTC"][2]
-    finals = {}
-    for tf in ("1s", "5s", "1m", "1h", "1d"):
-        df = p.candles("DEMO:BTC", tf, limit=5)
-        finals[tf] = float(df.iloc[-1]["close"])
-    for tf, close in finals.items():
-        assert close == pytest.approx(base), (tf, close)
-    # The live tick stream continues the same level, whichever walk ran first.
-    assert p.quote("DEMO:BTC").price == pytest.approx(base)

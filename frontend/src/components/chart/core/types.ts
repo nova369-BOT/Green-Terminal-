@@ -169,7 +169,7 @@ export interface ProChartProps {
   rtEnabled?: boolean;
   rtSettings?: {
     heatmap?: boolean; ladder?: boolean; bubbles?: boolean;
-    tradeLine?: boolean; pause?: boolean;
+    tradeLine?: boolean; pause?: boolean; candles1s?: boolean;
     followPrice?: boolean; autoFit?: boolean; extendDepth?: boolean;
     liqs?: boolean; liqMinNotional?: number; activityStrip?: boolean;
     bubbleAuto?: boolean; bubbleMinValue?: number;

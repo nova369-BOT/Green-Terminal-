@@ -368,10 +368,10 @@ def my_ind(df, length=20):
       <div class="rt-menu-head">REAL-TIME SETTINGS</div>
       <div class="rt-menu-sec">VIEW</div>
       <label><input type="checkbox" id="rt-opt-pause"> Pause display</label>
-      <label title="One-second candles built from the broker feed, in place of the trade-price line. Uses the chart's own 1s timeframe (already native here)."><input type="checkbox" id="rt-opt-1s"> 1s candles</label>
+      <label title="One-second candles built from observed venue trades, in place of the trade-price line."><input type="checkbox" id="rt-opt-1s"> 1s candles</label>
       <label><input type="checkbox" id="rt-opt-tradeline" checked> Trade-price line</label>
       <label title="Order book ladder on the chart's own price rows: resting depth from the live book."><input type="checkbox" id="rt-opt-ladder" checked> Depth ladder</label>
-      <label title="Keeps the live edge pinned as new flow lands. Drag the chart to stop following; re-tick to resume."><input type="checkbox" id="rt-opt-follow" checked> Follow price</label>
+      <label title="Auto-fits the price scale to observed prices as new flow lands. Untick to freeze the current price window."><input type="checkbox" id="rt-opt-follow" checked> Follow price</label>
       <label title="Fits the recorded session in the visible window, grouping price rows to stay readable."><input type="checkbox" id="rt-opt-autofit"> Auto-fit visible history</label>
       <div class="rt-menu-row">
         <button type="button" id="rt-btn-live" class="rt-menu-btn" title="Back to the live edge, following price.">Return live</button>
@@ -630,10 +630,7 @@ def my_ind(df, length=20):
           <span class="of-sep"></span>
           <span class="of-k">FLOW</span><span id="ofd-flow" class="of-v">—</span>
           <span class="of-k">GW</span><span id="ofd-gw" class="of-v off" title="EdgeDepth gateway reachability">—</span>
-          <!-- "WASM", not "RT": this chip reports engine runtime artifacts.
-               It used to read RT, which now collides with the Real-time
-               feature that was deliberately deleted from this dock. -->
-          <span class="of-k">WASM</span><span id="ofd-art" class="of-v off" title="Engine runtime artifacts">—</span>
+          <span class="of-k">RT</span><span id="ofd-art" class="of-v off" title="Engine runtime artifacts">—</span>
           <span class="of-flex"></span>
           <button type="button" class="of-link" id="ofd-tfsync"
                   title="Follow the chart timeframe inside the engine">TF: on</button>

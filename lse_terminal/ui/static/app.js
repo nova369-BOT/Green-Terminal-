@@ -20911,7 +20911,7 @@ const rtState = Object.assign(
     heatmap: true, extend: true,
     bubbles: true, autoSize: true, minVal: 10000,
     liqs: true, liqMin: 0, strip: true,
-    recalNonce: 0, clearNonce: 0, prevTf: null,
+    recalNonce: 0, clearNonce: 0,
   },
   rtLoadSettings()
 );
@@ -20927,7 +20927,7 @@ function rtPush() {
       rtSettings: {
         heatmap: !!rtState.heatmap, ladder: !!rtState.ladder,
         bubbles: !!rtState.bubbles, tradeLine: !!rtState.tradeLine,
-        pause: !!rtState.pause,
+        pause: !!rtState.pause, candles1s: !!rtState.candles1s,
         followPrice: !!rtState.follow, autoFit: !!rtState.autoFit,
         extendDepth: !!rtState.extend,
         liqs: !!rtState.liqs, liqMinNotional: Number(rtState.liqMin) || 0,
@@ -20940,45 +20940,12 @@ function rtPush() {
     });
   }
 }
-// Entering Real-time is a real MODE SWITCH, exactly like EdgeDepth: the
-// chart drops to the native 1s timeframe with the trade-price line as the
-// price trace (or 1s candles when that box is ticked), lands on the live
-// edge, and the flow layers (depth bands, bubbles, ladder, liquidations,
-// activity strip) draw on top. Leaving restores exactly what the user had.
-function rtSyncTypeSelect() {
-  const ct = document.getElementById("chart-type");
-  if (ct) ct.value = state.chartType;
-}
-function rtEnterMode() {
-  try {
-    rtState.prevTf = state.timeframe;
-    rtState.prevType = state.chartType;
-    state.timeframe = "1s";
-    state.chartType = rtState.candles1s ? "candles" : "line";
-    rtSyncTypeSelect(); renderTimeframes(); loadChart(); saveShellState();
-    // Land on the live edge once the 1s series is in (update merges, so a
-    // slightly early call is harmless).
-    setTimeout(() => { try { window.LSEChart.goToLatest(); } catch (e) {} }, 1200);
-  } catch (e) { console.error("rt enter", e); }
-}
-function rtExitMode() {
-  try {
-    if (rtState.prevTf) state.timeframe = rtState.prevTf;
-    if (rtState.prevType) state.chartType = rtState.prevType;
-    rtState.prevTf = null; rtState.prevType = null;
-    rtSyncTypeSelect(); renderTimeframes(); loadChart(); saveShellState();
-  } catch (e) { console.error("rt exit", e); }
-}
-// "1s candles" while RT is on: candles vs the trade-price line as the price
-// trace — the chart TYPE flips, the timeframe stays 1s (EdgeDepth parity:
-// chart_type = rt_candles ? Candles : Line). No data round-trip needed.
-function rtApply1sCandles(on) {
-  if (!rtState.enabled) return;
-  try {
-    state.chartType = on ? "candles" : "line";
-    rtSyncTypeSelect(); pushToChart(); saveShellState(); syncBarTypeSelector();
-  } catch (e) { console.error("rt 1s candles", e); }
-}
+// The Real-time button is a pure view toggle, same effect as in the G-Flow
+// terminal: the chart surface becomes the live RT view (own rolling seconds
+// scale, depth bands, trade line / 1s candles, bubbles, ladder, strip) and
+// toggling off reveals the user's chart EXACTLY as it was. It never touches
+// the timeframe rail, the bar-style selector or any saved chart state —
+// everything happens inside the chart's RT renderer via rtSettings.
 function rtFmtNum(v) {
   if (!isFinite(v)) return "—";
   if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
@@ -21031,8 +20998,6 @@ function setupRtToggle() {
   const paint = () => btn.classList.toggle("rt-on", !!rtState.enabled);
   btn.addEventListener("click", () => {
     rtState.enabled = !rtState.enabled;
-    // The switch: ON = live seconds-scale flow view, OFF = your chart back.
-    if (rtState.enabled) rtEnterMode(); else rtExitMode();
     paint(); rtSave(); rtPush();
   });
   let dynTimer = null;
@@ -21082,34 +21047,23 @@ function setupRtToggle() {
     box.checked = !!rtState[key];
     box.addEventListener("change", () => {
       rtState[key] = !!box.checked;
-      if (key === "candles1s") rtApply1sCandles(rtState.candles1s);
-      // Follow price and Auto-fit are alternatives in effect (auto-fit wins
-      // while both are on, like the original's linked checkboxes).
       syncRows(); rtSave(); rtPush();
     });
   }
-  // VIEW buttons: Return live = back to the live edge, following price.
-  // Whole session = frame everything retained this session.
+  // VIEW buttons act on the RT view's OWN span (never the candle chart):
+  // Return live = back to the rolling last-30-seconds window; Whole session
+  // = everything retained this session. Both just flip the span setting the
+  // RT renderer reads; the Auto-fit checkbox mirrors it.
+  const autofitBox = document.getElementById("rt-opt-autofit");
+  const setSpan = (session) => {
+    rtState.autoFit = !!session;
+    if (autofitBox) autofitBox.checked = rtState.autoFit;
+    rtSave(); rtPush();
+  };
   const liveBtn = document.getElementById("rt-btn-live");
-  if (liveBtn) liveBtn.addEventListener("click", () => {
-    try { window.LSEChart.goToLatest(); } catch (e) { console.error("rt return live", e); }
-  });
+  if (liveBtn) liveBtn.addEventListener("click", () => setSpan(false));
   const sessBtn = document.getElementById("rt-btn-session");
-  if (sessBtn) sessBtn.addEventListener("click", () => {
-    try {
-      const candles = window.LSEChart.getLoadedCandles() || [];
-      if (!candles.length) return;
-      const info = window.__gtRtInfo || {};
-      const recMs = Number(info.recordedMs) || 0;
-      let start = 0;
-      if (recMs > 0) {
-        const cutoff = candles[candles.length - 1].time - recMs;
-        start = candles.length - 1;
-        while (start > 0 && candles[start - 1].time >= cutoff) start--;
-      }
-      window.LSEChart.fitIndexRange(start, candles.length - 1);
-    } catch (e) { console.error("rt whole session", e); }
-  });
+  if (sessBtn) sessBtn.addEventListener("click", () => setSpan(true));
   // TRADES: Recalibrate re-runs the auto-size percentile from current prints.
   const recalBtn = document.getElementById("rt-btn-recal");
   if (recalBtn) recalBtn.addEventListener("click", () => {
