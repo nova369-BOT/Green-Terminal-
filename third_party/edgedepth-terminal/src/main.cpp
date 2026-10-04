@@ -1511,6 +1511,38 @@ void main_loop() {
     if (g_app.ws_client) g_app.ws_client->tick();
     if (g_app.replay_ws_client) g_app.replay_ws_client->tick();
     tick_restart_refetch();
+#ifdef __EMSCRIPTEN__
+    // Green Terminal host bridge (?rt=0 embeds only). The host toolbar
+    // carries the Real-time button instead of our pill; it writes
+    // window.__gtRtCmd (1 = RT on, 2 = RT off) and we apply it through the
+    // exact set_rt_mode() path the pill click uses — entitlement gate and
+    // all. Lives here, not in the toolbar renderer, so it works every frame
+    // whether or not a chart toolbar is on screen; a command posted before
+    // the first chart exists is left in place (not consumed) until one does.
+    // Truth is published back in window.__gtRtOn every frame so the host
+    // button can never claim a state the engine is not in.
+    {
+        static const bool rt_bridge = url_rt_disabled();
+        if (rt_bridge) {
+            ChartWidget* bridge_chart = nullptr;
+            for (auto& w : g_app.widgets) {
+                if (w->is_open && w->type() == WidgetType::Chart) {
+                    bridge_chart = static_cast<ChartWidget*>(w.get());
+                    break;
+                }
+            }
+            if (bridge_chart) {
+                const int rt_cmd = EM_ASM_INT({
+                    const c = window.__gtRtCmd | 0; window.__gtRtCmd = 0; return c;
+                });
+                if (rt_cmd == 1 && !bridge_chart->rt_mode()) bridge_chart->set_rt_mode(true);
+                else if (rt_cmd == 2 && bridge_chart->rt_mode()) bridge_chart->set_rt_mode(false);
+            }
+            EM_ASM({ window.__gtRtOn = $0; },
+                   (bridge_chart && bridge_chart->rt_mode()) ? 1 : 0);
+        }
+    }
+#endif
     static std::chrono::steady_clock::time_point last_frame{};
     static bool has_previous_frame = false;
     const auto now = std::chrono::steady_clock::now();

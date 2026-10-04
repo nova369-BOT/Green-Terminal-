@@ -318,8 +318,8 @@ inline bool url_watchlist_disabled() {
 // Embed flag: ?rt=0 hides the Real-time toolbar PILL — and only the pill.
 // Green Terminal's G-Flow dock sets it because the host carries its own
 // Real-time button; the RT display itself stays fully functional and is
-// driven by the host through the window.__gtRtCmd bridge (see
-// render_tf_control in app_shell.cpp). Standalone boots are unaffected.
+// driven by the host through the window.__gtRtCmd bridge (see main_loop
+// in main.cpp). Standalone boots are unaffected.
 inline bool url_rt_disabled() {
 #ifdef __EMSCRIPTEN__
     return EM_ASM_INT({
