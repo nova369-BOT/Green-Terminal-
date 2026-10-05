@@ -13393,8 +13393,23 @@ function ofBindDock() {
       const move = (ev) => {
         if (!stage) return;
         const r = stage.getBoundingClientRect();
+        const raw = r.right - ev.clientX;
+        // Snap-to-minimize: dragging within 180px of the stage edge collapses
+        // the dock entirely (VS Code / TradingView pane behaviour). The saved
+        // width is kept, so reopening from the Order flow button restores
+        // exactly what was there — otherwise the 320px floor made the dock
+        // impossible to minimize by dragging.
+        if (raw < 180) {
+          grip.classList.remove("drag");
+          grip.removeEventListener("pointermove", move);
+          grip.removeEventListener("pointerup", up);
+          ofDock.open = false;
+          ofDockSavePrefs();
+          ofDockApply();
+          return;
+        }
         const cap = ofDockMaxWidth() || r.width * 0.78;
-        const w = Math.max(320, Math.min(r.right - ev.clientX, cap));
+        const w = Math.max(320, Math.min(raw, cap));
         ofDock.w = Math.round(w);
         const d = $("of-dock");
         if (d) d.style.flexBasis = ofDock.w + "px";
