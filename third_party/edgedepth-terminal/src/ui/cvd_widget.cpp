@@ -100,15 +100,20 @@ void CVDWidget::render() {
         ImPlot::SetupAxisScale(ImAxis_X1, ImPlotScale_Time);
         ImPlot::SetupAxis(ImAxis_Y1, nullptr,
                           ImPlotAxisFlags_AutoFit | ImPlotAxisFlags_NoLabel);
-        ImPlot::PushStyleColor(ImPlotCol_Line, Theme::Tokens::BRAND);
-        ImPlot::PushStyleColor(ImPlotCol_Fill, ImVec4(
-            Theme::Tokens::BRAND.x, Theme::Tokens::BRAND.y,
-            Theme::Tokens::BRAND.z, 0.16f));
+        ImPlotSpec shaded_spec;
+        shaded_spec.FillColor = Theme::Tokens::BRAND;
+        shaded_spec.FillAlpha = 0.16f;
+        ImPlotSpec line_spec;
+        line_spec.LineColor = Theme::Tokens::BRAND;
+        line_spec.LineWeight = 1.5f;
+        if (times.size() == 1) {
+            line_spec.Marker = ImPlotMarker_Circle;
+            line_spec.MarkerFillColor = Theme::Tokens::BRAND;
+        }
         ImPlot::PlotShaded("##cvd_fill", times.data(), values.data(),
-                           static_cast<int>(times.size()), 0.0);
+                           static_cast<int>(times.size()), 0.0, shaded_spec);
         ImPlot::PlotLine("##cvd_line", times.data(), values.data(),
-                         static_cast<int>(times.size()));
-        ImPlot::PopStyleColor(2);
+                         static_cast<int>(times.size()), line_spec);
         ImPlot::EndPlot();
     }
     ImGui::End();
