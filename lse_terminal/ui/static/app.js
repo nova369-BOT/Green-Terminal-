@@ -13174,6 +13174,19 @@ const ofState = {
   lastTfSec: 0, tfTimer: 0,
 };
 
+// Embed-only chrome contract. Green Terminal owns these shared controls while
+// EdgeDepth keeps its full implementation and all flow-exclusive tools. The
+// engine carries these non-route query flags across its own market navigation.
+const OF_EMBED_QUERY = [
+  "watchlist=0", // one symbol navigator: Green Terminal's watchlist/search
+  "rt=0",        // one Real-time control: Green Terminal's chart toolbar
+  "tf=0",        // one timeframe control: Green Terminal's timeframe rail
+  "ctypes=flow", // chart menu keeps EdgeDepth-exclusive order-flow views
+  "draw=0",      // one drawing toolbar: Green Terminal's drawing suite
+  "ind=flow",    // indicator menu keeps EdgeDepth-exclusive flow studies
+  "brand=0",     // one product identity: Green Terminal's outer header
+].join("&");
+
 // Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
 // These are the deepest, most-traded coins; the input is a free-text
 // datalist, so anything a venue lists can still be typed.
@@ -13555,13 +13568,11 @@ function loadOrderFlowSymbol(sym) {
   // the first frame once artifacts are present.
   if (fr && ofState.ready) {
     if (!cur || cur.symbol !== vsym) {
-      // ?watchlist=0 — GT owns the watchlist (unified market list in the
-      // sidebar); the embedded terminal must not show a second one.
-      // &rt=0 — Real-time now lives natively on the LSE chart (toolbar
-      // toggle), so the dock's duplicate RT mode is removed (migration
-      // rule: port a view, then delete it from the dock). The engine
-      // carries both flags across its own symbol/venue navigations.
-      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0";
+      // Green Terminal owns shared navigation/chart controls; the embed query
+      // hides only their duplicate engine entry points. All flags survive the
+      // engine's own symbol/venue navigation through url_router.h.
+      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym)
+        + "?" + OF_EMBED_QUERY;
       // Fresh boot: the engine starts on its own default timeframe, so the
       // bridge pushes the chart's timeframe once the runtime is up.
       ofState.lastTfSec = 0;

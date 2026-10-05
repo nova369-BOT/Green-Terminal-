@@ -38,6 +38,7 @@
 #include "rendering/app_shell.h"
 #include "rendering/menu.h"            // "+ widget" toolbar menu → picker / add-request
 #include "core/education_boot.h"       // is_embedded()/is_pack() gate the add path
+#include "core/url_router.h"           // Green Terminal embed-only control deduplication
 #include "core/recorder_glue.h"        // ClipRecorder::focus_active gates the rail
 #include "ui/drawing/drawing_toolbar.h"  // in-chart rail + Draw dropdown
 #include "ui/drawing/drawing_icons.h"
@@ -918,7 +919,8 @@ void ChartWidget::render() {
     // sits directly against the chart). It reserves its width from the plot;
     // the body child keeps the indicator panes right of the rail too. Gated
     // in live and replay; recording keeps its clean capture surface.
-    const bool show_rail = !ClipRecorder::focus_active() &&
+    const bool show_rail = !url_drawing_controls_disabled() &&
+                           !ClipRecorder::focus_active() &&
                            !edu::RecorderRuntime::instance().active();
     if (show_rail) {
         drawing::render_chart_rail(ctx_.drawing_mgr(),
@@ -2872,6 +2874,13 @@ void ChartWidget::render_controls() {
 
     using namespace Theme;
 
+    // These flags only suppress duplicate control entry points in Green
+    // Terminal's embed. The corresponding chart modes, indicators, drawings
+    // and workspace state remain implemented and continue to render.
+    const bool flow_chart_types_only = url_flow_chart_types_only();
+    const bool drawing_controls_hidden = url_drawing_controls_disabled();
+    const bool standard_indicators_hidden = url_standard_indicators_disabled();
+
     // Bar geometry: a 44px band (8 top + 28 control + 8 bottom), bg-1 fill, with a
     // line-1 hairline along the bottom (drawn last) against the chart canvas.
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -2994,16 +3003,19 @@ void ChartWidget::render_controls() {
                           ImVec2(bp.x + ww, bp.y + bar_h), Theme::u32(Theme::Tokens::PANEL));
     };
 
-    // Timeframe segment (favourites bar + caret -> grouped dropdown), reusing the
-    // shell control so the bare terminal matches the /terminal?event= chrome. Sits
-    // left of the chart-type button; render_chart_tf draws it + returns its width.
+    // Timeframe segment (favourites bar + caret -> grouped dropdown), reusing
+    // the shell control so the bare terminal matches the /terminal?event=
+    // chrome. In ?tf=0 embeds it still services the host RT-settings bridge,
+    // but returns zero and draws no timeframe chrome.
+    float tf_control_w = 0.0f;
     {
         ImGui::SetCursorScreenPos(ImVec2(cx, bp.y + (bar_h - 30.0f) * 0.5f));
-        cx += AppShell::render_chart_tf(this) + 12.0f;
+        tf_control_w = AppShell::render_chart_tf(this);
+        if (tf_control_w > 0.0f) cx += tf_control_w + 12.0f;
     }
 
-    // Vertical divider between the timeframe group and the chart-type/layers group.
-    {
+    // Vertical divider only exists when the preceding control is visible.
+    if (tf_control_w > 0.0f) {
         const float dy = bp.y + (bar_h - 22.0f) * 0.5f;
         dl->AddLine(ImVec2(cx, dy), ImVec2(cx, dy + 22.0f), Theme::u32(Theme::Tokens::BD1), 1.0f);
         cx += 1.0f + 12.0f;
@@ -3122,7 +3134,8 @@ void ChartWidget::render_controls() {
             else liq_settings_panel_.open();
         }
         if (Theme::menu_item(UiIcon::Plus, "Add widget")) requested_popup = "add_widget_popup";
-        if (!ClipRecorder::focus_active() && !edu::RecorderRuntime::instance().active() &&
+        if (!drawing_controls_hidden && !ClipRecorder::focus_active() &&
+            !edu::RecorderRuntime::instance().active() &&
             Theme::menu_item(UiIcon::Pencil, "Drawing tools")) requested_popup = "chart_draw_popup";
         Theme::menu_separator();
         Theme::menu_section("SHIFT + DRAG SELECTS A MOVE");
@@ -3134,7 +3147,8 @@ void ChartWidget::render_controls() {
     // Draw button - the rail's tool list as a dropdown (icons left of labels).
     // Match the rail in live and replay; hide only during recording.
     {
-        const bool show_draw_menu = !ClipRecorder::focus_active() &&
+        const bool show_draw_menu = !drawing_controls_hidden &&
+                                    !ClipRecorder::focus_active() &&
                                     !edu::RecorderRuntime::instance().active();
         if (show_draw_menu) {
             if (!compact_tools) {
@@ -3344,8 +3358,12 @@ void ChartWidget::render_controls() {
         ImDrawList* d = ImGui::GetWindowDrawList();
         constexpr float kGearW = 26.0f, kCheckW = 18.0f;
         for (int r = 0; r < 8; ++r) {
+            // Green Terminal owns the duplicate price-view controls. Keep all
+            // four modes implemented (including active/restored state), but in
+            // the dock offer only EdgeDepth's order-flow-specific views.
+            if (flow_chart_types_only && r < 4) continue;
             if (r == 0 || r == 4) {
-                if (r == 4) Theme::menu_separator();
+                if (r == 4 && !flow_chart_types_only) Theme::menu_separator();
                 Theme::menu_section(r == 0 ? "PRICE" : "ORDER FLOW");
             }
             const int idx = rows[r].idx;
@@ -3880,8 +3898,8 @@ void ChartWidget::render_controls() {
                 ImGui::Dummy(ImVec2(pww, ImGui::GetFontSize() * 2.0f + 16.0f));
             }
 
-            // Volume
-            if (!indi_suppressed) {
+            // Volume (Green Terminal owns this standard indicator in embeds).
+            if (!standard_indicators_hidden && !indi_suppressed) {
                 const bool active = indicator_mgr_.has_indicator_of_type<Indicators::VolumeIndicator>();
                 if (indi_row("Volume", active, nullptr) == 1) {
                     if (active) indicator_mgr_.remove_indicator_of_type<Indicators::VolumeIndicator>();
@@ -3906,8 +3924,8 @@ void ChartWidget::render_controls() {
                 }
             }
 
-            // RSI
-            if (!indi_suppressed) {
+            // RSI (Green Terminal owns this standard indicator in embeds).
+            if (!standard_indicators_hidden && !indi_suppressed) {
                 const bool active = indicator_mgr_.has_indicator_of_type<Indicators::RSIIndicator>();
                 if (indi_row("RSI", active, nullptr) == 1) {
                     if (active) indicator_mgr_.remove_indicator_of_type<Indicators::RSIIndicator>();
@@ -3915,8 +3933,8 @@ void ChartWidget::render_controls() {
                 }
             }
 
-            // MACD
-            if (!indi_suppressed) {
+            // MACD (Green Terminal owns this standard indicator in embeds).
+            if (!standard_indicators_hidden && !indi_suppressed) {
                 const bool active = indicator_mgr_.has_indicator_of_type<Indicators::MACDIndicator>();
                 if (indi_row("MACD", active, nullptr) == 1) {
                     if (active) indicator_mgr_.remove_indicator_of_type<Indicators::MACDIndicator>();

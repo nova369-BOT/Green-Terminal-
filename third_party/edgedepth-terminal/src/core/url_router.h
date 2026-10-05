@@ -329,3 +329,69 @@ inline bool url_rt_disabled() {
     return false;  // native builds (the unit tests) keep RT available
 #endif
 }
+
+// Embed flag: ?tf=0 hides EdgeDepth's timeframe selector. Green Terminal owns
+// the visible timeframe rail and already drives the same ChartWidget method
+// through Module.__set_chart_timeframe. The hidden control's non-visual bridge
+// work (notably host-requested Real-time settings) remains active.
+inline bool url_timeframe_disabled() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]tf=0(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;
+#endif
+}
+
+// Embed flag: ?ctypes=flow keeps only EdgeDepth-exclusive order-flow views in
+// the chart-type menu. Price views remain implemented and continue to render
+// when restored from a workspace; only their duplicate embed menu rows hide.
+inline bool url_flow_chart_types_only() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]ctypes=flow(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;
+#endif
+}
+
+// Embed flag: ?draw=0 hides EdgeDepth's drawing-control entry points while it
+// is docked in Green Terminal. Existing drawings and the drawing render layer
+// stay intact; standalone boots retain the complete drawing suite.
+inline bool url_drawing_controls_disabled() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]draw=0(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;
+#endif
+}
+
+// Embed flag: ?ind=flow removes only the duplicate standard-indicator menu
+// rows (Volume, RSI and MACD). EdgeDepth-exclusive flow indicators remain
+// available, and already-active standard indicators continue to render.
+inline bool url_standard_indicators_disabled() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]ind=flow(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;
+#endif
+}
+
+// Embed flag: ?brand=0 hides only EdgeDepth's in-frame product wordmark. The
+// market pill, navigation, workspace, replay, settings and account controls
+// remain available. Green Terminal supplies the single outer product identity.
+inline bool url_brand_disabled() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]brand=0(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;
+#endif
+}
