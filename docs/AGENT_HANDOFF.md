@@ -223,7 +223,58 @@ then `gh run watch <id> --exit-status`.
   rt-caret-closeup.png, rt-menu-anchored.png, rt-settings-in-dock.png,
   stale-rail-fixed.png, gflow-dock-rt-deleted.png.
 
-## 7. OPEN ITEMS (the actual to-do)
+## 7. REFERENCE LIBRARY (read these — they are part of the mission)
+
+### The YouTube video (the product benchmark)
+- **URL: https://youtu.be/7oGfQw9rK30** — "I SPENT 2,471 HOURS BUILDING THE
+  ULTIMATE ORDERFLOW PLATFORM", channel XFlow Charts (dev "Vaslaf"), 48:27.
+- The user ordered the video STUDIED (watched/transcribed/analyzed) before any
+  implementation decisions — that was done 2026-10-02 and the complete study
+  is **`docs/VIDEO_REFERENCE_7oGfQw9rK30.md`**: full feature inventory
+  (unified linked chart environment, footprint bid×ask, CVD sub-pane, Big
+  Trades/bubbles with threshold, speed of tape, stacked imbalances,
+  Times & Sales, icebergs, L2/L3 heatmap with contrast filter + recalibrate,
+  volume profiles with POC/VA/VWAP, replay 1x–200x with SIM trading, DOM
+  click-trading, workspaces/templates) and the mapping conclusion: EdgeDepth
+  already implements the core natively, so SURFACE the engine inside GT —
+  never rebuild those features in React/JS.
+- The video is the DESTINATION BENCHMARK: when the user says "like the
+  video", this document is what they mean. Journal/statistics, macro news
+  terminal, and AI lab from the video are explicitly out of scope for phase 1.
+- If you need to re-watch: the Arena sandbox CANNOT reach YouTube — rely on
+  the saved study, or ask the user.
+
+### Design plans (in `design/`)
+- `design/GFLOW_UNIFIED_MASTER_PLAN.md`, `design/GFLOW_CHART_INTEGRATION_PLAN.md`,
+  `design/BATCH_PLAN.md`, `design/GREEN_TERMINAL_ORDERFLOW_SPEC.md` — earlier
+  approved plans/specs for the G-Flow integration and the item-by-item UI
+  batches. Check them before proposing anything "new" — it may already have a
+  decided design.
+- `design/mockups/` + `design/gflow/` + `design/srl/` — every approved/
+  rejected mockup from earlier UI rounds (indicator browser, toolbar
+  rearrange, HUD, timeframe megaselector, dock layouts A/B/C, watchlist
+  styles, footprint-on-GT-chart vision). The user picked specific variants in
+  past rounds; don't re-litigate settled choices.
+- `docs/*.png` — committed REAL screenshot proofs for every shipped step
+  (naming: preview-*, rt-*, stale-rail-fixed, dock-no-watchlist-after…).
+  This is the proof convention: every visual change ships with one.
+
+### Research conclusions already paid for (don't re-research)
+- **Nigeria ISP blocks**: NCC ordered ISPs to block crypto-exchange sites
+  (Binance, Kraken, etc.) in Feb 2024; still active as of late 2025. Binance
+  has no Naira support; Bybit/Coinbase/Kraken unlicensed there. This is why
+  the user's Binance/Bybit feeds are dead while Hyperliquid works. VPN note
+  is already in the honest-state UI text.
+- **Bybit v5 API** (already baked into the gateway): orderbook deltas must be
+  u+1 continuous else resubscribe (no checksum); `allLiquidation` topic is
+  500ms snapshots `{T,s,S,v,p}` where buy-liquidation = S=="Sell";
+  ticker is delta — unchanged fields omitted (linear 100ms cadence), so keep
+  a 30s REST gap-fill; `price24hPcnt` is a ratio → ×100 for percent; kline
+  REST returns newest-first, limit ≤1000.
+- **Hyperliquid**: symbols UPPERCASE, NO public liquidation feed — never fake
+  one.
+
+## 8. OPEN ITEMS (the actual to-do)
 
 1. **User's last screenshot had TWO arrows.** Top-right one = the mixed-symbol
    rail bug → FIXED (7cca434). The LEFT arrow target is UNCONFIRMED (asked;
@@ -241,7 +292,7 @@ then `gh run watch <id> --exit-status`.
 5. Trade-bubbles threshold belongs in Settings (user decree from pasted
    transcript). Unified timeframe — no separate orderflow TF.
 
-## 8. SANDBOX SURVIVAL GUIDE (this environment bites)
+## 9. SANDBOX SURVIVAL GUIDE (this environment bites)
 
 - **The sandbox recycles constantly, even MID-TURN.** Repo files persist but
   git HEAD silently resets to base 3b7b6fc; venv, /tmp, node_modules,
@@ -278,7 +329,7 @@ then `gh run watch <id> --exit-status`.
   first (`sed -n`), then edit.
 - PEP-668: system pip refuses installs → always venv.
 
-## 9. HOW TO BEHAVE (summary of what keeps this project healthy)
+## 10. HOW TO BEHAVE (summary of what keeps this project healthy)
 
 1. Read AGENTS.md + this file. 2. Investigate before coding; show the user
 what you found in plain words. 3. Propose UI changes and wait for approval.
