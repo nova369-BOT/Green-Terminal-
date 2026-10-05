@@ -1,0 +1,430 @@
+make: make -j4 c_based_trader_client
+[  1%] Generating C++ from messages.proto (protobuf-lite)
+[  1%] Ensuring protobuf files are generated
+[  1%] Built target generate_proto
+[  1%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/chart_widget_exposure.cpp.o
+[  3%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/main.cpp.o
+[  3%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/types/types.cpp.o
+[  3%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/message_handler.cpp.o
+ports:INFO: retrieving port: sdl3 from https://github.com/libsdl-org/SDL/archive/release-3.2.22.zip
+ports:INFO: unpacking port: sdl3
+cache:INFO: generating port: sysroot/lib/wasm32-emscripten/lto/libSDL3-mt.a... (this will be cached in "/home/runner/work/_temp/0039978d-e021-411c-a785-631ff7c31441/emsdk-main/upstream/emscripten/cache/sysroot/lib/wasm32-emscripten/lto/libSDL3-mt.a" for subsequent builds)
+em++: warning: sdl3 port is still experimental [-Wexperimental]
+system_libs:INFO: compiled 176 inputs in 15.58s
+cache:INFO:  - ok
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/message_handler.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/message_handler.h:5:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/message_handler.cpp:375:44: warning: lambda capture 'stream_type' is not used [-Wunused-lambda-capture]
+  375 |                 ctx.dispatch_queue->push({[stream_type](StreamManager&) {
+      |                                            ^~~~~~~~~~~
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/message_handler.cpp:844:9: warning: variable 'applied' set but not used [-Wunused-but-set-variable]
+  844 |     int applied = 0;
+      |         ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/main.cpp:29:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/message_handler.h:5:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+[  5%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/message_parser.cpp.o
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/main.cpp:45:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/lesson_runtime.h:20:1: warning: class 'AppContext' was previously declared as a struct; this is valid, but may result in linker errors under the Microsoft C++ ABI [-Wmismatched-tags]
+   20 | class AppContext;       // fwd
+      | ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/app_context.h:33:8: note: previous use is here
+   33 | struct AppContext {
+      |        ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/lesson_runtime.h:20:1: note: did you mean struct here?
+   20 | class AppContext;       // fwd
+      | ^~~~~
+      | struct
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/main.cpp:46:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/studio_runtime.h:24:1: warning: class 'AppContext' was previously declared as a class; this is valid, but may result in linker errors under the Microsoft C++ ABI [-Wmismatched-tags]
+   24 | class AppContext; // fwd
+      | ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/app_context.h:33:8: note: previous use is here
+   33 | struct AppContext {
+      |        ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/studio_runtime.h:24:1: note: did you mean struct here?
+   24 | class AppContext; // fwd
+      | ^~~~~
+      | struct
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/main.cpp:47:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/event_runtime.h:24:1: warning: class 'AppContext' was previously declared as a class; this is valid, but may result in linker errors under the Microsoft C++ ABI [-Wmismatched-tags]
+   24 | class AppContext; // fwd
+      | ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/app_context.h:33:8: note: previous use is here
+   33 | struct AppContext {
+      |        ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/event_runtime.h:24:1: note: did you mean struct here?
+   24 | class AppContext; // fwd
+      | ^~~~~
+      | struct
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/main.cpp:48:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/recorder_runtime.h:63:1: warning: class 'AppContext' was previously declared as a class; this is valid, but may result in linker errors under the Microsoft C++ ABI [-Wmismatched-tags]
+   63 | class AppContext;  // fwd
+      | ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/app_context.h:33:8: note: previous use is here
+   33 | struct AppContext {
+      |        ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/recorder_runtime.h:63:1: note: did you mean struct here?
+   63 | class AppContext;  // fwd
+      | ^~~~~
+      | struct
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/message_parser.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/message_parser.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+4 warnings generated.
+[  5%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/websocket.cpp.o
+2 warnings generated.
+[  7%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/orderbook_manager.cpp.o
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/websocket.cpp:173:38: warning: unused parameter 'eventType' [-Wunused-parameter]
+  173 | EM_BOOL WebSocketClient::on_open(int eventType, const EmscriptenWebSocketOpenEvent* event, void* userData) {
+      |                                      ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/websocket.cpp:192:41: warning: unused parameter 'eventType' [-Wunused-parameter]
+  192 | EM_BOOL WebSocketClient::on_message(int eventType, const EmscriptenWebSocketMessageEvent* event, void* userData) {
+      |                                         ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/websocket.cpp:203:39: warning: unused parameter 'eventType' [-Wunused-parameter]
+  203 | EM_BOOL WebSocketClient::on_error(int eventType, const EmscriptenWebSocketErrorEvent* event, void* userData) {
+      |                                       ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_exposure.cpp:2:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+3 warnings generated.
+[  7%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/display_time_zone.cpp.o
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_exposure.cpp:2:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/main.cpp:73:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/orderbook_manager.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/orderbook_manager.h:3:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/display_time_zone.cpp:213:13: warning: unused function 'mode_to_string' [-Wunused-function]
+  213 | const char* mode_to_string(TimeZonePreferenceMode mode) {
+      |             ^~~~~~~~~~~~~~
+2 warnings generated.
+[  7%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/logo_manager.cpp.o
+1 warning generated.
+[  9%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/drawing_manager.cpp.o
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/logo_manager.cpp:39:82: warning: empty character constant [-Winvalid-pp-token]
+   39 |     var b = (typeof window !== 'undefined' && window.__EDGEDEPTH_LOGO_BASE__) || '';
+      |                                                                                  ^
+3 warnings generated.
+[  9%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/stream_handler.cpp.o
+1 warning generated.
+[ 11%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/rendering/layout.cpp.o
+[ 11%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/rendering/theme.cpp.o
+[ 11%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/rendering/menu.cpp.o
+7 warnings generated.
+[ 13%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/rendering/app_shell.cpp.o
+[ 13%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/rendering/performance_diagnostics.cpp.o
+[ 13%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/upsell_modal.cpp.o
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/menu.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/menu.h:10:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/orderbook_manager.h:3:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/app_shell.cpp:13:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/menu.h:10:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/orderbook_manager.h:3:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+[ 15%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/research_moment_panel.cpp.o
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/upsell_modal.cpp:43:29: warning: empty character constant [-Winvalid-pp-token]
+   43 |     v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
+      |                             ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/upsell_modal.cpp:43:64: warning: empty character constant [-Winvalid-pp-token]
+   43 |     v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
+      |                                                                ^
+2 warnings generated.
+[ 15%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/compression_overlay.cpp.o
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/menu.cpp:16:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/menu.cpp:134:17: warning: unused variable 'ticker_subscribed' [-Wunused-variable]
+  134 |     static bool ticker_subscribed = false;
+      |                 ^~~~~~~~~~~~~~~~~
+[ 17%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/touch_odds_overlay.cpp.o
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/app_shell.cpp:26:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/app_shell.cpp:930:25: warning: unused variable 'beta_h' [-Wunused-variable]
+  930 |             const float beta_h = beta_ts.y + beta_pady * 2.0f;
+      |                         ^~~~~~
+[ 17%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/replay_library_widget.cpp.o
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/app_shell.cpp:520:26: warning: unused variable 'TF_COUNT' [-Wunused-const-variable]
+  520 |     inline constexpr int TF_COUNT = 16;
+      |                          ^~~~~~~~
+5 warnings generated.
+[ 17%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/workspace_manager.cpp.o
+[ 19%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/chart_reference_context.cpp.o
+4 warnings generated.
+[ 19%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/workspace_settings.cpp.o
+[ 21%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/chart_widget.cpp.o
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/workspace_manager.cpp:11:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/workspace_manager.cpp:11:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/workspace_manager.cpp:24:76: warning: empty character constant [-Winvalid-pp-token]
+   24 |     try { const value = localStorage.getItem('edgedepth.workspaces.v1') || '';
+      |                                                                            ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/workspace_manager.cpp:37:81: warning: empty character constant [-Winvalid-pp-token]
+   37 |     try { const value = sessionStorage.getItem('edgedepth.workspace.tab.v1') || '';
+      |                                                                                 ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/workspace_manager.cpp:53:20: warning: empty character constant [-Winvalid-pp-token]
+   53 |         let text = '';
+      |                    ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_reference_context.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_reference_context.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/workspace_settings.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:20:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/workspace_settings.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:20:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:36:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/recorder_runtime.h:63:1: warning: class 'AppContext' was previously declared as a struct; this is valid, but may result in linker errors under the Microsoft C++ ABI [-Wmismatched-tags]
+   63 | class AppContext;  // fwd
+      | ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/app_context.h:33:8: note: previous use is here
+   33 | struct AppContext {
+      |        ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/education/recorder_runtime.h:63:1: note: did you mean struct here?
+   63 | class AppContext;  // fwd
+      | ^~~~~
+      | struct
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:4901:9: warning: variable 'ohlc_hits' set but not used [-Wunused-but-set-variable]
+ 4901 |     int ohlc_hits = 0, live_hits = 0, fwd_fills = 0, gaps = 0;
+      |         ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:4901:24: warning: variable 'live_hits' set but not used [-Wunused-but-set-variable]
+ 4901 |     int ohlc_hits = 0, live_hits = 0, fwd_fills = 0, gaps = 0;
+      |                        ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:4901:39: warning: variable 'fwd_fills' set but not used [-Wunused-but-set-variable]
+ 4901 |     int ohlc_hits = 0, live_hits = 0, fwd_fills = 0, gaps = 0;
+      |                                       ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:4901:54: warning: variable 'gaps' set but not used [-Wunused-but-set-variable]
+ 4901 |     int ohlc_hits = 0, live_hits = 0, fwd_fills = 0, gaps = 0;
+      |                                                      ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:5830:50: warning: unused parameter 'idx' [-Wunused-parameter]
+ 5830 |         [](const Profile::ProfileBand& band, int idx, void* ud) {
+      |                                                  ^
+3 warnings generated.
+[ 21%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/chart_widget_realtime.cpp.o
+6 warnings generated.
+[ 21%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/chart_widget_flow.cpp.o
+3 warnings generated.
+[ 23%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/chart_widget_liquidity_response.cpp.o
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.cpp:6019:33: warning: unused function 'select_liq_lines' [-Wunused-function]
+ 6019 | static std::vector<LiqDrawLine> select_liq_lines(
+      |                                 ^~~~~~~~~~~~~~~~
+10 warnings generated.
+[ 23%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/core/realtime_archive.cpp.o
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_realtime.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_realtime.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_flow.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_flow.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_liquidity_response.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/realtime_archive.cpp:3:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/orderbook_manager.h:3:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_liquidity_response.cpp:1:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/realtime_archive.cpp:32:27: warning: empty character constant [-Winvalid-pp-token]
+   32 |     stringToUTF8(s.error||'',error,256);
+      |                           ^
+3 warnings generated.
+[ 23%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/chart_widget_scrub_preview.cpp.o
+3 warnings generated.
+3 warnings generated.
+[ 25%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/price_profile_renderer.cpp.o
+[ 25%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/trades_widget.cpp.o
+3 warnings generated.
+[ 26%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/cvd_widget.cpp.o
+[ 26%] Building CXX object CMakeFiles/c_based_trader_client.dir/src/ui/watchlist_widget.cpp.o
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/cvd_widget.cpp:103:32: error: use of undeclared identifier 'ImPlotCol_Line'; did you mean 'ImPlotCond_None'?
+  103 |         ImPlot::PushStyleColor(ImPlotCol_Line, Theme::Tokens::BRAND);
+      |                                ^~~~~~~~~~~~~~
+      |                                ImPlotCond_None
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/implot-src/implot.h:378:5: note: 'ImPlotCond_None' declared here
+  378 |     ImPlotCond_None   = ImGuiCond_None,    // No condition (always set the variable), same as _Always
+      |     ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/cvd_widget.cpp:104:32: error: use of undeclared identifier 'ImPlotCol_Fill'
+  104 |         ImPlot::PushStyleColor(ImPlotCol_Fill, ImVec4(
+      |                                ^~~~~~~~~~~~~~
+2 errors generated.
+make[3]: *** [CMakeFiles/c_based_trader_client.dir/build.make:567: CMakeFiles/c_based_trader_client.dir/src/ui/cvd_widget.cpp.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_scrub_preview.cpp:17:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:44:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/core/heatmap_manager.h:4:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/rendering/shader_heatmap_renderer.h:15:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/pb/messages.pb.h:30:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1264:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1264 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build/_deps/protobuf-src/src/google/protobuf/extension_set.h:1330:46: warning: unused parameter 'fn' [-Wunused-parameter]
+ 1330 |                        LazyEagerVerifyFnType fn) {
+      |                                              ^
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget_scrub_preview.cpp:17:
+In file included from /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/chart_widget.h:55:
+/home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/src/ui/settings_panel.h:70:21: warning: unused variable 'total_width' [-Wunused-variable]
+   70 |         const float total_width = sidebar_width + content_width;
+      |                     ^~~~~~~~~~~
+3 warnings generated.
+make[2]: *** [CMakeFiles/Makefile2:126: CMakeFiles/c_based_trader_client.dir/all] Error 2
+make[1]: *** [CMakeFiles/Makefile2:133: CMakeFiles/c_based_trader_client.dir/rule] Error 2
+make: *** [Makefile:137: c_based_trader_client] Error 2
+emmake: error: 'make -j4 c_based_trader_client' failed (returned 2)

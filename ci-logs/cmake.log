@@ -1,4 +1,4 @@
-configure: cmake -DCMAKE_BUILD_TYPE=Release .. -DCMAKE_TOOLCHAIN_FILE=/home/runner/work/_temp/cea9876f-abf2-4629-961d-a8791775565f/emsdk-main/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake -DCMAKE_CROSSCOMPILING_EMULATOR=/home/runner/work/_temp/cea9876f-abf2-4629-961d-a8791775565f/emsdk-main/node/24.19.0_64bit/bin/node
+configure: cmake -DCMAKE_BUILD_TYPE=Release .. -DCMAKE_TOOLCHAIN_FILE=/home/runner/work/_temp/0039978d-e021-411c-a785-631ff7c31441/emsdk-main/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake -DCMAKE_CROSSCOMPILING_EMULATOR=/home/runner/work/_temp/0039978d-e021-411c-a785-631ff7c31441/emsdk-main/node/24.19.0_64bit/bin/node
 -- ===========================================
 -- Building for WebAssembly (Emscripten)
 -- Build Type: Release
@@ -51,48 +51,6 @@ configure: cmake -DCMAKE_BUILD_TYPE=Release .. -DCMAKE_TOOLCHAIN_FILE=/home/runn
 --   - No runtime assertions
 --   - Smaller binary size
 -- ===========================================
--- Configuring done (44.8s)
-CMake Error at CMakeLists.txt:539 (add_executable):
-  Cannot find source file:
-
-    tests/wasm/pack_seek_test.cpp
-
-  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm
-  .ccm .cxxm .c++m .h .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90
-  .f95 .f03 .hip .ispc
-
-
-CMake Error at CMakeLists.txt:547 (add_executable):
-  Cannot find source file:
-
-    tests/wasm/realtime_mesh_test.cpp
-
-  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm
-  .ccm .cxxm .c++m .h .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90
-  .f95 .f03 .hip .ispc
-
-
-CMake Error at CMakeLists.txt:554 (add_executable):
-  Cannot find source file:
-
-    tests/wasm/realtime_history_test.cpp
-
-  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm
-  .ccm .cxxm .c++m .h .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90
-  .f95 .f03 .hip .ispc
-
-
-CMake Error at CMakeLists.txt:539 (add_executable):
-  No SOURCES given to target: pack_seek_regression
-
-
-CMake Error at CMakeLists.txt:547 (add_executable):
-  No SOURCES given to target: realtime_mesh_regression
-
-
-CMake Error at CMakeLists.txt:554 (add_executable):
-  No SOURCES given to target: realtime_depth_regression
-
-
-CMake Generate step failed.  Build files cannot be regenerated correctly.
-emcmake: error: 'cmake -DCMAKE_BUILD_TYPE=Release .. -DCMAKE_TOOLCHAIN_FILE=/home/runner/work/_temp/cea9876f-abf2-4629-961d-a8791775565f/emsdk-main/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake -DCMAKE_CROSSCOMPILING_EMULATOR=/home/runner/work/_temp/cea9876f-abf2-4629-961d-a8791775565f/emsdk-main/node/24.19.0_64bit/bin/node' failed (returned 1)
+-- Configuring done (54.6s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/runner/work/Green-Terminal-/Green-Terminal-/third_party/edgedepth-terminal/build
