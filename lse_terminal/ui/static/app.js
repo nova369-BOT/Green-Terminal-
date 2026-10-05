@@ -13699,10 +13699,9 @@ function bindOrderFlowControls() {
 }
 
 function stopOrderFlowHost() {
-  // Only the status poll stops. The iframe STAYS mounted (hidden with its
-  // section): its WebSocket and book stay warm, so coming back to ORDER
-  // FLOW is instant instead of a full WASM reboot. (ofState.ready is
-  // write-only; nothing reads it.)
+  // Only the status poll stops. The one iframe stays mounted when PRICE &
+  // CHART is temporarily hidden, so returning does not create a second engine
+  // or reconnect merely because another Green Terminal section was viewed.
   if (ofState.poll) { clearInterval(ofState.poll); ofState.poll = 0; }
 }
 
