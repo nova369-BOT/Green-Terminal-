@@ -13398,22 +13398,35 @@ function ofBindDock() {
         // the dock entirely (VS Code / TradingView pane behaviour). The saved
         // width is kept, so reopening from the Order flow button restores
         // exactly what was there — otherwise the 320px floor made the dock
-        // impossible to minimize by dragging.
+        // impossible to minimize by dragging. Works maximized too (the
+        // Real-time takeover): collapsing first ends the takeover state so
+        // the transient max is never written to prefs; the engine itself
+        // keeps running warm behind the hidden portal for instant return.
         if (raw < 180) {
           grip.classList.remove("drag");
           grip.removeEventListener("pointermove", move);
           grip.removeEventListener("pointerup", up);
+          if (ofDock.rtForced) { ofDock.rtForced = false; ofDock.max = false; }
           ofDock.open = false;
           ofDockSavePrefs();
           ofDockApply();
           return;
         }
-        const cap = ofDockMaxWidth() || r.width * 0.78;
-        const w = Math.max(320, Math.min(raw, cap));
-        ofDock.w = Math.round(w);
-        const d = $("of-dock");
-        if (d) d.style.flexBasis = ofDock.w + "px";
-        ofSyncPortal();
+        // Dragging out of Max (the RT takeover or a manual Max) restores
+        // normal sizing mid-gesture — the drag equivalent of Restore.
+        if (ofDock.max && raw < r.width - 24) {
+          ofDock.max = false;
+          ofDock.rtForced = false;
+          ofDockApply();
+        }
+        if (!ofDock.max) {
+          const cap = ofDockMaxWidth() || r.width * 0.78;
+          const w = Math.max(320, Math.min(raw, cap));
+          ofDock.w = Math.round(w);
+          const d = $("of-dock");
+          if (d) d.style.flexBasis = ofDock.w + "px";
+          ofSyncPortal();
+        }
       };
       const up = () => {
         grip.classList.remove("drag");
@@ -21006,6 +21019,11 @@ function setupRtToggle() {
       } catch (e) { console.error("rt dock open", e); }
       w.__gtRtCmd = 1;
     } else {
+      // RT is on. If its surface was minimized away (drag-to-minimize
+      // collapsed the dock), the lit button brings the flow view back
+      // instead of silently stopping the engine; the next click, with the
+      // view on screen, turns RT off.
+      if (!ofDock.open) { ofDock.open = true; ofDockApply(); return; }
       w.__gtRtCmd = 2;
     }
   });

@@ -5087,7 +5087,11 @@ body { padding-bottom: 22px; padding-left: 62px; }
 #chart-stage.ofd-max > #chart-col,
 #chart-stage.ofd-max > #info-rail { display: none !important; }
 #chart-stage.ofd-max > #of-dock { flex: 1 1 auto; max-width: none; border-left: 0; }
-#chart-stage.ofd-max > #of-dock > #ofd-resize { display: none; }
+/* The grip stays live while maximized (the Real-time takeover): drag it to
+   the stage edge to minimize the dock, drag it away from the edge to restore
+   normal sizing — the same two gestures it answers un-maximized. Hiding it
+   here is what made minimize-by-drag impossible whenever RT was on. */
+#chart-stage.ofd-max > #of-dock > #ofd-resize { border-left: 0; }
 /* Toolbar toggle carries an "on" state like other latching chrome. */
 #of-dock-toggle.on { color: #f4f1e8; border-color: #b08d57; }
 
