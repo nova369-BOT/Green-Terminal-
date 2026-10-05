@@ -146,48 +146,12 @@ inline void url_register_popstate() {
 #endif
 }
 
-// Extract a lowercased ?exchange=<ex> value from a query string (e.g.
-// "?exchange=hl&foo=1"); returns "" when absent.
-//
-// This walks the key=value pairs instead of searching for the literal
-// "exchange=". A bare find() also matches a key that merely ENDS in exchange
-// ("?myexchange=hl") and the same text sitting inside some other param's VALUE
-// ("?note=exchange=hl"), and either one would silently route the terminal at a
-// venue the user never asked for. Keys are matched whole, against a boundary.
-inline std::string parse_exchange_query(const std::string& search) {
+// Read one whole query-string key. This deliberately walks key/value pairs
+// instead of searching for a substring: "surface" must not match
+// "old_surface", and text in another parameter's value is not a key. Values
+// stay case-preserved; callers that own case folding do it explicitly.
+inline std::string parse_query_value(const std::string& search, const std::string& key) {
     using size_type = std::string::size_type;
-    static const std::string key = "exchange";
-
-    size_type pos = 0;
-    while (pos < search.size()) {
-        if (search[pos] == '?' || search[pos] == '&') { ++pos; continue; }
-
-        const size_type amp = search.find('&', pos);
-        const size_type end = (amp == std::string::npos) ? search.size() : amp;
-        const size_type eq  = search.find('=', pos);
-
-        if (eq != std::string::npos && eq < end &&
-            search.compare(pos, eq - pos, key) == 0) {
-            std::string ex = search.substr(eq + 1, end - eq - 1);
-            std::transform(ex.begin(), ex.end(), ex.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return ex;
-        }
-        pos = end + 1;
-    }
-    return "";
-}
-
-// Extract a case-PRESERVED ?symbol=<sym> value from a query string (e.g.
-// "?exchange=hl&symbol=BTC"); returns "" when absent. Case is preserved here
-// because Hyperliquid coins are uppercase end-to-end; the caller normalizes
-// per venue, mirroring parse_route. GREEN TERMINAL embed patch: the GT shell
-// boots the engine at /edgedepth/index.html?exchange=..&symbol=.. (not a
-// /terminal/ path), so the symbol must be readable from the query too.
-inline std::string parse_symbol_query(const std::string& search) {
-    using size_type = std::string::size_type;
-    static const std::string key = "symbol";
-
     size_type pos = 0;
     while (pos < search.size()) {
         if (search[pos] == '?' || search[pos] == '&') { ++pos; continue; }
@@ -203,6 +167,25 @@ inline std::string parse_symbol_query(const std::string& search) {
         pos = end + 1;
     }
     return "";
+}
+
+// Extract a lowercased ?exchange=<ex> value from a query string (e.g.
+// "?exchange=hl&foo=1"); returns "" when absent.
+inline std::string parse_exchange_query(const std::string& search) {
+    std::string ex = parse_query_value(search, "exchange");
+    std::transform(ex.begin(), ex.end(), ex.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return ex;
+}
+
+// Extract a case-PRESERVED ?symbol=<sym> value from a query string (e.g.
+// "?exchange=hl&symbol=BTC"); returns "" when absent. Case is preserved here
+// because Hyperliquid coins are uppercase end-to-end; the caller normalizes
+// per venue, mirroring parse_route. GREEN TERMINAL embed patch: the GT shell
+// boots the engine at /edgedepth/index.html?exchange=..&symbol=.. (not a
+// /terminal/ path), so the symbol must be readable from the query too.
+inline std::string parse_symbol_query(const std::string& search) {
+    return parse_query_value(search, "symbol");
 }
 
 // The venues the hub serves, by their exchange id. This is the ONLY list the
@@ -391,6 +374,36 @@ inline bool url_brand_disabled() {
     return EM_ASM_INT({
         return /[?&]brand=0(?:&|$)/.test(window.location.search) ? 1 : 0;
     }) != 0;
+#else
+    return false;
+#endif
+}
+
+// Green Terminal's integrated PRICE & CHART dock has two mutually exclusive
+// EdgeDepth surfaces. `surface=flow` is the lean companion: real DOM, depth
+// and tape only, with no second price chart. Omitting it keeps the complete
+// EdgeDepth workspace for the explicit Workspace/Real-time takeover. The mode
+// is fixed for a document lifetime (the host changes it with a navigation), so
+// cache the query result and avoid a JS boundary crossing every frame.
+inline bool url_flow_surface() {
+#ifdef __EMSCRIPTEN__
+    static const bool value =
+        parse_query_value(url_get_current_search(), "surface") == "flow";
+    return value;
+#else
+    return false;
+#endif
+}
+
+// Non-visual host contract. Unlike ?rt=0 this does not hide any native
+// controls; it only enables the existing Green Terminal command/ack bridge.
+// The full Workspace surface uses it so the host can enter native Real-time
+// before its own chart chrome steps aside.
+inline bool url_green_terminal_host() {
+#ifdef __EMSCRIPTEN__
+    static const bool value =
+        parse_query_value(url_get_current_search(), "host") == "gt";
+    return value;
 #else
     return false;
 #endif

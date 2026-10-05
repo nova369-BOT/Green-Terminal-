@@ -112,7 +112,7 @@ DOMWidget::DOMWidget(const Terminal::Pair& pair, const AppContext& ctx,
     , fmt_(SymbolRegistry::instance().get_formatter(pair.exchange, pair.symbol))
 {
     subscribed_streams_ = &ctx_.stream_mgr();
-    subscribed_streams_->subscribe_orderbook(stream_key_);
+    subscribed_streams_->subscribe_orderbook(stream_key_, this);
     trade_accumulator_.init(pair, ctx_.stream_mgr(), tick_size);
 }
 

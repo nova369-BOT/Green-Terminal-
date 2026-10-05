@@ -76,6 +76,7 @@
 #include "ui/dom_widget.h"
 #include "ui/orderbook_widget.h"
 #include "ui/trades_widget.h"
+#include "ui/cvd_widget.h"
 #include "ui/watchlist_widget.h"
 #include "ui/widget.h"
 
@@ -454,6 +455,13 @@ static void on_ws_status(const std::string& status) {
         if (EducationBoot::instance().is_embedded()) {
             return;
         }
+        // Green Terminal's flow companion has no shell stats, paper panel,
+        // watchlist or chart. Do not pay for their global ticker/paper streams;
+        // DOM/depth/tape subscribe to their own real orderbook/trade keys when
+        // those widgets are created below. Same socket, fewer subscriptions.
+        if (url_flow_surface()) {
+            return;
+        }
 
         // [2026-04-24] Explicit paper trading subscribe - server no longer auto-subscribes.
         StreamKey paper_key{
@@ -727,20 +735,24 @@ void check_initialization() {
         // In embedded lesson mode the replay is the ONLY data source - skip the
         // live initial candle load (otherwise the chart floods with current
         // market data before the replay swaps in). The replay session populates
-        // candles for the lesson window via the normal pipeline.
-        if (!EducationBoot::instance().is_embedded() &&
+        // candles for the lesson window via the normal pipeline. Green
+        // Terminal's flow companion deliberately has no price chart at all, so
+        // it also skips both candle history and ChartWidget construction.
+        const bool flow_surface = url_flow_surface();
+        if (!flow_surface && !EducationBoot::instance().is_embedded() &&
             !EducationBoot::instance().is_pack()) {
             g_app.candle_mgr->initial_load();
         }
-        auto initial_chart = std::make_unique<ChartWidget>(pair, g_app.app_ctx, tick_size);
-        if (EducationBoot::instance().is_pack() && EducationBoot::instance().pack_realtime())
-            initial_chart->set_rt_mode(true);
-        g_app.widgets.push_back(std::move(initial_chart));
+        if (!flow_surface) {
+            auto initial_chart = std::make_unique<ChartWidget>(pair, g_app.app_ctx, tick_size);
+            if (EducationBoot::instance().is_pack() && EducationBoot::instance().pack_realtime())
+                initial_chart->set_rt_mode(true);
+            g_app.widgets.push_back(std::move(initial_chart));
+        }
         // The native shell (topbar + stats strip) is suppressed in embedded
-        // lesson mode (React owns it), so skip its init too - it subscribes the
-        // global ticker24h feed, which would be a live leak in a replay lesson.
-        // Pack mode also skips it: no WS means the strip would render empty.
-        if (!EducationBoot::instance().is_embedded() &&
+        // lesson mode (React owns it), pack mode (no live WS), and the GT flow
+        // companion (the outer Green Terminal owns all product/chart chrome).
+        if (!flow_surface && !EducationBoot::instance().is_embedded() &&
             !EducationBoot::instance().is_pack()) {
             AppShell::init(g_app.app_ctx, pair);
         }
@@ -753,8 +765,26 @@ void check_initialization() {
             auto fmt = SymbolRegistry::instance().get_formatter(pair.exchange, pair.symbol);
             double dom_tick = SymbolRegistry::instance().tick_or_zero(pair.exchange, pair.symbol);
 
-            if (EducationBoot::instance().is_embedded() ||
-                EducationBoot::instance().is_pack()) {
+            if (url_flow_surface()) {
+                // Green Terminal PRICE & CHART companion: flow data only.
+                // DOM is the primary ladder, Depth shows cumulative resting
+                // liquidity with real bars, and Trades is the tape. There is no
+                // ChartWidget and therefore no second candles/drawings/studies
+                // surface competing with Green Terminal's canonical chart.
+                g_app.widgets.push_back(std::make_unique<DOMWidget>(
+                    pair, g_app.app_ctx, dom_tick, 20
+                ));
+                g_app.widgets.push_back(std::make_unique<OrderbookWidget>(
+                    pair, g_app.app_ctx, fmt, 25
+                ));
+                g_app.widgets.push_back(std::make_unique<TradesWidget>(
+                    pair, g_app.app_ctx, fmt
+                ));
+                g_app.widgets.push_back(std::make_unique<CVDWidget>(
+                    pair, g_app.app_ctx
+                ));
+            } else if (EducationBoot::instance().is_embedded() ||
+                       EducationBoot::instance().is_pack()) {
                 // Lesson layout: the chart (already created above) carries the
                 // heatmap; the right side is the Order Flow read (DOM ladder +
                 // tape). NO Watchlist, NO separate Depth/Orderbook widget - a
@@ -1262,6 +1292,7 @@ void update_and_render_widgets() {
             case WidgetType::DOM:          sec = "DOM";       break;
             case WidgetType::Orderbook:    sec = "Orderbook"; break;
             case WidgetType::Trades:       sec = "Trades";    break;
+            case WidgetType::CVD:          sec = "CVD";       break;
             case WidgetType::Watchlist:    sec = "Watchlist"; break;
             case WidgetType::Stats:        sec = "Stats";     break;
             case WidgetType::PaperTrading: sec = "Paper";     break;
@@ -1280,6 +1311,7 @@ void update_and_render_widgets() {
         if (widget->type() == WidgetType::DOM) pair = &static_cast<DOMWidget*>(widget.get())->pair();
         if (widget->type() == WidgetType::Trades) pair = &static_cast<TradesWidget*>(widget.get())->pair();
         if (widget->type() == WidgetType::Orderbook) pair = &static_cast<OrderbookWidget*>(widget.get())->pair();
+        if (widget->type() == WidgetType::CVD) pair = &static_cast<CVDWidget*>(widget.get())->pair();
         if (widget->type() == WidgetType::Stats) pair = &static_cast<StatsWidget*>(widget.get())->pair();
         if (!pair) continue;
         char name[512];
@@ -1512,8 +1544,8 @@ void main_loop() {
     if (g_app.replay_ws_client) g_app.replay_ws_client->tick();
     tick_restart_refetch();
 #ifdef __EMSCRIPTEN__
-    // Green Terminal host bridge (?rt=0 embeds only). The host toolbar
-    // carries the Real-time button instead of our pill; it writes
+    // Green Terminal host bridge (?host=gt, plus legacy ?rt=0 embeds). The
+    // host toolbar can write
     // window.__gtRtCmd (1 = RT on, 2 = RT off) and we apply it through the
     // exact set_rt_mode() path the pill click uses — entitlement gate and
     // all. Lives here, not in the toolbar renderer, so it works every frame
@@ -1522,7 +1554,7 @@ void main_loop() {
     // Truth is published back in window.__gtRtOn every frame so the host
     // button can never claim a state the engine is not in.
     {
-        static const bool rt_bridge = url_rt_disabled();
+        static const bool rt_bridge = url_rt_disabled() || url_green_terminal_host();
         if (rt_bridge) {
             ChartWidget* bridge_chart = nullptr;
             for (auto& w : g_app.widgets) {
@@ -1722,13 +1754,14 @@ void main_loop() {
     // Pack mode never ran AppShell::init (no WS → empty strip), so it takes
     // the no-shell branch even though it renders the native transport bar.
     const auto& edu = EducationBoot::instance();
-    const bool full_shell = !edu.is_embedded() && !edu.is_pack() && !rec_focus;
+    const bool full_shell = !url_flow_surface() && !edu.is_embedded() &&
+                            !edu.is_pack() && !rec_focus;
     // Event (archive) + demo (pack) chromes suppress the native topbar/statsbar
     // (the React host owns the top nav) but still want the live terminal's bottom
     // telemetry strip (symbol · WS · FPS · present interval · UTC). Draw the status bar only.
     const bool status_bar_only = !rec_focus && !full_shell &&
                                  (edu.is_event() || edu.is_pack());
-    if (!rec_focus) drawing::render_style_editor(g_app.app_ctx);
+    if (!rec_focus && !url_flow_surface()) drawing::render_style_editor(g_app.app_ctx);
     if (full_shell) {
         LayoutManager::top_reserve    = AppShell::total_height();
         LayoutManager::status_reserve = Theme::Layout::STATUSBAR_H;  // bottom telemetry bar
@@ -1756,7 +1789,8 @@ void main_loop() {
     resolve_instrument_metadata_rebind();
     workspace::tick(g_app.widgets, g_app.app_ctx,
         {g_initial_route.exchange, g_initial_route.symbol},
-        g_init_complete && !EducationBoot::instance().is_embedded() &&
+        g_init_complete && !url_flow_surface() &&
+        !EducationBoot::instance().is_embedded() &&
         !EducationBoot::instance().is_pack() && !g_app.replay_mgr->is_active() &&
         !g_live_flow_rebuild.armed && !ClipRecorder::focus_active());
     LayoutManager::render_dockspace(nullptr,

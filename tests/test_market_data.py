@@ -340,32 +340,34 @@ def test_edgedepth_artifacts_endpoint(client: TestClient):
 
 
 def test_orderflow_workspace_markers():
-    """MARKET → G-FLOW section hosts the real order-flow iframe."""
+    """G-Flow is a real flow companion inside MARKET → PRICE & CHART."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     html = (root / "lse_terminal/ui/static/index.html").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
-    assert 'id="orderflow"' in html
+    assert 'id="orderflow"' in html  # inert compatibility host, never a sub-tab
     assert 'id="of-frame"' in html
     assert "GT DATA ENGINE" in html
     assert "showOrderFlowPage" in app
-    assert "sub-mk-flow" in app
-    # No lookalike DOM ladder in the shell (real engine lives in the iframe).
+    assert "sub-mk-flow" not in app
+    assert '"surface=flow"' in app
+    assert '"host=gt"' in app
+    # No lookalike DOM ladder or second iframe in the shell: real flow widgets
+    # and the mutually exclusive native Workspace live in the same engine frame.
     assert "of-ladder" not in html
-    # Unified chart: the single engine iframe lives in the body-level portal
-    # and is surfaced BOTH on the full G-Flow page (#of-stage host) and in
-    # the Price & Chart dock (#of-dock / #ofd-stage host) — one engine, one
-    # socket, no duplicate books.
+    assert html.count('id="of-frame"') == 1
     assert 'id="of-portal"' in html
     assert 'id="of-dock"' in html
     assert 'id="ofd-stage"' in html
     assert 'id="of-dock-toggle"' in html
+    assert 'id="ofd-page"' in html
     for marker in ("ofActiveHost", "ofSyncPortal", "ofEngineRoute",
                    "ofUpdateFlowChip", "ofFollowChartSymbol",
                    "ofPushTimeframe"):
-        assert marker in app, f"missing unified-chart glue: {marker}"
-    # Vendored authoritative EdgeDepth source present.
+        assert marker in app, f"missing one-chart flow glue: {marker}"
+    # Vendored authoritative EdgeDepth source and real flow components present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
+    assert (root / "third_party/edgedepth-terminal/src/ui/cvd_widget.cpp").is_file()
     assert (root / "third_party/edgedepth-terminal/src/core/heatmap_manager.cpp").is_file()
     assert (root / "third_party/edgedepth-terminal/protos/messages.proto").is_file()
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
@@ -398,5 +400,8 @@ def test_gateway_serves_all_three_venues():
     assert "exchange=hl" not in app
     for venue_key in ("hl:", "binancef:", "bybit:"):
         assert venue_key in app, f"OF_VENUES missing {venue_key}"
-    assert 'cur.venue : "hl"' in app  # boot default before a route exists
+    # The last engine venue survives the short unreadable-route window during a
+    # same-iframe surface navigation; a fresh boot still starts at hl/BTC.
+    assert 'venue: "hl"' in app
+    assert 'OF_VENUES[ofState.venue]' in app
     assert 'symbol: "BTC"' in app

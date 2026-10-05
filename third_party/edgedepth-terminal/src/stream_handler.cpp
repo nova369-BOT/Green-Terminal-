@@ -80,12 +80,17 @@ void StreamManager::subscribe_trades(StreamKey key, StreamHandler<Terminal::Trad
     trade_subs_[key].push_back(handler);
 }
 
-void StreamManager::subscribe_orderbook(const StreamKey& key) {
-    if (const auto it = orderbook_subs_.find(key); it == orderbook_subs_.end()) {
-        // Insert empty vector just to track refcount
-        orderbook_subs_[key] = {};
-        if (!direct_subs_.contains(key)) send_subscribe(key);
-    }
+void StreamManager::subscribe_orderbook(const StreamKey& key, void* owner) {
+    auto& owners = orderbook_subs_[key];
+    const auto duplicate = std::find_if(owners.begin(), owners.end(),
+        [owner](const StreamHandler<Terminal::Orderbook>& h) {
+            return h.widget_ptr == owner;
+        });
+    if (duplicate != owners.end()) return;
+    if (owners.empty() && !direct_subs_.contains(key)) send_subscribe(key);
+    // OrderbookManager receives and applies the stream centrally; this entry is
+    // an owner/refcount only and is never dispatched as a callback.
+    owners.push_back({owner, nullptr});
 }
 
 // void StreamManager::subscribe_orderbook(StreamKey key, StreamHandler<Terminal::Orderbook> handler) {
@@ -504,9 +509,9 @@ void StreamManager::send_subscribe(const StreamKey& key) const {
 //
 //   trades / stats / liquidations / patterns  subscribe on the first handler, so
 //                                             a non-empty vector means subscribed
-//   orderbook                                 subscribes on first use and stores an
-//                                             EMPTY vector purely as a refcount, so
-//                                             PRESENCE is the predicate, not size
+//   orderbook                                 subscribes on first owner and stores
+//                                             owner-only entries (null callbacks),
+//                                             so DOM/Depth release independently
 //   candles                                   one subscribe covers candle_subs_ and
 //                                             candle_batch_subs_, so the two are
 //                                             unioned and visited once
@@ -529,10 +534,10 @@ void StreamManager::for_each_server_subscription(Fn&& fn) const {
     visit_handlers(stats_subs_);
     visit_handlers(liquidation_subs_);
     visit_handlers(pattern_subs_);
-    // Presence, not size: the vector is always empty here by design.
-    for (const auto& [key, handlers] : orderbook_subs_) {
-        (void)handlers;
-        if (!direct_subs_.contains(key)) fn(key);
+    // Entries are owner/refcounts, not dispatch callbacks. The map only keeps
+    // a key while at least one owner remains.
+    for (const auto& [key, owners] : orderbook_subs_) {
+        if (!owners.empty() && !direct_subs_.contains(key)) fn(key);
     }
     // One subscribe covers both candle maps, so emit each key once.
     for (const auto& [key, handlers] : candle_subs_) {

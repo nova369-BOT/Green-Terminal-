@@ -154,14 +154,15 @@ int main() {
     for (bool chart_first : {false, true}) {
         sent.clear();
         StreamManager sm(1);
-        int chart = 0;
+        int chart = 0, dom = 0, depth = 0;
         const StreamKey key{{"binancef", "btcusdt"}, Terminal::Stream::Orderbook, 0};
         if (chart_first) sm.subscribe_direct(key, &chart);
-        sm.subscribe_orderbook(key);
+        sm.subscribe_orderbook(key, &dom);
+        sm.subscribe_orderbook(key, &depth);
         if (!chart_first) sm.subscribe_direct(key, &chart);
-        check(sent.size() == 1, "RT and DOM share the existing orderbook subscription");
+        check(sent.size() == 1, "RT, DOM and Depth share the existing orderbook subscription");
         sm.update_websocket_handle(2);
-        check(sent.size() == 2, "RT and DOM restore once on reconnect");
+        check(sent.size() == 2, "shared orderbook restores once on reconnect");
         sm.pause_live_subscriptions();
         check(sent.size() == 3, "shared depth pauses once");
         sm.update_websocket_handle(3);
@@ -169,6 +170,11 @@ int main() {
         sm.resume_live_subscriptions();
         check(sent.size() == 4, "shared depth resumes once");
         sm.unsubscribe_direct(key, &chart);
-        check(sent.size() == 4, "closing RT does not unsubscribe the DOM");
+        check(sent.size() == 4, "closing RT does not unsubscribe DOM or Depth");
+        sm.unsubscribe_orderbook(key, &dom);
+        check(sent.size() == 4, "closing DOM does not unsubscribe Depth");
+        sm.unsubscribe_orderbook(key, &depth);
+        check(sent.size() == 5 && sent.back()["method"] == "unsubscribe",
+              "the last orderbook panel releases the shared feed");
     }
 }

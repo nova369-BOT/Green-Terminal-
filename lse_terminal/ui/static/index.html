@@ -424,11 +424,11 @@ def my_ind(df, length=20):
        an instant dossier of the real candles inside. Same ids the boot path
        binds; the layer + card live at body level below. -->
   <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
-  <!-- G-Flow dock toggle: surfaces the SAME warm EdgeDepth engine (one WASM
-       instance, one gateway socket — see #of-portal) beside this chart, so
-       DOM / heatmap / tape / footprint / replay live in the Price & Chart
-       workspace instead of a separate page. -->
-  <button id="of-dock-toggle" title="Dock the live order-flow engine (DOM, liquidity heatmap, tape, footprint, replay) beside this chart">Order flow</button>
+  <!-- G-Flow dock toggle: surfaces the SAME EdgeDepth engine (one WASM
+       instance, one gateway socket — see #of-portal) as flow-only companion
+       panels. Green Terminal remains the one price chart; the explicit native
+       Workspace takeover is available from the dock header. -->
+  <button id="of-dock-toggle" title="Show real DOM, cumulative depth and trade tape beside this chart">Order flow</button>
   <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
        prefixes read as decoration, not chrome.
        The &#402; on Indicators stays: it is the recognised
@@ -596,13 +596,12 @@ def my_ind(df, length=20):
       </div>
     </div>
     </div><!-- /#chart-col -->
-    <!-- G-Flow dock: the Price & Chart surface of the order-flow engine.
-         #ofd-stage is only a HOST RECT — the engine itself is the single
-         warm iframe living in #of-portal (body level), which app.js keeps
-         glued over whichever host is on screen (this dock, or the full
-         G-Flow page). One engine, one socket, zero duplicate books.
-         Chips are honest state: gateway reachability, runtime artifacts,
-         and the exact venue instrument the flow comes from. -->
+    <!-- G-Flow dock: flow companion for Green Terminal's ONE price chart.
+         The default EdgeDepth surface constructs DOM + cumulative depth +
+         tape only; it does not construct another ChartWidget. #ofd-stage is
+         only a HOST RECT — the single iframe lives in #of-portal. Workspace
+         temporarily takes over this same stage/iframe for native advanced
+         modes, so there is still one engine and one socket. -->
     <div id="of-dock" class="hidden" aria-label="Order-flow dock">
       <div id="ofd-resize" title="Drag to resize · drag to the right edge to minimize (reopen via the Order flow or Real-time button)"></div>
       <div id="ofd-col">
@@ -611,14 +610,12 @@ def my_ind(df, length=20):
           <span class="of-sep"></span>
           <span class="of-k">FLOW</span><span id="ofd-flow" class="of-v">—</span>
           <span class="of-k">GW</span><span id="ofd-gw" class="of-v off" title="EdgeDepth gateway reachability">—</span>
-          <span class="of-k">RT</span><span id="ofd-art" class="of-v off" title="Engine runtime artifacts">—</span>
+          <span class="of-k">ENGINE</span><span id="ofd-art" class="of-v off" title="Engine runtime artifacts">—</span>
           <span class="of-flex"></span>
-          <button type="button" class="of-link" id="ofd-tfsync"
-                  title="Follow the chart timeframe inside the engine">TF: on</button>
           <button type="button" class="of-link" id="ofd-max"
-                  title="Give the engine the whole stage (chart hides until restored)">Max</button>
+                  title="Maximise the flow panels without opening another price chart">Max</button>
           <button type="button" class="of-link" id="ofd-page"
-                  title="Open the full G-Flow workspace page">Page</button>
+                  title="Take over the stage with the full native G-Flow workspace">Workspace</button>
           <button type="button" class="of-link" id="ofd-close" title="Close the dock">✕</button>
         </div>
         <div id="ofd-note" class="hidden" role="status"></div>

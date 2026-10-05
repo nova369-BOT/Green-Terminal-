@@ -17,7 +17,7 @@ OrderbookWidget::OrderbookWidget(const Terminal::Pair &pair, const AppContext& c
     , previous_price_(0.0)
 {
     subscribed_streams_ = &ctx_.stream_mgr();
-    subscribed_streams_->subscribe_orderbook(stream_key_);
+    subscribed_streams_->subscribe_orderbook(stream_key_, this);
 }
 
 OrderbookWidget::~OrderbookWidget() {

@@ -2,6 +2,7 @@
 #include "theme.h"
 #include "imgui_internal.h"
 #include "../core/education_boot.h"
+#include "../core/url_router.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -15,6 +16,11 @@ std::string LayoutManager::pending_symbol;
 std::string LayoutManager::layout_exchange;
 std::string LayoutManager::layout_symbol;
 std::vector<std::string> LayoutManager::compare_symbols_;
+
+namespace {
+bool g_flow_layout_band_initialized = false;
+bool g_flow_layout_wide = false;
+} // namespace
 
 void LayoutManager::set_compare_symbols(std::vector<std::string> symbols) {
     compare_symbols_ = std::move(symbols);
@@ -57,6 +63,51 @@ void LayoutManager::setup_default_layout(const std::string& exchange, const std:
     std::string chart_name  = "Chart " + exchange + " " + symbol + "###chart_" + exchange + "_" + symbol;
     std::string dom_name    = "###dom_" + exchange + "_" + symbol;
     std::string trades_name = "###trades_" + exchange + "_" + symbol;
+    std::string depth_name  = "###Depth " + exchange + " " + symbol;
+    std::string cvd_name    = "###cvd_" + exchange + "_" + symbol;
+
+    if (url_flow_surface()) {
+        // Green Terminal companion surface: there is deliberately NO chart
+        // node. GT's canvas is the one price chart; this dock spends every
+        // pixel on the real flow read (DOM + cumulative depth + tape + live CVD).
+        //
+        // A normal dock has enough width for DOM beside a depth/tape column.
+        // When the user narrows it, tab the detail panels so none of
+        // the fixed numeric columns is clipped into a convincing-but-wrong
+        // partial ladder.
+        const float vw = ImGui::GetWindowSize().x;
+        g_flow_layout_wide = vw >= 700.0f;
+        g_flow_layout_band_initialized = true;
+        ImGuiID dock_cvd;
+        ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Down, 0.23f,
+                                    &dock_cvd, &dock_main);
+        if (g_flow_layout_wide) {
+            ImGuiID dock_right;
+            ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Right, 0.42f,
+                                        &dock_right, &dock_main);
+            ImGuiID dock_trades;
+            ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Down, 0.40f,
+                                        &dock_trades, &dock_right);
+            ImGui::DockBuilderDockWindow(dom_name.c_str(), dock_main);
+            ImGui::DockBuilderDockWindow(depth_name.c_str(), dock_right);
+            ImGui::DockBuilderDockWindow(trades_name.c_str(), dock_trades);
+        } else {
+            // Narrow dock: DOM keeps the usable height; Depth and Trades share
+            // one tabbed node instead of rendering clipped fixed columns.
+            ImGuiID dock_detail;
+            ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Down, 0.34f,
+                                        &dock_detail, &dock_main);
+            ImGui::DockBuilderDockWindow(dom_name.c_str(), dock_main);
+            ImGui::DockBuilderDockWindow(depth_name.c_str(), dock_detail);
+            ImGui::DockBuilderDockWindow(trades_name.c_str(), dock_detail);
+        }
+        ImGui::DockBuilderDockWindow(cvd_name.c_str(), dock_cvd);
+        ImGui::DockBuilderFinish(dockspace_id);
+        is_initialized = true;
+        layout_exchange = exchange;
+        layout_symbol = symbol;
+        return;
+    }
 
     if (EducationBoot::instance().is_embedded()) {
         // Lesson/Studio layout: NO Watchlist, NO Depth. Chart fills the center;
@@ -163,6 +214,18 @@ void LayoutManager::render_dockspace(const std::function<void()>& menu_callback,
 
     ImGui::Begin("MainDockSpace", nullptr, window_flags);
     ImGui::PopStyleVar(3);
+
+    if (url_flow_surface() && is_initialized && g_flow_layout_band_initialized) {
+        // Rebuild only when resizing clearly crosses a band. The hysteresis
+        // prevents a one-pixel drag around the breakpoint from repeatedly
+        // destroying/recreating the dock tree.
+        const float width = ImGui::GetWindowSize().x;
+        const bool next_wide = g_flow_layout_wide ? width >= 660.0f : width >= 740.0f;
+        if (next_wide != g_flow_layout_wide) {
+            g_flow_layout_wide = next_wide;
+            is_initialized = false;
+        }
+    }
 
     if (!is_initialized) {
         const bool has_pending_pair = !pending_exchange.empty() && !pending_symbol.empty();

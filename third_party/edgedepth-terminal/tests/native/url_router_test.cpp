@@ -141,6 +141,14 @@ void test_path_shape() {
 }
 
 void test_exchange_query_parsing() {
+    expect_eq(parse_query_value("?surface=flow&host=gt", "surface"), "flow",
+              "the integrated flow surface parses as a whole query key");
+    expect_eq(parse_query_value("?surface=flow&host=gt", "host"), "gt",
+              "the Green Terminal host contract parses alongside the surface");
+    expect_eq(parse_query_value("?old_surface=flow&note=surface=flow", "surface"), "",
+              "surface is not matched in another key or value");
+    expect_eq(parse_query_value("?surface=&surface=flow", "surface"), "",
+              "the first exact query key is authoritative even when empty");
     expect_eq(parse_exchange_query(""), "", "an empty search has no venue");
     expect_eq(parse_exchange_query("?foo=1"), "", "an unrelated param has no venue");
     expect_eq(parse_exchange_query("?exchange=hl"), "hl", "the only param");
@@ -244,6 +252,8 @@ void test_non_emscripten_stubs_are_inert() {
     const Route r = parse_route(url_get_current_path(), url_get_current_search());
     expect_eq(r.exchange, "binancef", "the native stub route resolves to the default venue");
     expect_true(!r.symbol.empty(), "the native stub route resolves to a symbol");
+    expect_true(!url_flow_surface(), "native builds do not enter the GT flow-only surface");
+    expect_true(!url_green_terminal_host(), "native builds do not enable the GT host bridge");
 }
 
 }  // namespace

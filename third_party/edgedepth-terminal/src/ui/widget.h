@@ -41,6 +41,7 @@ inline std::string widget_symbol_label(std::string symbol) {
 enum class WidgetType {
     Trades,
     Orderbook,
+    CVD,
     Chart,
     DOM,
     Stats,
