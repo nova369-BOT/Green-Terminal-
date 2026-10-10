@@ -426,8 +426,8 @@ def my_ind(df, length=20):
   <button id="lasso-open" title="Circle a chart zone for instant analysis (or hold L)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.5 2" aria-hidden="true"><ellipse cx="8" cy="8" rx="6" ry="5"/></svg> Lasso</button>
   <!-- G-Flow dock toggle: surfaces the SAME EdgeDepth engine (one WASM
        instance, one gateway socket — see #of-portal) as flow-only companion
-       panels. Green Terminal remains the one price chart; the explicit native
-       Workspace takeover is available from the dock header. -->
+       panels. Green Terminal remains the one owner of standard chart tools;
+       Advanced flow opens only EdgeDepth-native flow workflows. -->
   <button id="of-dock-toggle" title="Show real DOM, cumulative depth and trade tape beside this chart">Order flow</button>
   <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
        prefixes read as decoration, not chrome.
@@ -599,9 +599,10 @@ def my_ind(df, length=20):
     <!-- G-Flow dock: flow companion for Green Terminal's ONE price chart.
          The default EdgeDepth surface constructs DOM + cumulative depth +
          tape only; it does not construct another ChartWidget. #ofd-stage is
-         only a HOST RECT — the single iframe lives in #of-portal. Workspace
-         temporarily takes over this same stage/iframe for native advanced
-         modes, so there is still one engine and one socket. -->
+         only a HOST RECT — the single iframe lives in #of-portal. Advanced
+         flow temporarily takes over this same stage/iframe for Footprint,
+         TPO, heatmap, replay and RT, while embed flags suppress its duplicate
+         standard chart tools. There is still one engine and one socket. -->
     <div id="of-dock" class="hidden" aria-label="Order-flow dock">
       <div id="ofd-resize" title="Drag to resize · drag to the right edge to minimize (reopen via the Order flow or Real-time button)"></div>
       <div id="ofd-col">
@@ -615,7 +616,11 @@ def my_ind(df, length=20):
           <button type="button" class="of-link" id="ofd-max"
                   title="Maximise the flow panels without opening another price chart">Max</button>
           <button type="button" class="of-link" id="ofd-page"
-                  title="Take over the stage with the full native G-Flow workspace">Workspace</button>
+                  title="Open Footprint, TPO, heatmap, replay and other native flow workflows">Advanced flow</button>
+          <button type="button" class="of-link" id="ofd-rt" hidden
+                  title="Control the same native Real-time workflow as PRICE & CHART">Real-time</button>
+          <button type="button" class="of-link" id="ofd-rt-caret" hidden
+                  title="Real-time settings" aria-haspopup="true">▾</button>
           <button type="button" class="of-link" id="ofd-close" title="Close the dock">✕</button>
         </div>
         <div id="ofd-note" class="hidden" role="status"></div>

@@ -15,6 +15,7 @@
 #include "core/tpo_manager.h"
 #include "core/volume_profile_manager.h"
 #include "core/candle_manager.h"
+#include "core/url_router.h"
 using workspace::Json;
 
 Json DOMWidget::save_settings() const {
@@ -193,13 +194,20 @@ Json ChartWidget::save_settings() const {
     return j;
 }
 void ChartWidget::load_settings(const Json& j) {
-    workspace::read(j, "session_vwap", session_vwap_);
-    workspace::read(j, "previous_day", previous_day_);
-    workspace::read(j, "previous_week", previous_week_);
-    const auto& anchor = workspace::object(j, "vwap_anchor");
-    if (anchor.contains("exchange") && anchor["exchange"] == pair_.exchange &&
-        anchor.contains("symbol") && anchor["symbol"] == pair_.symbol)
-        workspace::read(anchor, "time", vwap_anchor_ms_, 0, 4102444800000LL);
+    const bool flow_studies_only = url_standard_indicators_disabled();
+    if (!flow_studies_only) {
+        workspace::read(j, "session_vwap", session_vwap_);
+        workspace::read(j, "previous_day", previous_day_);
+        workspace::read(j, "previous_week", previous_week_);
+        const auto& anchor = workspace::object(j, "vwap_anchor");
+        if (anchor.contains("exchange") && anchor["exchange"] == pair_.exchange &&
+            anchor.contains("symbol") && anchor["symbol"] == pair_.symbol)
+            workspace::read(anchor, "time", vwap_anchor_ms_, 0, 4102444800000LL);
+    } else {
+        session_vwap_ = previous_day_ = previous_week_ = false;
+        vwap_anchor_ms_ = 0;
+        anchored_vwap_data_.clear();
+    }
     reference_update_time_ = -1;
 
     { auto& k = liq_field_.knobs(); const auto& s = workspace::object(j,"liq_field");
@@ -218,6 +226,10 @@ void ChartWidget::load_settings(const Json& j) {
     if (tf != timeframe_seconds()) change_timeframe(tf);
     auto ct = chart_type_;
     workspace::read(j, "chart_type", ct, 0, 7);
+    if (url_flow_chart_types_only() &&
+        ct != ChartType::FootprintCluster && ct != ChartType::FootprintProfile &&
+        ct != ChartType::TPO && ct != ChartType::FlowPositioning)
+        ct = ChartType::FootprintCluster;
     set_chart_type(ct);
     bool realtime = false;
     workspace::read(j, "rt_mode", realtime);
@@ -281,6 +293,9 @@ void ChartWidget::load_settings(const Json& j) {
             auto n = row.find("name");
             if (n == row.end() || !n->is_string()) continue;
             const auto& name = n->get_ref<const std::string&>();
+            if (flow_studies_only &&
+                (name == "Vol (USDT)" || name == "RSI" || name == "MACD"))
+                continue;
             const auto before = indicator_mgr_.count();
             if (name == "Vol (USDT)") add_volume_indicator();
             else if (name == "Absorption") add_absorption_indicator();

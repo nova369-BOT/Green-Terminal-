@@ -13160,13 +13160,14 @@ function showOptionsPage() {
 /* ── MARKET → PRICE & CHART: real embedded EdgeDepth flow runtime ────────
    Not a lookalike: #of-frame loads /edgedepth/ (the real WASM build of
    edgedepth-terminal). Its lean companion runs DOM / cumulative depth /
-   tape / CVD; its mutually exclusive Workspace retains native heatmap,
-   footprint, replay and advanced studies. This shell provides GREEN TERMINAL
+   tape / CVD; its mutually exclusive Advanced flow surface retains native
+   heatmap, Footprint, TPO, replay and flow studies without exposing a second
+   standard chart-tool suite. This shell provides GREEN TERMINAL
    navigation, status (gateway reachability + artifact readiness), and layout. */
 const ofState = {
   poll: 0, ready: false, symbol: "BTC", venue: "hl", bound: false,
   // `flow` = DOM/depth/tape companion with NO second price chart.
-  // `workspace` = explicit full EdgeDepth takeover (also used by native RT).
+  // `workspace` = advanced flow takeover (internal route name; also used by RT).
   surface: "flow", pendingRtCmd: 0,
   // Timeframe bridge into the engine (Module.__set_chart_timeframe):
   // only the explicit full workspace has a chart to receive it.
@@ -13175,9 +13176,10 @@ const ofState = {
 
 // Two mutually exclusive views of the SAME iframe/WASM client. The default
 // integrated surface spends every pixel on order flow and does not construct
-// an EdgeDepth ChartWidget. Workspace is an explicit takeover: the GT chart
-// steps aside and EdgeDepth's complete chart/replay workspace becomes visible.
-// `host=gt` enables the command/ack bridge without hiding native controls.
+// an EdgeDepth ChartWidget. Advanced flow is an explicit takeover: the GT
+// chart steps aside for EdgeDepth-native Footprint, TPO, heatmap, replay and
+// RT. Embed flags remove its duplicate price styles, drawings and standard
+// indicators; MARKET → PRICE & CHART remains their sole owner.
 const OF_FLOW_QUERY = [
   "watchlist=0", // Green Terminal owns symbol navigation
   "brand=0",     // Green Terminal is the only product identity
@@ -13185,9 +13187,14 @@ const OF_FLOW_QUERY = [
   "surface=flow",// DOM + cumulative depth + tape; no second price chart
 ].join("&");
 const OF_WORKSPACE_QUERY = [
-  "watchlist=0",
-  "brand=0",
-  "host=gt",
+  "watchlist=0", // GT remains the only market navigator
+  "brand=0",     // one product identity
+  "host=gt",     // command/ack bridge for host-owned RT
+  "rt=0",        // RT is controlled by GT, never duplicated in the native shell
+  "tf=0",        // GT owns timeframe and pushes it through the exact chart API
+  "ctypes=flow", // Footprint / TPO / Flow & Positioning only; no price-style menu
+  "draw=0",      // GT PRICE & CHART is the only drawing-tool owner
+  "ind=flow",    // retain flow studies, remove duplicate standard indicators
 ].join("&");
 const ofSurfaceQuery = () => ofState.surface === "workspace"
   ? OF_WORKSPACE_QUERY : OF_FLOW_QUERY;
@@ -13326,9 +13333,9 @@ function ofStartPortal() {
 
 /* ── G-Flow dock on Price & Chart ──────────────────────────────────────
    Default surface = flow companion only (DOM + cumulative depth + tape).
-   There is ONE visible price chart: Green Terminal's. Workspace/Real-time
-   deliberately takes over the whole stage before the EdgeDepth chart exists
-   on screen, so the two price engines are never presented side by side. */
+   There is ONE standard price chart: Green Terminal's. Advanced flow/Real-time
+   deliberately takes over the whole stage before the restricted EdgeDepth flow
+   chart exists on screen, so two chart-tool suites are never presented. */
 // workspace + rtForced are transient (never persisted): a new launch always
 // returns to the unified chart + flow-panel workspace the user approved.
 const ofDock = {
@@ -13376,7 +13383,7 @@ function ofDockApply() {
     if (cap > 0 && ofDock.w > cap) ofDock.w = cap;
     d.style.flexBasis = ofDock.w + "px";
   }
-  // Workspace is always a takeover, never a second chart beside GT.
+  // Advanced flow is always a takeover, never a second chart beside GT.
   if (ofDock.workspace) ofDock.max = true;
   const stage = $("chart-stage");
   if (stage) {
@@ -13391,10 +13398,16 @@ function ofDockApply() {
   if (mx) mx.textContent = ofDock.max ? "Restore" : "Max";
   const ws = $("ofd-page");
   if (ws) {
-    ws.textContent = ofDock.workspace ? "Flow panels" : "Workspace";
+    ws.textContent = ofDock.workspace ? "Flow panels" : "Advanced flow";
     ws.title = ofDock.workspace
       ? "Return to the Green Terminal chart with DOM, depth and tape"
-      : "Take over the stage with the full native G-Flow workspace";
+      : "Open native Footprint, TPO, heatmap, replay and flow studies";
+  }
+  const dockRt = $("ofd-rt");
+  if (dockRt) dockRt.hidden = !ofDock.workspace;
+  const dockRtCaret = $("ofd-rt-caret");
+  if (dockRtCaret) {
+    dockRtCaret.hidden = !ofDock.workspace || !$("rt-toggle")?.classList.contains("rt-on");
   }
   const tf = $("ofd-tfsync");
   if (tf) tf.textContent = "TF: " + (ofDock.tfSync ? "on" : "off");
@@ -13435,7 +13448,7 @@ function ofBindDock() {
   // auto-maxed the surface, cancel its auto-restore so exiting RT doesn't
   // fight the user.
   on("ofd-max", () => {
-    if (ofDock.workspace) return; // Workspace owns the full stage until exited.
+    if (ofDock.workspace) return; // Advanced flow owns the stage until exited.
     ofDock.max = !ofDock.max; ofDock.rtForced = false;
     ofDockSavePrefs(); ofDockApply();
   });
@@ -13454,6 +13467,14 @@ function ofBindDock() {
       ofDock.max = true;
     }
     ofDockApply();
+  });
+  // The normal PRICE & CHART RT button and this takeover-header button are
+  // two placements of the same host command, never two independent controls.
+  // Exactly one is visible at a time because GT's command bar hides while the
+  // advanced flow surface owns the stage.
+  on("ofd-rt", () => {
+    const hostRt = $("rt-toggle");
+    if (hostRt) hostRt.click();
   });
   // Width drag: the handle rides the dock's left edge.
   const grip = $("ofd-resize");
@@ -13784,7 +13805,7 @@ async function refreshOrderFlowStatus() {
       $("of-banner-title").textContent = "G-FLOW RUNTIME NOT LOADED";
       $("of-banner-detail").textContent =
         "G-Flow hosts the order-flow engine (DOM, cumulative depth, tape, " +
-        "live CVD; heatmap/footprint in Workspace). Missing: " + missing.join(", ") +
+        "live CVD; heatmap/Footprint in Advanced flow). Missing: " + missing.join(", ") +
         ". Green Terminal loads the built runtime when present; no " +
         "simulated depth is substituted.";
     } else if (vinfo && vinfo.ok === false) {
@@ -13833,9 +13854,9 @@ async function refreshOrderFlowStatus() {
 
 function showOrderFlowPage() {
   // Compatibility entry point for old menu/actions. G-Flow is no longer a
-  // separate MARKET tab: open its native workspace as an in-place takeover of
-  // PRICE & CHART. The dock bar's “Flow panels” button returns to the one GT
-  // price chart without navigating elsewhere.
+  // separate MARKET tab: open Advanced flow as an in-place takeover of
+  // PRICE & CHART. Its embedded route exposes only native flow workflows;
+  // “Flow panels” returns to GT's sole standard chart-tool surface.
   subrailMark("sub-mk-charts");
   if ($("orderflow")) $("orderflow").classList.add("hidden");
   $("charts").classList.remove("hidden");
@@ -13847,7 +13868,7 @@ function showOrderFlowPage() {
   ofDock.max = true;
   ofDock.rtForced = false;
   ofDockApply();
-  document.title = "G-Flow Workspace · Green Terminal";
+  document.title = "Advanced G-Flow · Green Terminal";
 }
 
 /* G-Flow boot: restore the dock (open by default — Price & Chart IS the
@@ -21079,12 +21100,12 @@ try {
 
 // ── Real-time toggle (shell side) ──────────────────────────────────────────
 // ONE host button, driving the G-Flow engine's OWN Real-time view. The default
-// flow document has no chart; starting RT navigates the same iframe to the full
-// native workspace and queues the command until its ChartWidget exists. The
-// native RT display remains fully functional. __gtRtCmd (1 = on, 2 = off) is
-// the command and the engine publishes truth in __gtRtOn every frame, so this
-// button never claims a state the engine is not actually in.
-// RT settings: right-click the engine chart while Real-time is on.
+// flow document has no chart; starting RT navigates the same iframe to Advanced
+// flow and queues the command until its ChartWidget exists. The native RT
+// display remains fully functional without its duplicate native pill.
+// __gtRtCmd (1 = on, 2 = off) is the command and the engine publishes truth in
+// __gtRtOn every frame, so the visible host placement never invents state.
+// RT settings remain available through the caret beside the visible RT button.
 function rtFrameWin() {
   const fr = document.getElementById("of-frame");
   return (fr && fr.contentWindow) || null;
@@ -21095,8 +21116,14 @@ function setupRtToggle() {
   const caret = document.getElementById("rt-caret");
   const paint = (on) => {
     btn.classList.toggle("rt-on", !!on);
-    // Mirror the engine pill exactly: the settings caret exists only while
-    // Real-time is on.
+    const dockRt = document.getElementById("ofd-rt");
+    if (dockRt) {
+      dockRt.classList.toggle("rt-on", !!on);
+      dockRt.textContent = on ? "Exit RT" : "Real-time";
+    }
+    const dockCaret = document.getElementById("ofd-rt-caret");
+    if (dockCaret) dockCaret.hidden = !on || !ofDock.workspace;
+    // Mirror engine truth exactly: settings carets exist only while RT is on.
     if (caret) caret.hidden = !on;
   };
   btn.addEventListener("click", () => {
@@ -21116,7 +21143,7 @@ function setupRtToggle() {
     const on = !!w.__gtRtOn;
     if (!on) {
       // The normal dock has no EdgeDepth price chart. Native Real-time is an
-      // explicit takeover: switch the one iframe to its full workspace first,
+      // explicit takeover: switch the one iframe to Advanced flow first,
       // hide GT's price canvas, then leave command 1 queued until the freshly
       // booted ChartWidget exists. At no point are two price charts visible.
       try {
@@ -21204,22 +21231,27 @@ function setupRtToggle() {
     menu.hidden = true;
     clearInterval(menuTimer);
   };
-  if (caret && menu) {
-    caret.addEventListener("click", (ev) => {
+  if (menu) {
+    const openMenu = (ev, anchor) => {
       ev.stopPropagation();
       if (!menu.hidden) { closeMenu(); return; }
       const w = rtFrameWin();
       if (!w || !w.__gtRtOn) return;
       renderMenu();
-      // Pin directly under the Real-time button (fixed: the toolbar clips
-      // absolutely-positioned children, so anchor against the viewport).
-      const r = document.getElementById("rt-slot").getBoundingClientRect();
+      // Pin under whichever placement is visible: PRICE & CHART's toolbar or
+      // Advanced flow's takeover header. Both drive this same settings menu.
+      const r = anchor.getBoundingClientRect();
       menu.style.top = Math.round(r.bottom + 7) + "px";
       menu.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 300))) + "px";
       menu.hidden = false;
       // Engine applies commands next frame; keep the painted state honest.
       menuTimer = setInterval(renderMenu, 300);
-    });
+    };
+    if (caret) {
+      caret.addEventListener("click", (ev) => openMenu(ev, document.getElementById("rt-slot")));
+    }
+    const dockCaret = document.getElementById("ofd-rt-caret");
+    if (dockCaret) dockCaret.addEventListener("click", (ev) => openMenu(ev, dockCaret));
     menu.addEventListener("click", (ev) => {
       ev.stopPropagation();
       const row = ev.target.closest(".rtm-row[data-c]");

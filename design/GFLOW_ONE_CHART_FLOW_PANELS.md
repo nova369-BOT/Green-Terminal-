@@ -1,10 +1,10 @@
 # Green Terminal + G-Flow — one-chart flow-panel architecture
 
-**Status:** selected by the user on 2026-10-05 and implemented on the Arena session branch.
+**Status:** selected on 2026-10-05, implemented on the Arena session branch, and tightened on 2026-10-10 so PRICE & CHART exclusively owns standard chart tools.
 
 ## Product rule
 
-Green Terminal is the product and owns the only price chart in the normal `MARKET → PRICE & CHART` workspace. Its 15 chart styles, 87 drawing tools, indicator registry, layouts, and persistence therefore apply once to one canonical chart—there is no adjacent price engine to drift out of sync.
+Green Terminal is the product and `MARKET → PRICE & CHART` is the only owner of standard chart tools. Its 15 chart styles, 87 drawing tools, standard indicator registry, layouts, and persistence apply once to one canonical chart—there is no adjacent price-tool suite to drift out of sync. This ownership rule also applies while G-Flow's advanced surface is hosted inside Green Terminal.
 
 G-Flow is the real EdgeDepth functionality integrated beside that chart. Its default embedded surface constructs no `ChartWidget` and subscribes only to the real flow data needed by:
 
@@ -20,20 +20,20 @@ No market value or missing history is generated. Live CVD explicitly starts at p
 The existing single iframe and single WASM runtime are retained. Green Terminal chooses one URL mode at a time:
 
 - `surface=flow&host=gt&watchlist=0&brand=0` — default companion; no EdgeDepth price chart, chart history request, shell ticker feeds, paper feed, or workspace restore.
-- `host=gt&watchlist=0&brand=0` — explicit native Workspace takeover; Green Terminal's price canvas and chart chrome hide before the complete EdgeDepth workspace is shown.
+- `host=gt&watchlist=0&brand=0&rt=0&tf=0&ctypes=flow&draw=0&ind=flow` — explicit **Advanced flow** takeover. Green Terminal's price canvas steps aside, while EdgeDepth exposes native Footprint, TPO, heatmap, replay, Flow & Positioning and RT without a second standard style/drawing/indicator suite.
 
-The iframe is navigated between these modes; a second instance or socket is never created. The native Workspace is opened from the dock header and returns through **Flow panels**. Native Real-time uses the same takeover and automatically returns to the default one-chart layout when it exits.
+The iframe is navigated between these modes; a second instance or socket is never created. **Advanced flow** opens from the dock header and returns through **Flow panels**. Its header carries the same host-owned RT command while the PRICE & CHART toolbar is out of view, and RT exit automatically returns to the default one-chart layout.
 
 ## Navigation rule
 
-G-Flow is no longer a separate MARKET sub-tab. The MARKET subrail contains Chart, Options, News, and Screener. Flow panels are part of Chart, toggled by **Order flow**. Legacy internal calls to `showOrderFlowPage()` now open the in-place Workspace takeover rather than a separate section.
+G-Flow is no longer a separate MARKET sub-tab. The MARKET subrail contains Chart, Options, News, and Screener. Flow panels are part of Chart, toggled by **Order flow**. Legacy internal calls to `showOrderFlowPage()` now open the in-place Advanced flow takeover rather than a separate section.
 
 ## Responsive layout
 
 - Wide dock: live CVD spans the bottom; DOM occupies the main column; cumulative Depth and Trades stack in the right column.
 - Narrow dock: live CVD remains at the bottom; DOM keeps the usable height; Depth and Trades share a tabbed detail node so fixed columns never clip.
 - Max maximises flow panels without adding a price chart.
-- Workspace always takes over the stage; it cannot be dragged into a side-by-side two-chart state.
+- Advanced flow always takes over the stage; it cannot be dragged into a side-by-side two-chart state.
 
 ## Data and performance
 
@@ -45,4 +45,4 @@ G-Flow is no longer a separate MARKET sub-tab. The MARKET subrail contains Chart
 
 ## Capability preservation
 
-Standalone EdgeDepth is unchanged. The explicit Workspace takeover retains native chart modes, drawings, indicators, Replay, Footprint, TPO, Flow & Positioning, and Real-time. Only the normal integrated companion omits the duplicate price chart by design.
+Standalone EdgeDepth is unchanged and retains every native chart mode, drawing, indicator, layout, and toolbar. Inside Green Terminal, Advanced flow retains Replay, Footprint, TPO, heatmap, Flow & Positioning, flow studies, and Real-time, but deliberately suppresses EdgeDepth's standard price styles, drawing controls/render layer, standard indicators/price-reference overlays, timeframe selector, layout/widget controls, and duplicate RT pill. Its hosted workspace storage is namespaced so these restrictions cannot rewrite a standalone EdgeDepth workspace. PRICE & CHART owns the standard controls.

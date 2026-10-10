@@ -339,6 +339,11 @@ ChartWidget::ChartWidget(
     liq_census_pair_ = hl_census_pair_for(pair_);
     liq_census_enabled_ = (pair_.exchange == "hl");
 
+    // Hosted Advanced flow must never flash a restored/default Candles view
+    // before its isolated workspace loads. Real-time may temporarily use its
+    // own internal Line/Candles renderer, then returns to this flow view.
+    if (url_flow_chart_types_only()) apply_chart_type(ChartType::FootprintCluster);
+
     subscribe_chart_streams();
 
     // Research rollout only. This is an explicit UI gate; the dedicated stream id
@@ -1195,7 +1200,8 @@ void ChartWidget::render_chart() {
     // Drawing tools: the ImPlot input-map override must be in place BEFORE
     // BeginPlot (ImPlot reads the map at setup-lock, i.e. the first plot
     // item - not at EndPlot). Restored by end_frame() after render_chart.
-    drawing_layer_.begin_frame(ctx_, ct_allows_time_overlays(chart_type_));
+    if (!url_drawing_controls_disabled())
+        drawing_layer_.begin_frame(ctx_, ct_allows_time_overlays(chart_type_));
     // Shift-left belongs to the time-range selector, including the first
     // frame and a release outside the plot. SetupFinish consumes input before
     // handle_plot_interaction can claim it. Keep drawing overrides intact.
@@ -1780,9 +1786,10 @@ void ChartWidget::render_chart() {
         // begin_frame, before BeginPlot - too late to matter from here.)
         render_liquidity_response();
         render_reference_context();
-        drawing_layer_.render_in_plot(ctx_, fmt_,
-                                      ct_allows_time_overlays(chart_type_),
-                                      tf_sec);
+        if (!url_drawing_controls_disabled())
+            drawing_layer_.render_in_plot(ctx_, fmt_,
+                                          ct_allows_time_overlays(chart_type_),
+                                          tf_sec);
         // 4. Interaction
         handle_plot_interaction();
         // Update viewport state for next frame
@@ -2874,9 +2881,9 @@ void ChartWidget::render_controls() {
 
     using namespace Theme;
 
-    // These flags only suppress duplicate control entry points in Green
-    // Terminal's embed. The corresponding chart modes, indicators, drawings
-    // and workspace state remain implemented and continue to render.
+    // These flags restrict only Green Terminal's embedded document. Standard
+    // implementations and persisted state remain intact for standalone use;
+    // hosted rendering and restoration are filtered without deleting them.
     const bool flow_chart_types_only = url_flow_chart_types_only();
     const bool drawing_controls_hidden = url_drawing_controls_disabled();
     const bool standard_indicators_hidden = url_standard_indicators_disabled();
@@ -2993,7 +3000,7 @@ void ChartWidget::render_controls() {
     // Left group: chart-view button, layers button, divider ---------------------
     const float caret_w = 9.0f;
     float cx = bp.x + 12.0f;   // left gutter (bar padding 0 12)
-    ImVec2 ct_anchor, ly_anchor, widget_anchor;
+    ImVec2 ct_anchor{}, ly_anchor{}, widget_anchor{};
     const auto wrap_control = [&](float width) {
         if (cx + width <= bp.x + ww - 12.0f || cx == bp.x + 12.0f) return;
         cx = bp.x + 12.0f;
@@ -3106,7 +3113,7 @@ void ChartWidget::render_controls() {
     // creation entry now (the old topbar "+" was removed): living in the chart
     // toolbar means it renders in EVERY chrome, including the embedded /demo +
     // event replays where the native topbar is suppressed.
-    {
+    if (!url_green_terminal_host() || compact_tools) {
         const char* label = compact_tools ? "Tools" : "+ Widget";
         const float tw = ImGui::CalcTextSize(label).x;
         const float w = 10.0f + tw + 10.0f;
@@ -3133,7 +3140,8 @@ void ChartWidget::render_controls() {
             if (rt_mode_) requested_popup = "rt_chart_settings";
             else liq_settings_panel_.open();
         }
-        if (Theme::menu_item(UiIcon::Plus, "Add widget")) requested_popup = "add_widget_popup";
+        if (!url_green_terminal_host() && Theme::menu_item(UiIcon::Plus, "Add widget"))
+            requested_popup = "add_widget_popup";
         if (!drawing_controls_hidden && !ClipRecorder::focus_active() &&
             !edu::RecorderRuntime::instance().active() &&
             Theme::menu_item(UiIcon::Pencil, "Drawing tools")) requested_popup = "chart_draw_popup";
@@ -3358,9 +3366,9 @@ void ChartWidget::render_controls() {
         ImDrawList* d = ImGui::GetWindowDrawList();
         constexpr float kGearW = 26.0f, kCheckW = 18.0f;
         for (int r = 0; r < 8; ++r) {
-            // Green Terminal owns the duplicate price-view controls. Keep all
-            // four modes implemented (including active/restored state), but in
-            // the dock offer only EdgeDepth's order-flow-specific views.
+            // Green Terminal owns the duplicate price views. Keep their
+            // implementations for standalone/RT internals, but hosted state
+            // and this menu are both restricted to flow-specific views.
             if (flow_chart_types_only && r < 4) continue;
             if (r == 0 || r == 4) {
                 if (r == 4 && !flow_chart_types_only) Theme::menu_separator();
@@ -3478,41 +3486,43 @@ void ChartWidget::render_controls() {
             Theme::menu_note("Candle layers return when you leave real-time mode.");
         } else {
         compression::menu(pair_, ctx_.replay_mgr().is_active());
-        if (Theme::begin_menu_group("Price levels")) {
-            ImGui::TextWrapped("Add the daily average price or levels from the previous day and week.");
-            if (layer_row("Daily VWAP (UTC)", session_vwap_, false)) {
-                session_vwap_ = !session_vwap_; reference_update_time_ = -1;
-            }
-            if (layer_row("Previous day high / low / close", previous_day_, false)) {
-                previous_day_ = !previous_day_; reference_update_time_ = -1;
-            }
-            if (layer_row("Previous week high / low / close", previous_week_, false)) {
-                previous_week_ = !previous_week_; reference_update_time_ = -1;
-            }
-            if (Theme::begin_menu_group("How these levels work")) {
-                ImGui::TextWrapped("VWAP is an average price weighted by trading volume. The daily line resets at midnight UTC; the week starts Monday.");
-                ImGui::TextWrapped("Right-click a candle to anchor VWAP. Missing bars stop VWAP and hide incomplete day/week levels.");
+        if (!standard_indicators_hidden) {
+            if (Theme::begin_menu_group("Price levels")) {
+                ImGui::TextWrapped("Add the daily average price or levels from the previous day and week.");
+                if (layer_row("Daily VWAP (UTC)", session_vwap_, false)) {
+                    session_vwap_ = !session_vwap_; reference_update_time_ = -1;
+                }
+                if (layer_row("Previous day high / low / close", previous_day_, false)) {
+                    previous_day_ = !previous_day_; reference_update_time_ = -1;
+                }
+                if (layer_row("Previous week high / low / close", previous_week_, false)) {
+                    previous_week_ = !previous_week_; reference_update_time_ = -1;
+                }
+                if (Theme::begin_menu_group("How these levels work")) {
+                    ImGui::TextWrapped("VWAP is an average price weighted by trading volume. The daily line resets at midnight UTC; the week starts Monday.");
+                    ImGui::TextWrapped("Right-click a candle to anchor VWAP. Missing bars stop VWAP and hide incomplete day/week levels.");
+                    Theme::end_menu_group();
+                }
+                if (vwap_anchor_ms_ && ImGui::Button("Clear anchored VWAP")) {
+                    vwap_anchor_ms_ = 0; anchored_vwap_data_.clear();
+                }
+                if ((session_vwap_ && !session_vwap_data_.complete) ||
+                    (vwap_anchor_ms_ && !anchored_vwap_data_.complete) ||
+                    (previous_day_ && !previous_day_data_.complete) ||
+                    (previous_week_ && !previous_week_data_.complete)) {
+                    ImGui::TextWrapped("Some history is missing. Load earlier candles to show these levels. Coarse candles may not align to the selected period.");
+                    ImGui::BeginDisabled(candles().is_loading());
+                    if (ImGui::Button("Load earlier candles")) {
+                        // Bounded, explicit read, ending at the observed replay clock.
+                        candles().request_historical(20160, reference_asof_);
+                    }
+                    ImGui::EndDisabled();
+                }
+                if (!ct_allows_time_overlays(chart_type_)) ImGui::TextWrapped("Reference overlays appear on time-based chart views.");
                 Theme::end_menu_group();
             }
-            if (vwap_anchor_ms_ && ImGui::Button("Clear anchored VWAP")) {
-                vwap_anchor_ms_ = 0; anchored_vwap_data_.clear();
-            }
-            if ((session_vwap_ && !session_vwap_data_.complete) ||
-                (vwap_anchor_ms_ && !anchored_vwap_data_.complete) ||
-                (previous_day_ && !previous_day_data_.complete) ||
-                (previous_week_ && !previous_week_data_.complete)) {
-                ImGui::TextWrapped("Some history is missing. Load earlier candles to show these levels. Coarse candles may not align to the selected period.");
-                ImGui::BeginDisabled(candles().is_loading());
-                if (ImGui::Button("Load earlier candles")) {
-                    // Bounded, explicit read, ending at the observed replay clock.
-                    candles().request_historical(20160, reference_asof_);
-                }
-                ImGui::EndDisabled();
-            }
-            if (!ct_allows_time_overlays(chart_type_)) ImGui::TextWrapped("Reference overlays appear on time-based chart views.");
-            Theme::end_menu_group();
+            Theme::menu_separator();
         }
-        Theme::menu_separator();
         layer_section("LIQUIDATIONS");
 
         // Liquidation scenario heatmap = the client Field (free).
@@ -4254,7 +4264,7 @@ void ChartWidget::render_controls() {
 void ChartWidget::handle_plot_interaction() {
     // While the drawing layer owns the mouse (armed tool, placement, drag, or
     // hover over a drawing), the chart's own click/drag handlers stand down.
-    const bool draw_cap = drawing_layer_.captures_mouse();
+    const bool draw_cap = !url_drawing_controls_disabled() && drawing_layer_.captures_mouse();
 
     // Capture the chart plot rect EVERY frame, not only when the chart is
     // hovered: the indicator subplots reuse first_plot_min/last_plot_max for
@@ -4535,11 +4545,15 @@ void ChartWidget::handle_plot_interaction() {
             }
         }
 
-        if (Theme::menu_item(UiIcon::Anchor, "Anchor VWAP here")) {
+        if (!url_standard_indicators_disabled() &&
+            Theme::menu_item(UiIcon::Anchor, "Anchor VWAP here")) {
             vwap_anchor_ms_ = context_menu_time_ms_; reference_update_time_ = -1;
         }
-        // Measure ruler - anchor here; readout follows the cursor (click/Esc clears).
-        if (Theme::menu_item(UiIcon::Ruler, "Measure from here")) {
+        // Measure is part of the native drawing/tool suite. Keep persisted
+        // drawings and standalone behavior intact, but do not offer another
+        // measurement tool in Green Terminal's restricted hosted surface.
+        if (!url_drawing_controls_disabled() &&
+            Theme::menu_item(UiIcon::Ruler, "Measure from here")) {
             measure_.active = true;
             measure_.t0_ms  = context_menu_time_ms_;
             measure_.p0     = context_menu_price_;

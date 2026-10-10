@@ -328,8 +328,9 @@ inline bool url_timeframe_disabled() {
 }
 
 // Embed flag: ?ctypes=flow keeps only EdgeDepth-exclusive order-flow views in
-// the chart-type menu. Price views remain implemented and continue to render
-// when restored from a workspace; only their duplicate embed menu rows hide.
+// the chart-type menu and clamps initial/restored non-RT charts to Footprint.
+// Price views remain implemented for standalone use and as the internal
+// rendering basis of Real-time, but cannot become a second hosted tool suite.
 inline bool url_flow_chart_types_only() {
 #ifdef __EMSCRIPTEN__
     return EM_ASM_INT({
@@ -340,9 +341,9 @@ inline bool url_flow_chart_types_only() {
 #endif
 }
 
-// Embed flag: ?draw=0 hides EdgeDepth's drawing-control entry points while it
-// is docked in Green Terminal. Existing drawings and the drawing render layer
-// stay intact; standalone boots retain the complete drawing suite.
+// Embed flag: ?draw=0 hides EdgeDepth's drawing entry points and suppresses
+// its drawing layer while hosted by Green Terminal. Saved drawings are not
+// deleted or rewritten; standalone boots retain the complete drawing suite.
 inline bool url_drawing_controls_disabled() {
 #ifdef __EMSCRIPTEN__
     return EM_ASM_INT({
@@ -353,9 +354,10 @@ inline bool url_drawing_controls_disabled() {
 #endif
 }
 
-// Embed flag: ?ind=flow removes only the duplicate standard-indicator menu
-// rows (Volume, RSI and MACD). EdgeDepth-exclusive flow indicators remain
-// available, and already-active standard indicators continue to render.
+// Embed flag: ?ind=flow limits hosted studies to EdgeDepth-exclusive flow
+// indicators and flow/liquidity layers. Standard Volume, RSI, MACD, VWAP and
+// prior-period overlays neither restore nor expose controls. Standalone boots
+// and their saved workspaces are unaffected.
 inline bool url_standard_indicators_disabled() {
 #ifdef __EMSCRIPTEN__
     return EM_ASM_INT({

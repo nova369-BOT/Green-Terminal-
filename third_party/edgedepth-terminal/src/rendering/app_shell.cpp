@@ -1061,11 +1061,13 @@ namespace {
         //  beside the layers control, so it renders in EVERY chrome including the
         //  embedded /demo + event replays where this native topbar is suppressed.)
 
-        // Default (layout) menu
-        rx -= default_w; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
-        if (tb_button("Workspace", default_w)) ImGui::OpenPopup("##tb_layout");
-
-        vdiv();
+        // Standalone layout/workspace menu. Green Terminal owns hosted
+        // layouts, so Advanced flow exposes no duplicate Workspace button.
+        if (!url_green_terminal_host()) {
+            rx -= default_w; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
+            if (tb_button("Workspace", default_w)) ImGui::OpenPopup("##tb_layout");
+            vdiv();
+        }
 
         // Live <-> Replay toggle (functional)
         rx -= seg_w;
@@ -1121,8 +1123,13 @@ namespace {
         {
             static bool show_demo = false, show_metrics = false;
             if (Theme::begin_popup("##tb_layout")) {
-                if (ImGui::MenuItem("Reset Layout")) workspace::reset_default();
-                workspace::menu();
+                // Green Terminal owns hosted layouts. Keep EdgeDepth workspace
+                // persistence and layout controls complete in standalone, but
+                // do not expose a second layout system inside Advanced flow.
+                if (!url_green_terminal_host()) {
+                    if (ImGui::MenuItem("Reset Layout")) workspace::reset_default();
+                    workspace::menu();
+                }
                 ImGui::MenuItem("Market Header", nullptr, &g_market_header_open);
                 if (ImGui::BeginMenu("Chart shortcuts")) {
                     ImGui::TextUnformatted("Shift + drag: select a move");
