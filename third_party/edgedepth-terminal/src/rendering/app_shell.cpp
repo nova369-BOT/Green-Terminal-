@@ -1020,10 +1020,14 @@ namespace {
         }
         rx -= igap;
 
-        // drawing tools - pencil + dropdown (mirrors the left rail)
-        rx -= ico; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
-        if (ctx.drawings) drawing::render_topbar_button(ctx.drawing_mgr());
-        rx -= igap;
+        // Drawing tools - pencil + dropdown (mirrors the left rail). Hosted
+        // Green Terminal owns the sole visible rail; do not reserve an empty
+        // icon slot or leave a back door that can reopen the native rail.
+        if (!url_drawing_controls_disabled()) {
+            rx -= ico; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
+            if (ctx.drawings) drawing::render_topbar_button(ctx.drawing_mgr());
+            rx -= igap;
+        }
 
         // theme icon → Tweaks panel (accent · candles · density · heat)
         rx -= ico; ImGui::SetCursorScreenPos(ImVec2(rx, icy));

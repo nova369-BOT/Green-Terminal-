@@ -164,6 +164,45 @@ void DrawingManager::load_json(const char* raw) {
     }
 }
 
+bool DrawingManager::replace_from_host(const char* raw) {
+    StoredBlob blob = parse_blob(raw);
+    if (!blob.ok) return false;
+
+    // Price/date ranges and native polyline have no exact Green Terminal
+    // object. Preserve them while BOTH mode synchronizes the common subset;
+    // approximation would be worse than an explicit one-chart-only tool.
+    for (const drawing::Drawing& current : items_) {
+        const bool native_only = current.tool == drawing::Tool::PriceRange ||
+                                 current.tool == drawing::Tool::DateRange ||
+                                 current.tool == drawing::Tool::Polyline;
+        if (!native_only) continue;
+        const bool already_present = std::any_of(
+            blob.items.begin(), blob.items.end(),
+            [&](const drawing::Drawing& d) { return d.id == current.id; });
+        if (!already_present && blob.items.size() < drawing::kMaxDrawings)
+            blob.items.push_back(current);
+    }
+
+    const auto same_item = [](const drawing::Drawing& a,
+                              const drawing::Drawing& b) {
+        return a.id == b.id &&
+               DrawingManager::serialize_item(a, false) ==
+                   DrawingManager::serialize_item(b, false);
+    };
+    if (items_.size() == blob.items.size() &&
+        std::equal(items_.begin(), items_.end(), blob.items.begin(), same_item))
+        return false;
+
+    items_ = std::move(blob.items);
+    selected_ = 0;
+    modify_id_ = 0;
+    undo_stack_.clear();
+    next_id_ = 0;
+    for (const drawing::Drawing& d : items_) next_id_ = std::max(next_id_, d.id);
+    mark_dirty();
+    return true;
+}
+
 std::string DrawingManager::serialize_item(const drawing::Drawing& d, bool with_stamp) {
     const char* key = drawing::tool_key(d.tool);
     if (key[0] == '\0') return {};  // Cursor/Measure are never stored
@@ -335,6 +374,7 @@ void DrawingManager::push_undo(UndoOp op) {
 void DrawingManager::mark_dirty() {
     dirty_ = true;
     dirty_at_ = std::chrono::steady_clock::now();
+    ++bridge_revision_;
 }
 
 void DrawingManager::tick() {

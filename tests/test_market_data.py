@@ -268,6 +268,25 @@ def test_shell_phase3_ui_markers():
     assert "WidgetWorkspaceControls" not in mount
 
 
+def test_unified_drawing_toolbar_bridge_markers():
+    """The dock has one visible rail and a real, same-origin drawing bridge."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "lse_terminal/ui/static/index.html").read_text()
+    app = (root / "lse_terminal/ui/static/app.js").read_text()
+    mount = (root / "frontend/src/mount.tsx").read_text()
+    router = (root / "third_party/edgedepth-terminal/src/core/url_router.h").read_text()
+    widget = (root / "third_party/edgedepth-terminal/src/ui/chart_widget.cpp").read_text()
+    assert 'id="ofd-bar"' not in html
+    assert 'id="ofd-note"' not in html
+    assert "watchlist=0&rt=0&draw=0" in app
+    assert "lset:drawing-state" in app and "__gtDrawingImport" in app
+    assert "TARGET" in mount and "drawingTarget === 'both'" in mount
+    assert "lset:gflow-drawings" in mount
+    assert "url_drawing_controls_disabled" in router
+    assert "!url_drawing_controls_disabled()" in widget
+
+
 def test_no_demo_auto_open_on_price_chart():
     """Phase-3 correction: production Price & Chart must not auto-open DEMO."""
     from pathlib import Path

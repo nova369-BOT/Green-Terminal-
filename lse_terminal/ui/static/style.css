@@ -4981,56 +4981,6 @@ body { padding-bottom: 22px; padding-left: 62px; }
   display: flex;
   flex-direction: column;
 }
-#ofd-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 8px;
-  background: #0a0f0c;
-  border-bottom: 1px solid #b08d57;
-  font: 10px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
-  color: #9aa79d;
-  flex: none;
-  white-space: nowrap;
-  overflow: hidden;
-}
-#ofd-bar .of-k { font-size: 9px; letter-spacing: 0.12em; opacity: 0.7; flex: none; }
-#ofd-bar > .of-k:first-child { color: #b08d57; opacity: 1; font-weight: 700; }
-#ofd-bar .of-v { color: #f4f1e8; flex: none; }
-/* The venue/instrument chip is the longest text: let it give way first. */
-#ofd-bar #ofd-flow {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-#ofd-bar .of-v.on { color: #34c77b; }
-#ofd-bar .of-v.warn { color: #b08d57; }
-#ofd-bar .of-v.off { color: #9aa79d; }
-#ofd-bar .of-sep { width: 1px; height: 12px; background: #2c3b32; flex: none; }
-#ofd-bar .of-flex { flex: 1 1 0; min-width: 4px; }
-#ofd-bar .of-link {
-  color: #9aa79d;
-  background: transparent;
-  border: 1px solid #2c3b32;
-  padding: 2px 5px;
-  border-radius: 2px;
-  font: 9px/1 var(--mono, ui-monospace, Menlo, Consolas, monospace);
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  flex: none;
-}
-#ofd-bar .of-link:hover { color: #f4f1e8; border-color: #b08d57; }
-#ofd-note {
-  flex: none;
-  padding: 6px 10px;
-  background: #0a0f0c;
-  border-bottom: 1px solid #2c3b32;
-  font: 10px/1.5 var(--mono, ui-monospace, monospace);
-  color: #b08d57;
-}
-#ofd-note.hidden { display: none !important; }
 #ofd-stage {
   flex: 1;
   min-height: 0;

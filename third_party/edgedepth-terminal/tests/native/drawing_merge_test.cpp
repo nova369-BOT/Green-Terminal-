@@ -87,6 +87,22 @@ int main() {
     const std::string b = DrawingManager::serialize_item(line(7, 7, 2), false);
     check(a == b, "unstamped serialization ignores the stamp");
 
+    // Hosted GT snapshot replacement is exact for shared tools, while native
+    // tools with no faithful GT object survive the round trip.
+    DrawingManager hosted;
+    Drawing native_range = line(9, 50, 1);
+    native_range.tool = drawing::Tool::PriceRange;
+    native_range.anchors.push_back(drawing::Anchor{2'000, 60});
+    hosted.items().push_back(native_range);
+    const char* host_json =
+        R"({"v":1,"magnet":true,"hidden_all":false,"rail_collapsed":true,"items":[{"id":4500000000000001,"tool":"hline","anchors":[[1000,123.5]],"color":4294967295,"width":2,"pattern":0}]})";
+    check(hosted.replace_from_host(host_json), "host snapshot reports a real replacement");
+    check(hosted.items().size() == 2, "host replacement preserves native-only tools");
+    check(by_id(hosted.items(), 4'500'000'000'000'001ULL) != nullptr,
+          "host drawing id remains exact within JS safe range");
+    check(by_id(hosted.items(), 9) != nullptr, "native price range survives host sync");
+    check(!hosted.replace_from_host(host_json), "equal host snapshot does not republish");
+
     std::puts("drawing merge rules passed");
     return 0;
 }

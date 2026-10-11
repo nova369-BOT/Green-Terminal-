@@ -83,6 +83,15 @@ public:
     // the next tick rather than overwriting it on the next flush.
     void note_external_change() { pull_pending_ = true; }
 
+    // Green Terminal hosted bridge. A host snapshot uses the existing, fully
+    // validated JSON v1 schema. Exact replacement makes create/edit/delete
+    // bidirectional, while native-only tools with no GT representation remain
+    // untouched. revision() lets main.cpp publish only real mutations — no
+    // frame polling, duplicate events or market-data work.
+    bool replace_from_host(const char* raw);
+    std::string bridge_snapshot() const { return serialize(); }
+    uint64_t bridge_revision() const { return bridge_revision_; }
+
 private:
     void load_json(const char* raw);       // parse + validate the stored blob
     std::string serialize() const;         // JSON v1 (see plan schema)
@@ -149,6 +158,7 @@ public:
     std::chrono::steady_clock::time_point dirty_at_{};
     bool        loaded_ = false;
     bool        pull_pending_ = false;
+    uint64_t    bridge_revision_ = 0;
     // id -> serialized item (without stamp) as of the last load, pull or
     // flush: what changed here since is derived by comparison, so no
     // mutation site has to stamp anything, and an id present here but gone

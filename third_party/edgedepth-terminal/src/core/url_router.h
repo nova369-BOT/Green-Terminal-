@@ -329,3 +329,18 @@ inline bool url_rt_disabled() {
     return false;  // native builds (the unit tests) keep RT available
 #endif
 }
+
+// Hosted drawing bridge: ?draw=0 removes EdgeDepth's duplicate drawing
+// controls while leaving DrawingManager and DrawingLayer alive. Green Terminal
+// owns the one visible rail and drives this engine through the bridge in
+// main.cpp. Both the render and the reserved rail width are gated; standalone
+// EdgeDepth keeps its native controls unchanged.
+inline bool url_drawing_controls_disabled() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]draw=0(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;
+#endif
+}

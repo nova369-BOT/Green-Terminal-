@@ -13070,6 +13070,9 @@ const ofState = {
   // last seconds pushed, and the retry timer that waits for the WASM
   // runtime to finish booting after a (re)load.
   lastTfSec: 0, tfTimer: 0,
+  // One visible GT drawing rail drives both chart engines. These are command
+  // bridge values only; market data remains owned by each existing engine.
+  drawingMode: "one", drawingSymbol: "", drawingTool: 0, drawingBound: false,
 };
 
 // Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
@@ -13454,8 +13457,10 @@ function loadOrderFlowSymbol(sym) {
       // &rt=0 — Real-time now lives natively on the LSE chart (toolbar
       // toggle), so the dock's duplicate RT mode is removed (migration
       // rule: port a view, then delete it from the dock). The engine
-      // carries both flags across its own symbol/venue navigations.
-      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0";
+      // carries all flags across its own symbol/venue navigations.
+      // draw=0 removes both the native rail and its reserved plot width;
+      // DrawingManager stays live for the host command/state bridge.
+      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0&draw=0";
       // Fresh boot: the engine starts on its own default timeframe, so the
       // bridge pushes the chart's timeframe once the runtime is up.
       ofState.lastTfSec = 0;
@@ -13463,6 +13468,81 @@ function loadOrderFlowSymbol(sym) {
     }
   }
   ofUpdateFlowChip(venue, vsym);
+}
+
+/* ── Unified drawing-tool bridge ───────────────────────────────────────
+   Toolbar 1 emits commands/state; hosted EdgeDepth consumes them between
+   frames and publishes its validated drawing snapshot only on mutations.
+   This channel contains annotation geometry only — never candles, quotes or
+   order flow — so it cannot create a second feed or polling loop. */
+function ofDrawingMarketsMatch(gtSymbol) {
+  const route = ofEngineRoute();
+  if (!route) return false;
+  return ofNormalizeSymbol(gtSymbol) === ofNormalizeSymbol(route.symbol);
+}
+
+function ofReportDrawingBridge() {
+  const linked = ofDrawingMarketsMatch(ofState.drawingSymbol);
+  window.dispatchEvent(new CustomEvent("lset:drawing-bridge-status", {
+    detail: {
+      linked,
+      reason: linked ? "" : (ofEngineRoute()
+        ? "BOTH paused — chart instruments differ"
+        : "BOTH waiting for G-Flow"),
+    },
+  }));
+  return linked;
+}
+
+function ofBindDrawingBridge() {
+  if (ofState.drawingBound) return;
+  ofState.drawingBound = true;
+
+  window.addEventListener("lset:drawing-mode", (event) => {
+    const detail = event.detail || {};
+    ofState.drawingMode = detail.mode === "both" ? "both" : "one";
+    ofState.drawingSymbol = String(detail.symbol || state.symbol || "");
+    const linked = ofReportDrawingBridge();
+    // Switching to BOTH first pulls the native snapshot. React merges it with
+    // GT's current drawings before the merged state is sent back, so enabling
+    // mirroring never blindly erases existing native work.
+    if (ofState.drawingMode === "both" && linked) {
+      const fr = $("of-frame");
+      try {
+        const w = fr && fr.contentWindow;
+        if (w && typeof w.__gtDrawingState === "string") {
+          window.dispatchEvent(new CustomEvent("lset:gflow-drawings", {
+            detail: { json: w.__gtDrawingState, path: w.location.pathname },
+          }));
+        }
+      } catch (e) { /* iframe is between routes */ }
+    }
+  });
+
+  const pushTool = () => {
+    const fr = $("of-frame");
+    try { if (fr && fr.contentWindow) fr.contentWindow.__gtDrawingToolCmd = ofState.drawingTool; }
+    catch (e) { /* engine mid-boot */ }
+  };
+  const drawingFrame = $("of-frame");
+  if (drawingFrame) drawingFrame.addEventListener("load", pushTool);
+  window.addEventListener("lset:drawing-tool", (event) => {
+    const code = Number(event.detail && event.detail.edgeTool);
+    // Unsupported GT-only tools deliberately send Cursor (0): G-Flow cannot
+    // accidentally retain the previous armed native tool.
+    ofState.drawingTool = Number.isInteger(code) && code >= 0 ? code : 0;
+    pushTool();
+  });
+
+  window.addEventListener("lset:drawing-state", (event) => {
+    if (ofState.drawingMode !== "both" || !ofReportDrawingBridge()) return;
+    const json = event.detail && event.detail.json;
+    if (typeof json !== "string" || !json.length) return;
+    const fr = $("of-frame");
+    try {
+      if (fr && fr.contentWindow) fr.contentWindow.__gtDrawingImport = json;
+    } catch (e) { /* engine mid-route; the next React state change retries */ }
+  });
 }
 
 // Wire the switcher controls once (idempotent — the page can re-enter).
@@ -13524,6 +13604,7 @@ async function refreshOrderFlowStatus() {
   if (engineRoute) {
     ofState.symbol = ofNormalizeSymbol(engineRoute.symbol) || ofState.symbol;
   }
+  if (ofState.drawingMode === "both") ofReportDrawingBridge();
   ofUpdateFlowChip();
   set("of-sym", ofState.symbol || "—");
   // The Price & Chart dock mirrors the same honest state (one truth, two
@@ -13660,6 +13741,7 @@ function showOrderFlowPage() {
    loop that keeps the single engine frame glued to the active surface.
    Runs at script evaluation (app.js loads at the end of <body>, DOM ready). */
 try {
+  ofBindDrawingBridge();
   ofDockLoadPrefs();
   ofBindDock();
   ofDockApply();

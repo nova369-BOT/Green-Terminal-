@@ -140,9 +140,123 @@ const ctxRow: React.CSSProperties = {
 const onCtxRowIn = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'var(--hover)'; };
 const onCtxRowOut = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'transparent'; };
 
+type DrawingTargetMode = 'one' | 'both';
+type NativeDrawing = {
+  id: number; tool: string; anchors: Array<[number, number]>;
+  color?: number; width?: number; pattern?: number; fill?: number;
+  locked?: boolean; hidden?: boolean; text?: string; font_size?: number;
+  fib_mask?: number; stop?: number; target?: number; chan_off?: number;
+};
+
+const GT_TO_EDGE_TOOL: Partial<Record<Exclude<DrawingTool, null>, { code: number; key?: string }>> = {
+  trend: { code: 1, key: 'trendline' }, straightArrow: { code: 2, key: 'arrow' },
+  trendRay: { code: 3, key: 'ray' },
+  extendedLine: { code: 4, key: 'xline' }, horizontal: { code: 5, key: 'hline' },
+  horizontalRay: { code: 6, key: 'hray' }, vertical: { code: 7, key: 'vline' },
+  crossline: { code: 8, key: 'cross' }, rectangle: { code: 9, key: 'rect' },
+  brush: { code: 10, key: 'brush' }, measure: { code: 11 },
+  fibonacci: { code: 14, key: 'fib' }, long: { code: 15, key: 'long' },
+  short: { code: 16, key: 'short' }, text: { code: 17, key: 'text' },
+  parallelChannel: { code: 18, key: 'channel' },
+};
+const EDGE_TO_GT: Record<string, Exclude<DrawingTool, null>> = {
+  trendline: 'trend', arrow: 'straightArrow', ray: 'trendRay', xline: 'extendedLine',
+  hline: 'horizontal', hray: 'horizontalRay', vline: 'vertical', cross: 'crossline',
+  rect: 'rectangle', brush: 'brush', fib: 'fibonacci', long: 'long', short: 'short',
+  text: 'text', channel: 'parallelChannel',
+};
+
+// Stable 53-bit ids let both engines refer to the same object without adding
+// bridge metadata to either persisted schema. The high marker keeps GT hashes
+// away from EdgeDepth's normal incrementing ids.
+function drawingBridgeId(id: string): number {
+  if (id.startsWith('gflow:')) {
+    const native = Number(id.slice(6));
+    if (Number.isSafeInteger(native) && native > 0) return native;
+  }
+  let a = 2166136261 >>> 0, b = 2246822519 >>> 0;
+  for (let i = 0; i < id.length; i += 1) {
+    const c = id.charCodeAt(i);
+    a = Math.imul(a ^ c, 16777619) >>> 0;
+    b = Math.imul(b ^ c, 3266489917) >>> 0;
+  }
+  return 4503599627370496 + ((a & 0x7ffff) * 4294967296) + b;
+}
+function colorToAbgr(hex?: string, opacity = 100): number {
+  const raw = (hex || '#dfe6ee').replace('#', '');
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw.padEnd(6, '0');
+  const r = parseInt(full.slice(0, 2), 16) || 0, g = parseInt(full.slice(2, 4), 16) || 0;
+  const b = parseInt(full.slice(4, 6), 16) || 0, a = Math.round(Math.max(0, Math.min(100, opacity)) * 2.55);
+  return ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
+}
+function abgrToColor(value?: number): string {
+  const v = Number(value ?? 0xffeee6df) >>> 0;
+  return `#${(v & 255).toString(16).padStart(2, '0')}${((v >>> 8) & 255).toString(16).padStart(2, '0')}${((v >>> 16) & 255).toString(16).padStart(2, '0')}`;
+}
+function gtDrawingToNative(d: Drawing): NativeDrawing | null {
+  if (!d.type) return null;
+  const map = GT_TO_EDGE_TOOL[d.type];
+  if (!map?.key) return null;
+  const sourcePoints = d.type === 'brush' && d.brushChartPoints?.length
+    ? d.brushChartPoints : d.points;
+  if (!sourcePoints?.length) return null;
+  let anchors: Array<[number, number]> = sourcePoints.map((p) => [Math.round(p.time), p.price]);
+  const out: NativeDrawing = {
+    id: drawingBridgeId(d.id), tool: map.key, anchors,
+    color: colorToAbgr(d.color, d.opacity), width: d.strokeWidth ?? 1.5,
+    pattern: d.lineStyle === 'dashed' ? 1 : d.lineStyle === 'dotted' ? 2 : 0,
+    locked: !!d.locked, text: d.text || '', font_size: d.strokeWidth || d.textFontSize || 14,
+  };
+  if (d.fillColor) out.fill = colorToAbgr(d.fillColor, d.fillOpacity ?? 18);
+  if (d.type === 'long' || d.type === 'short') {
+    const entry = d.points[0], target = d.points[1] || entry;
+    if (!entry) return null;
+    anchors = [[Math.round(entry.time), entry.price], [Math.round(target.time), entry.price]];
+    out.anchors = anchors; out.target = target.price; out.stop = d.stopLoss?.price ?? entry.price;
+  } else if (d.type === 'parallelChannel' && d.points.length >= 3) {
+    const [p0, p1, p2] = d.points;
+    const span = p1.time - p0.time;
+    const linePrice = span ? p0.price + ((p2.time - p0.time) / span) * (p1.price - p0.price) : p0.price;
+    out.anchors = [[Math.round(p0.time), p0.price], [Math.round(p1.time), p1.price]];
+    out.chan_off = p2.price - linePrice;
+  }
+  return out;
+}
+function nativeToGtDrawing(n: NativeDrawing, existingId?: string): Drawing | null {
+  const type = EDGE_TO_GT[n.tool];
+  if (!type || !Array.isArray(n.anchors) || !n.anchors.length) return null;
+  let points = n.anchors.map(([time, price]) => ({ time: Number(time), price: Number(price) }));
+  const d: Drawing = {
+    id: existingId || `gflow:${n.id}`, type, points,
+    color: abgrToColor(n.color), strokeWidth: Number(n.width || 1.5),
+    lineStyle: n.pattern === 1 ? 'dashed' : n.pattern === 2 ? 'dotted' : 'solid',
+    locked: !!n.locked, text: n.text || '',
+  };
+  if (type === 'brush') d.brushChartPoints = points;
+  if ((type === 'long' || type === 'short') && points[0]) {
+    const entry = points[0], edgeTime = points[1]?.time ?? entry.time;
+    d.points = [entry, { time: edgeTime, price: Number(n.target ?? entry.price) }];
+    d.stopLoss = { time: edgeTime, price: Number(n.stop ?? entry.price) };
+  } else if (type === 'parallelChannel' && points.length >= 2) {
+    d.points = [points[0], points[1], {
+      time: points[0].time, price: points[0].price + Number(n.chan_off || 0),
+    }];
+  }
+  return d;
+}
+function normalizedDrawingSymbol(value: string): string {
+  return String(value || '').toUpperCase().replace(/[\/:\-_.\s]/g, '')
+    .replace(/(USDT|USDC|PERP|USD|USDTM)$/, '');
+}
+
 function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null, scrollToIndex, scrollNonce, fitRange = null, followLatest = null }: TerminalChartProps) {
   const [converter, setConverter] = useState<Converter | null>(null);
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
+  const [drawingTarget, setDrawingTarget] = useState<DrawingTargetMode>(() =>
+    localStorage.getItem('green-terminal.drawing-target.v1') === 'both' ? 'both' : 'one');
+  const [drawingBridgeLinked, setDrawingBridgeLinked] = useState(false);
+  const [drawingBridgeReason, setDrawingBridgeReason] = useState('BOTH waiting for G-Flow');
+  const [drawingBridgeReady, setDrawingBridgeReady] = useState(false);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [toolbarAnchor, setToolbarAnchor] = useState<{ x: number; y: number } | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
@@ -381,6 +495,101 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
       }, 450);
     }
   }, [instrumentKey]);
+
+  const drawingsRef = useRef<Drawing[]>(drawings);
+  const lastNativeRevisionRef = useRef<number | null>(null);
+  useEffect(() => { drawingsRef.current = drawings; }, [drawings]);
+
+  const selectDrawingTool = useCallback((tool: DrawingTool) => {
+    setActiveTool(tool);
+    const edgeTool = tool ? GT_TO_EDGE_TOOL[tool]?.code : 0;
+    window.dispatchEvent(new CustomEvent('lset:drawing-tool', {
+      detail: { tool, edgeTool: edgeTool ?? 0 },
+    }));
+  }, []);
+
+  // Keep shell and toolbar mode in lock-step. BOTH does not become ready until
+  // the native snapshot arrives and is merged, preventing a blind overwrite.
+  useEffect(() => {
+    localStorage.setItem('green-terminal.drawing-target.v1', drawingTarget);
+    if (drawingTarget === 'one') setDrawingBridgeReady(false);
+    window.dispatchEvent(new CustomEvent('lset:drawing-mode', {
+      detail: { mode: drawingTarget, symbol },
+    }));
+  }, [drawingTarget, symbol]);
+
+  useEffect(() => {
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      setDrawingBridgeLinked(!!detail.linked);
+      setDrawingBridgeReason(String(detail.reason || ''));
+      if (!detail.linked) setDrawingBridgeReady(false);
+    };
+    window.addEventListener('lset:drawing-bridge-status', onStatus);
+    return () => window.removeEventListener('lset:drawing-bridge-status', onStatus);
+  }, []);
+
+  useEffect(() => {
+    const onNative = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const revision = Number(detail.revision);
+      const previousRevision = lastNativeRevisionRef.current;
+      if (Number.isFinite(revision)) lastNativeRevisionRef.current = revision;
+      if (drawingTarget !== 'both') {
+        // A native placement is one-shot just like GT's overlay. Disarm the
+        // visible rail after EdgeDepth commits so ONE cannot accidentally
+        // create a second copy on the next chart click.
+        if (previousRevision !== null && Number.isFinite(revision) && revision !== previousRevision)
+          selectDrawingTool(null);
+        return;
+      }
+      const route = String(detail.path || '');
+      const match = route.match(/^\/terminal\/(?:binancef|bybit|hl)\/([^/?#]+)/);
+      let nativeSymbol = '';
+      try { nativeSymbol = decodeURIComponent(match?.[1] || ''); } catch { nativeSymbol = match?.[1] || ''; }
+      if (!nativeSymbol || normalizedDrawingSymbol(nativeSymbol) !== normalizedDrawingSymbol(symbol)) {
+        setDrawingBridgeLinked(false);
+        setDrawingBridgeReady(false);
+        setDrawingBridgeReason('BOTH paused — chart instruments differ');
+        return;
+      }
+      if (previousRevision !== null && Number.isFinite(revision) && revision !== previousRevision)
+        selectDrawingTool(null);
+      let parsed: { items?: NativeDrawing[] };
+      try { parsed = JSON.parse(String(detail.json || '')); } catch { return; }
+      if (!Array.isArray(parsed.items)) return;
+
+      const current = drawingsRef.current;
+      const byBridgeId = new Map<number, Drawing>();
+      for (const drawing of current) byBridgeId.set(drawingBridgeId(drawing.id), drawing);
+      const mirrored: Drawing[] = [];
+      for (const native of parsed.items) {
+        const existing = byBridgeId.get(Number(native.id));
+        const converted = nativeToGtDrawing(native, existing?.id);
+        if (converted) mirrored.push(existing ? { ...existing, ...converted, id: existing.id } : converted);
+      }
+      // GT-only tools remain independent even while BOTH is selected; exact
+      // common tools are replaced by the native snapshot so native deletes
+      // propagate back to Green Terminal.
+      const gtOnly = current.filter((drawing) =>
+        !drawing.type || !GT_TO_EDGE_TOOL[drawing.type]?.key);
+      const next = [...gtOnly, ...mirrored];
+      setDrawingBridgeLinked(true);
+      setDrawingBridgeReason('');
+      setDrawingBridgeReady(true);
+      if (JSON.stringify(next) !== JSON.stringify(current)) handleDrawingsChange(next);
+    };
+    window.addEventListener('lset:gflow-drawings', onNative);
+    return () => window.removeEventListener('lset:gflow-drawings', onNative);
+  }, [drawingTarget, symbol, handleDrawingsChange, selectDrawingTool]);
+
+  useEffect(() => {
+    if (drawingTarget !== 'both' || !drawingBridgeLinked || !drawingBridgeReady) return;
+    const items = drawings.map(gtDrawingToNative).filter((d): d is NativeDrawing => !!d);
+    window.dispatchEvent(new CustomEvent('lset:drawing-state', {
+      detail: { json: JSON.stringify({ v: 1, magnet: true, hidden_all: false, rail_collapsed: true, items }) },
+    }));
+  }, [drawings, drawingTarget, drawingBridgeLinked, drawingBridgeReady]);
 
   // Never lose the last edit: flush pending writes on symbol switch, unmount,
   // and tab close.
@@ -723,11 +932,38 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
             </div>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <button
+          type="button"
+          aria-pressed={drawingTarget === 'both'}
+          onClick={() => setDrawingTarget((mode) => mode === 'one' ? 'both' : 'one')}
+          className={`mx-1 my-1 flex h-[54px] shrink-0 flex-col items-center justify-center rounded-md border transition-colors ${
+            drawingTarget === 'both'
+              ? drawingBridgeLinked && (!activeTool || !!GT_TO_EDGE_TOOL[activeTool]?.key)
+                ? 'border-teal-400/70 bg-teal-400/10 text-teal-300'
+                : 'border-amber-400/70 bg-amber-400/10 text-amber-300'
+              : 'border-[var(--edge)] bg-[var(--panel2)] text-foreground/65 hover:border-teal-400/50 hover:text-teal-300'
+          }`}
+          title={drawingTarget === 'one'
+            ? 'ONE — draw independently on whichever chart you use. Click for BOTH.'
+            : `${drawingBridgeReason || 'BOTH — mirror supported drawings on both charts.'}${activeTool && !GT_TO_EDGE_TOOL[activeTool]?.key ? ' This tool is Green Terminal only.' : ''}`}
+        >
+          <span className="text-[7px] font-bold tracking-[0.12em] opacity-75">TARGET</span>
+          <svg width="17" height="12" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <rect x="1" y="3" width="9" height="8" rx="4" />
+            <rect x="14" y="3" width="9" height="8" rx="4" />
+            <path d="M8 8h8" />
+          </svg>
+          <span className="text-[8px] font-extrabold tracking-wide">{
+            drawingTarget !== 'both' ? 'ONE'
+              : !drawingBridgeLinked ? 'BOTH!'
+                : activeTool && !GT_TO_EDGE_TOOL[activeTool]?.key ? 'ONE' : 'BOTH'
+          }</span>
+        </button>
+        <div className="flex-1 overflow-y-auto border-t border-[var(--edge)]">
         <DrawingToolsPanel
           railSide={railSide}
           activeTool={activeTool}
-          onToolSelect={setActiveTool}
+          onToolSelect={selectDrawingTool}
           drawings={drawings}
           onClearAllDrawings={clearAllDrawings}
           selectedDrawingId={selectedDrawingId}
@@ -857,7 +1093,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
         />
         <ChartDrawingOverlay
           activeTool={activeTool}
-          onToolSelect={setActiveTool}
+          onToolSelect={selectDrawingTool}
           drawings={drawings}
           onDrawingsChange={handleDrawingsChange}
           selectedDrawingId={selectedDrawingId}

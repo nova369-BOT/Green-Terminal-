@@ -22,6 +22,7 @@
 #include "rendering/census_overlay.h"
 #include "ui/realtime_navigation.h"
 #include "core/drawing_manager.h"
+#include "core/url_router.h"
 #include "ui/price_profile_renderer.h"
 #include "ui/custom_implot.h"
 #include "core/footprint_manager.h"
@@ -918,7 +919,8 @@ void ChartWidget::render() {
     // sits directly against the chart). It reserves its width from the plot;
     // the body child keeps the indicator panes right of the rail too. Gated
     // in live and replay; recording keeps its clean capture surface.
-    const bool show_rail = !ClipRecorder::focus_active() &&
+    const bool show_rail = !url_drawing_controls_disabled() &&
+                           !ClipRecorder::focus_active() &&
                            !edu::RecorderRuntime::instance().active();
     if (show_rail) {
         drawing::render_chart_rail(ctx_.drawing_mgr(),

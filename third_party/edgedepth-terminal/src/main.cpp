@@ -1762,6 +1762,49 @@ void main_loop() {
     LayoutManager::render_dockspace(nullptr,
         g_initial_route.exchange, g_initial_route.symbol);
     g_profiler.end("Shell+Dock");
+    if (g_app.drawing_mgr && url_drawing_controls_disabled()) {
+#ifdef __EMSCRIPTEN__
+        // Commands are consumed once. The parent writes globals on the same-
+        // origin iframe; no timer, WebSocket or market-data subscription is
+        // introduced by the drawing bridge.
+        const int tool_cmd = EM_ASM_INT({
+            if (typeof window.__gtDrawingToolCmd !== 'number') return -1;
+            var v = window.__gtDrawingToolCmd | 0;
+            delete window.__gtDrawingToolCmd;
+            return v;
+        });
+        if (tool_cmd >= 0 && tool_cmd < static_cast<int>(drawing::Tool::COUNT))
+            g_app.drawing_mgr->arm(static_cast<drawing::Tool>(tool_cmd));
+
+        char* import_raw = reinterpret_cast<char*>(EM_ASM_PTR({
+            var s = window.__gtDrawingImport;
+            if (typeof s !== 'string' || !s.length) return 0;
+            delete window.__gtDrawingImport;
+            return stringToNewUTF8(s);
+        }));
+        if (import_raw) {
+            g_app.drawing_mgr->replace_from_host(import_raw);
+            free(import_raw);
+        }
+
+        static uint64_t published_revision = UINT64_MAX;
+        const uint64_t revision = g_app.drawing_mgr->bridge_revision();
+        if (revision != published_revision) {
+            published_revision = revision;
+            const std::string snapshot = g_app.drawing_mgr->bridge_snapshot();
+            EM_ASM({
+                var json = UTF8ToString($0);
+                window.__gtDrawingState = json;
+                if (window.parent && window.parent !== window) {
+                    window.parent.dispatchEvent(new CustomEvent(
+                        'lset:gflow-drawings',
+                        { detail: { json: json, path: window.location.pathname,
+                                    revision: $1 } }));
+                }
+            }, snapshot.c_str(), static_cast<double>(revision));
+        }
+#endif
+    }
     if (g_app.drawing_mgr) g_app.drawing_mgr->tick();  // debounced persist flush
     if (LayoutManager::is_initialized) {
         update_and_render_widgets();
