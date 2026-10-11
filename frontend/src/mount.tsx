@@ -35,7 +35,6 @@ import { ChartSettingsProvider, useChartSettings, useHasSavedAppearance } from '
 import { AppearancePanel, ChartSettingsPanel } from '@/components/chart/InlineChartSettings';
 import MultiTimeframeLayoutSelector from '@/components/chart/MultiTimeframeLayoutSelector';
 import TerminalMultiGrid from '@/components/chart/TerminalMultiGrid';
-import WidgetWorkspaceControls from '@/components/chart/WidgetWorkspaceControls';
 import TimeframeMegaSelector from '@/components/chart/TimeframeMegaSelector';
 import ChartTypeMenu from '@/components/chart/ChartTypeMenu';
 import GoToNavigator from '@/components/chart/GoToNavigator';
@@ -773,7 +772,6 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           });
         }}
       >
-        <WidgetWorkspaceControls symbol={symbol} timeframe={timeframe} />
         {layout !== '1x1' ? (
           <TerminalMultiGrid
             layout={layout}

@@ -253,8 +253,8 @@ def test_demo_price_board_shape(client: TestClient):
 def test_shell_phase3_ui_markers():
     """Price & Chart shell must ship the Phase 3-UI workspace chrome."""
     from pathlib import Path
-    html = (Path(__file__).resolve().parents[1]
-            / "lse_terminal/ui/static/index.html").read_text()
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "lse_terminal/ui/static/index.html").read_text()
     for needle in (
         "GREEN TERMINAL", "instrument-bar", "term-status",
         "ws-controls", "chart-stage", "ib-live", "watchlist",
@@ -262,6 +262,10 @@ def test_shell_phase3_ui_markers():
     ):
         assert needle in html, f"missing {needle}"
     assert 'id="info-rail"' not in html
+    # The chart is one focused surface. The experimental floating widget
+    # workspace must not overlay it with “+ Widget” and duplicate Chart pills.
+    mount = (root / "frontend/src/mount.tsx").read_text()
+    assert "WidgetWorkspaceControls" not in mount
 
 
 def test_no_demo_auto_open_on_price_chart():
