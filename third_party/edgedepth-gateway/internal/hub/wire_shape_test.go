@@ -13,6 +13,7 @@ package hub_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -61,8 +62,9 @@ func (f *stubFeed) trade(price, qty float64, tsMs int64) {
 }
 
 type stubExchange struct {
-	mu   sync.Mutex
-	feed *stubFeed
+	mu      sync.Mutex
+	feed    *stubFeed
+	histErr error
 }
 
 func (e *stubExchange) ID() string                                       { return "binancef" }
@@ -78,6 +80,12 @@ func (e *stubExchange) NewFeed(_ string, emit exchange.Emit) exchange.Feed {
 }
 
 func (e *stubExchange) HistoricalCandles(_ context.Context, _ string, tfSec int64, _ int, _ int64) ([]*pb.Candle, error) {
+	e.mu.Lock()
+	histErr := e.histErr
+	e.mu.Unlock()
+	if histErr != nil {
+		return nil, histErr
+	}
 	if tfSec < 60 {
 		return nil, exchange.ErrUnsupported
 	}
@@ -248,5 +256,40 @@ func TestHistoricalCandlesArePluralOnTheWire(t *testing.T) {
 	}
 	if batch.Timeframe != env.Timeframe {
 		t.Fatalf("timeframe mismatch: envelope=%d inner=%d", env.Timeframe, batch.Timeframe)
+	}
+}
+
+// A REST-history outage must still get a terminal response. The client uses an
+// empty plural batch to release its queued live trades; silence leaves its
+// initial load pending forever and produces a permanently blank chart.
+func TestHistoricalFailureReturnsEmptyBatch(t *testing.T) {
+	ex, conn := newProbe(t)
+	ex.mu.Lock()
+	ex.histErr = errors.New("venue history unavailable")
+	ex.mu.Unlock()
+
+	req, _ := json.Marshal(map[string]any{
+		"method": "get_historical_candles",
+		"data": map[string]any{
+			"pair":      map[string]string{"exchange": "binancef", "symbol": stubSymbol},
+			"timeframe": stubHistTf,
+			"count":     200,
+		},
+	})
+	if err := conn.WriteMessage(websocket.TextMessage, req); err != nil {
+		t.Fatalf("historical request: %v", err)
+	}
+
+	env := readFrame(t, conn, pb.Stream_STREAM_HISTORICAL_CANDLES)
+	var batch pb.Candles
+	if err := proto.Unmarshal(env.Data, &batch); err != nil {
+		t.Fatalf("failure response does not decode as pb.Candles: %v", err)
+	}
+	if len(batch.Values) != 0 {
+		t.Fatalf("failure response contains %d invented candles", len(batch.Values))
+	}
+	if batch.Timeframe != stubHistTf || env.Timeframe != stubHistTf {
+		t.Fatalf("failure response lost timeframe: envelope=%d inner=%d",
+			env.Timeframe, batch.Timeframe)
 	}
 }

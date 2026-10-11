@@ -469,11 +469,15 @@ func (h *Hub) HistoricalCandles(ctx context.Context, c *Client, exID, symbol str
 		if errors.Is(err, exchange.ErrUnsupported) {
 			h.log.Debug("no historical source for timeframe",
 				"exchange", exID, "symbol", symbol, "timeframe", tfSec)
-			h.sendTo(c, key, tfSec, 0, &pb.Candles{Timeframe: tfSec})
-			return
+		} else {
+			h.log.Warn("historical candles fetch failed; continuing from live trades",
+				"exchange", exID, "symbol", symbol, "timeframe", tfSec, "err", err)
 		}
-		h.log.Warn("historical candles fetch failed",
-			"exchange", exID, "symbol", symbol, "timeframe", tfSec, "err", err)
+		// Always terminate the request. Silence leaves the terminal's initial
+		// loader pending forever after a venue REST error, which also prevents its
+		// real trade stream from building candles. An empty batch means exactly
+		// "no historical rows"; live candles still come from the subscribed venue.
+		h.sendTo(c, key, tfSec, 0, &pb.Candles{Timeframe: tfSec})
 		return
 	}
 

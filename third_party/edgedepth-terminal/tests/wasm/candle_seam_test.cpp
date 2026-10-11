@@ -103,6 +103,25 @@ int main() {
     check(kept, "a server candle with fewer trades never replaces ours");
     check(cm.building_candle().timestamp_ms == s + 25000, "the building period stays live");
 
+    // A venue with no historical source for this timeframe returns an empty
+    // batch. That response must release trades captured during the request and
+    // allow every later real trade to advance the chart.
+    const Terminal::Pair empty_pair{"hl", "BTC"};
+    CandleManager empty_cm(empty_pair, 5, sm);
+    const StreamKey empty_trades{empty_pair, Terminal::Stream::Trades, 0};
+    const StreamKey empty_candles{empty_pair, Terminal::Stream::Candles, 5};
+    empty_cm.initial_load();
+    sm.dispatch_trade_impl(empty_trades, {64000.0, 0.1, s + 30100, true});
+    const std::vector<Terminal::Candle> empty_batch;
+    sm.dispatch_candles_impl(empty_candles, empty_batch);
+    check(empty_cm.is_initial_load_complete(), "empty history completes the initial load");
+    check(empty_cm.has_building_candle(), "a queued real trade builds after empty history");
+    check(empty_cm.building_candle().close == 64000.0,
+          "the candle after empty history keeps the real trade price");
+    sm.dispatch_trade_impl(empty_trades, {64001.0, 0.2, s + 30600, false});
+    check(empty_cm.building_candle().close == 64001.0,
+          "later live trades continue updating after empty history");
+
     std::puts("candle seam passed");
     return 0;
 }

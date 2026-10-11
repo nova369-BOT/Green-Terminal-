@@ -812,6 +812,21 @@ void CandleManager::handle_candle_batch(std::span<const Terminal::Candle> batch)
     if (batch.empty()) {
         is_loading_ = false;
         carried_candle_valid_ = false;
+        // An empty INITIAL response is a valid terminal state, not a reason to
+        // keep live trades quarantined forever. Venues intentionally answer
+        // sub-minute history requests this way because those candles have to be
+        // built from the real trade stream. A transient REST-history failure can
+        // use the same response so the chart still recovers from live venue data.
+        //
+        // Previously initial_load_complete_ stayed false here. handle_trade()
+        // consequently kept every later trade in pending_trades_, leaving the
+        // chart permanently on "No candle data available" even though its trade
+        // subscription was healthy.
+        if (!initial_load_complete_ && replay_start_time_ms_ == 0) {
+            initial_load_complete_ = true;
+            fold_pending_trades();
+            mark_dirty();
+        }
         return;
     }
     // Backend sends oldest → newest. Historical requests can race a TF
