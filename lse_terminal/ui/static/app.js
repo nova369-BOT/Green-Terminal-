@@ -13123,7 +13123,10 @@ function ofEngineRoute() {
   try {
     const p = fr && fr.contentWindow && fr.contentWindow.location.pathname;
     const m = p && p.match(/^\/terminal\/(binancef|bybit|hl)\/([^/?#]+)/);
-    if (m) return { venue: m[1], symbol: decodeURIComponent(m[2]) };
+    if (m) return {
+      venue: m[1], symbol: decodeURIComponent(m[2]),
+      flowOnly: /[?&]flow=1(?:&|$)/.test(fr.contentWindow.location.search || ""),
+    };
   } catch (e) { /* mid-boot / detached frame: no claim */ }
   return null;
 }
@@ -13156,16 +13159,36 @@ const ofPortal = { timer: 0, host: null };
 
 function ofActiveHost() {
   const page = $("orderflow");
-  if (page && !page.classList.contains("hidden")) return $("of-stage");
+  if (page && !page.classList.contains("hidden")) return $("of-flow-stage");
   const dock = $("of-dock"), charts = $("charts");
   if (dock && charts && !dock.classList.contains("hidden")
-      && !charts.classList.contains("hidden")) return $("ofd-stage");
+      && !charts.classList.contains("hidden")) return $("ofd-flow-stage");
+  return null;
+}
+
+function ofActiveChartHost() {
+  const page = $("orderflow");
+  if (page && !page.classList.contains("hidden")) return $("of-chart-stage");
+  const dock = $("of-dock"), charts = $("charts");
+  if (dock && charts && !dock.classList.contains("hidden")
+      && !charts.classList.contains("hidden")) return $("ofd-chart-stage");
   return null;
 }
 
 function ofSyncPortal() {
   const portal = $("of-portal");
   if (!portal) return;
+  // Mount exactly one second LSE renderer only while a G-Flow surface is
+  // visible. It receives the primary chart's existing props by reference;
+  // no market-data connection or polling loop is created.
+  const chartHost = ofActiveChartHost();
+  const replica = window.LSEChartReplica;
+  if (replica) {
+    if (chartHost && chartHost.offsetParent !== null) {
+      replica.attach(chartHost, { showRail: chartHost.id === "of-chart-stage" });
+    }
+    else if (replica.mounted && replica.mounted()) replica.detach();
+  }
   // Fullscreen Expand hands the rect to the browser; do not fight it.
   if (document.fullscreenElement === portal) return;
   const host = ofActiveHost();
@@ -13452,7 +13475,7 @@ function loadOrderFlowSymbol(sym) {
   // Only (re)load when the runtime is ready; refreshOrderFlowStatus boots
   // the first frame once artifacts are present.
   if (fr && ofState.ready) {
-    if (!cur || cur.symbol !== vsym) {
+    if (!cur || cur.symbol !== vsym || !cur.flowOnly) {
       // ?watchlist=0 — GT owns the watchlist (unified market list in the
       // sidebar); the embedded terminal must not show a second one.
       // &rt=0 — Real-time now lives natively on the LSE chart (toolbar
@@ -13461,7 +13484,7 @@ function loadOrderFlowSymbol(sym) {
       // carries all flags across its own symbol/venue navigations.
       // draw=0 removes both the native rail and its reserved plot width;
       // DrawingManager stays live for the host command/state bridge.
-      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0&draw=0";
+      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0&draw=0&flow=1";
       // Fresh boot: the engine starts on its own default timeframe, so the
       // bridge pushes the chart's timeframe once the runtime is up.
       ofState.lastTfSec = 0;
@@ -13755,7 +13778,6 @@ function showOrderFlowPage() {
    loop that keeps the single engine frame glued to the active surface.
    Runs at script evaluation (app.js loads at the end of <body>, DOM ready). */
 try {
-  ofBindDrawingBridge();
   ofDockLoadPrefs();
   ofBindDock();
   ofDockApply();

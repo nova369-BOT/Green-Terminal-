@@ -268,28 +268,43 @@ def test_shell_phase3_ui_markers():
     assert "WidgetWorkspaceControls" not in mount
 
 
-def test_unified_drawing_toolbar_bridge_markers():
-    """The dock has one visible rail and a real, same-origin drawing bridge."""
+def test_gflow_uses_exact_lse_chart_and_one_drawing_toolbar():
+    """G-Flow composes the real LSE engine with native flow-only widgets."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     html = (root / "lse_terminal/ui/static/index.html").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
     mount = (root / "frontend/src/mount.tsx").read_text()
+    style = (root / "lse_terminal/ui/static/style.css").read_text()
     router = (root / "third_party/edgedepth-terminal/src/core/url_router.h").read_text()
-    widget = (root / "third_party/edgedepth-terminal/src/ui/chart_widget.cpp").read_text()
+    main = (root / "third_party/edgedepth-terminal/src/main.cpp").read_text()
+    layout = (root / "third_party/edgedepth-terminal/src/rendering/layout.cpp").read_text()
+
     assert 'id="ofd-bar"' not in html
-    assert 'id="ofd-note"' not in html
-    assert "watchlist=0&rt=0&draw=0" in app
-    assert "lset:drawing-state" in app and "__gtDrawingImport" in app
+    assert 'id="ofd-chart-stage"' in html and 'id="ofd-flow-stage"' in html
+    assert 'id="of-chart-stage"' in html and 'id="of-flow-stage"' in html
+    # Honest venue errors remain visible; no empty native chart masquerades as
+    # a market-data result.
+    assert 'id="ofd-note"' in html
+    assert "gflow-note" in style
+
+    assert "watchlist=0&rt=0&draw=0&flow=1" in app
+    assert "LSEChartReplica" in mount and "<TerminalChart" in mount
+    assert "replica ? `${baseInstrumentKey}:gflow`" in mount
+    assert "lset:lse-drawing-snapshot" in mount
+    assert "lset:lse-drawing-state" in mount
+    # BOTH starts with a deterministic union in the exact same Drawing schema;
+    # unlike the retired C++ converter, no tool subset is filtered out.
+    assert "for (const drawing of [...drawingsRef.current, ...incoming])" in mount
+    assert "GT_TO_EDGE_TOOL" not in mount
     assert "TARGET" in mount and "drawingTarget === 'both'" in mount
-    assert "lset:gflow-drawings" in mount
-    # BOTH starts with a union, not a destructive one-way replacement, and a
-    # market that becomes linkable later immediately pulls its native state.
-    assert "gtSharedOnlyInFirstMerge" in mount
-    assert "drawingBridgeReadyRef.current" in mount
-    assert "ofPublishDrawingSnapshot" in app
-    assert "url_drawing_controls_disabled" in router
-    assert "!url_drawing_controls_disabled()" in widget
+
+    # Hosted native runtime owns DOM/tape only: no candle request, native chart,
+    # product header or duplicate stats strip is rendered in flow composition.
+    assert "url_flow_only" in router
+    assert "if (!url_flow_only())" in main
+    assert "!url_flow_only();" in main
+    assert "if (url_flow_only())" in layout
 
 
 def test_no_demo_auto_open_on_price_chart():

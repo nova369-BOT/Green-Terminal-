@@ -119,6 +119,11 @@ interface TerminalChartProps extends ChartProps {
   // Imperative indicator overrides from the shell; merged over whatever was
   // loaded for this instrument.
   indicatorPatch?: Record<string, any> | null;
+  // The G-Flow surface runs the exact same chart/drawing engine without a
+  // second tool rail. Its market props are shared by the shell; it never opens
+  // another data connection.
+  replica?: boolean;
+  replicaRail?: boolean;
 }
 
 const TF_MS: Record<string, number> = {
@@ -141,133 +146,13 @@ const onCtxRowIn = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style
 const onCtxRowOut = (e: React.MouseEvent<HTMLElement>) => { e.currentTarget.style.background = 'transparent'; };
 
 type DrawingTargetMode = 'one' | 'both';
-type NativeDrawing = {
-  id: number; tool: string; anchors: Array<[number, number]>;
-  color?: number; width?: number; pattern?: number; fill?: number;
-  locked?: boolean; hidden?: boolean; text?: string; font_size?: number;
-  fib_mask?: number; stop?: number; target?: number; chan_off?: number;
-};
-
-const GT_TO_EDGE_TOOL: Partial<Record<Exclude<DrawingTool, null>, { code: number; key?: string }>> = {
-  trend: { code: 1, key: 'trendline' }, straightArrow: { code: 2, key: 'arrow' },
-  trendRay: { code: 3, key: 'ray' },
-  extendedLine: { code: 4, key: 'xline' }, horizontal: { code: 5, key: 'hline' },
-  horizontalRay: { code: 6, key: 'hray' }, vertical: { code: 7, key: 'vline' },
-  crossline: { code: 8, key: 'cross' }, rectangle: { code: 9, key: 'rect' },
-  brush: { code: 10, key: 'brush' }, measure: { code: 11 },
-  fibonacci: { code: 14, key: 'fib' }, long: { code: 15, key: 'long' },
-  short: { code: 16, key: 'short' }, text: { code: 17, key: 'text' },
-  parallelChannel: { code: 18, key: 'channel' },
-};
-const EDGE_TO_GT: Record<string, Exclude<DrawingTool, null>> = {
-  trendline: 'trend', arrow: 'straightArrow', ray: 'trendRay', xline: 'extendedLine',
-  hline: 'horizontal', hray: 'horizontalRay', vline: 'vertical', cross: 'crossline',
-  rect: 'rectangle', brush: 'brush', fib: 'fibonacci', long: 'long', short: 'short',
-  text: 'text', channel: 'parallelChannel',
-};
-
-// Stable 53-bit ids let both engines refer to the same object without adding
-// bridge metadata to either persisted schema. The high marker keeps GT hashes
-// away from EdgeDepth's normal incrementing ids.
-function drawingBridgeId(id: string): number {
-  if (id.startsWith('gflow:')) {
-    const native = Number(id.slice(6));
-    if (Number.isSafeInteger(native) && native > 0) return native;
-  }
-  let a = 2166136261 >>> 0, b = 2246822519 >>> 0;
-  for (let i = 0; i < id.length; i += 1) {
-    const c = id.charCodeAt(i);
-    a = Math.imul(a ^ c, 16777619) >>> 0;
-    b = Math.imul(b ^ c, 3266489917) >>> 0;
-  }
-  return 4503599627370496 + ((a & 0x7ffff) * 4294967296) + b;
-}
-function colorToAbgr(hex?: string, opacity = 100): number {
-  const raw = (hex || '#dfe6ee').replace('#', '');
-  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw.padEnd(6, '0');
-  const r = parseInt(full.slice(0, 2), 16) || 0, g = parseInt(full.slice(2, 4), 16) || 0;
-  const b = parseInt(full.slice(4, 6), 16) || 0, a = Math.round(Math.max(0, Math.min(100, opacity)) * 2.55);
-  return ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
-}
-function abgrToColor(value?: number): string {
-  const v = Number(value ?? 0xffeee6df) >>> 0;
-  return `#${(v & 255).toString(16).padStart(2, '0')}${((v >>> 8) & 255).toString(16).padStart(2, '0')}${((v >>> 16) & 255).toString(16).padStart(2, '0')}`;
-}
-function abgrToOpacity(value?: number): number {
-  if (value === undefined) return 100;
-  return Math.round((((Number(value) >>> 24) & 255) / 255) * 100);
-}
-const SHARED_FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.618, 3.618];
-function gtDrawingToNative(d: Drawing): NativeDrawing | null {
-  if (!d.type) return null;
-  const map = GT_TO_EDGE_TOOL[d.type];
-  if (!map?.key) return null;
-  const sourcePoints = d.type === 'brush' && d.brushChartPoints?.length
-    ? d.brushChartPoints : d.points;
-  if (!sourcePoints?.length) return null;
-  let anchors: Array<[number, number]> = sourcePoints.map((p) => [Math.round(p.time), p.price]);
-  const out: NativeDrawing = {
-    id: drawingBridgeId(d.id), tool: map.key, anchors,
-    color: colorToAbgr(d.color, d.opacity), width: d.strokeWidth ?? 1.5,
-    pattern: d.lineStyle === 'dashed' ? 1 : d.lineStyle === 'dotted' ? 2 : 0,
-    locked: !!d.locked, text: d.text || '', font_size: d.strokeWidth || d.textFontSize || 14,
-  };
-  if (d.fillColor) out.fill = colorToAbgr(d.fillColor, d.fillOpacity ?? 18);
-  if (d.type === 'fibonacci' && d.fibLevels?.length) {
-    out.fib_mask = SHARED_FIB_LEVELS.reduce((mask, level, index) =>
-      d.fibLevels!.some((candidate) => Math.abs(candidate - level) < 1e-9)
-        ? mask | (1 << index) : mask, 0);
-  }
-  if (d.type === 'long' || d.type === 'short') {
-    const entry = d.points[0], target = d.points[1] || entry;
-    if (!entry) return null;
-    anchors = [[Math.round(entry.time), entry.price], [Math.round(target.time), entry.price]];
-    out.anchors = anchors; out.target = target.price; out.stop = d.stopLoss?.price ?? entry.price;
-  } else if (d.type === 'parallelChannel' && d.points.length >= 3) {
-    const [p0, p1, p2] = d.points;
-    const span = p1.time - p0.time;
-    const linePrice = span ? p0.price + ((p2.time - p0.time) / span) * (p1.price - p0.price) : p0.price;
-    out.anchors = [[Math.round(p0.time), p0.price], [Math.round(p1.time), p1.price]];
-    out.chan_off = p2.price - linePrice;
-  }
-  return out;
-}
-function nativeToGtDrawing(n: NativeDrawing, existingId?: string): Drawing | null {
-  const type = EDGE_TO_GT[n.tool];
-  if (!type || !Array.isArray(n.anchors) || !n.anchors.length) return null;
-  let points = n.anchors.map(([time, price]) => ({ time: Number(time), price: Number(price) }));
-  const d: Drawing = {
-    id: existingId || `gflow:${n.id}`, type, points,
-    color: abgrToColor(n.color), opacity: abgrToOpacity(n.color),
-    strokeWidth: Number(n.width || 1.5),
-    lineStyle: n.pattern === 1 ? 'dashed' : n.pattern === 2 ? 'dotted' : 'solid',
-    locked: !!n.locked, text: n.text || '',
-  };
-  if (n.fill) {
-    d.fillColor = abgrToColor(n.fill);
-    d.fillOpacity = abgrToOpacity(n.fill);
-  }
-  if (type === 'fibonacci' && n.fib_mask !== undefined) {
-    d.fibLevels = SHARED_FIB_LEVELS.filter((_, index) => (Number(n.fib_mask) & (1 << index)) !== 0);
-  }
-  if (type === 'brush') d.brushChartPoints = points;
-  if ((type === 'long' || type === 'short') && points[0]) {
-    const entry = points[0], edgeTime = points[1]?.time ?? entry.time;
-    d.points = [entry, { time: edgeTime, price: Number(n.target ?? entry.price) }];
-    d.stopLoss = { time: edgeTime, price: Number(n.stop ?? entry.price) };
-  } else if (type === 'parallelChannel' && points.length >= 2) {
-    d.points = [points[0], points[1], {
-      time: points[0].time, price: points[0].price + Number(n.chan_off || 0),
-    }];
-  }
-  return d;
-}
 function normalizedDrawingSymbol(value: string): string {
   return String(value || '').toUpperCase().replace(/[\/:\-_.\s]/g, '')
     .replace(/(USDT|USDC|PERP|USD|USDTM)$/, '');
 }
 
-function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null, scrollToIndex, scrollNonce, fitRange = null, followLatest = null }: TerminalChartProps) {
+function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'candlestick', trades = [], engineIndicators, indicatorPatch = null, quote = null, positions = [], onPositionModify, onPositionClose, autoSelectPositionId = null, scrollToIndex, scrollNonce, fitRange = null, followLatest = null, replica = false, replicaRail = false }: TerminalChartProps) {
+  const drawingRole = replica ? 'gflow' : 'primary';
   const [converter, setConverter] = useState<Converter | null>(null);
   const [activeTool, setActiveTool] = useState<DrawingTool>(null);
   const [drawingTarget, setDrawingTarget] = useState<DrawingTargetMode>(() =>
@@ -278,7 +163,6 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   // State controls rendering/state publication; the ref is updated before
   // synchronous CustomEvent dispatches so a mode or symbol transition cannot
   // be handled by the previous render's stale "ready" closure.
-  const drawingBridgeReadyRef = useRef(false);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [toolbarAnchor, setToolbarAnchor] = useState<{ x: number; y: number } | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
@@ -360,7 +244,10 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   // Screen-layout state lives in the shared layoutStore module (the shell's
   // top-bar Layout button drives it from its own React root).
   const layoutState = useLayoutState();
-  const layout = layoutState.layout;
+  // G-Flow is one exact chart surface, not another workspace grid. Reusing
+  // TerminalChart preserves every ProChart interaction and drawing tool while
+  // avoiding secondary-pane fetches or layout-store side effects.
+  const layout = replica ? '1x1' : layoutState.layout;
   const syncSettings = layoutState.sync;
 
   const [appearanceOpen, setAppearanceOpen] = useState(false);
@@ -372,6 +259,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const appearanceViewRef = useRef(appearanceView);
   appearanceViewRef.current = appearanceView;
   useEffect(() => {
+    if (replica) return;
     // TOGGLE, not open: the shell's buttons must also dismiss the panel on a
     // second click; open-only felt stuck. With two toolbar doors (Chart
     // layout -> chart tab, Appearance -> colours tab), a click for the tab
@@ -471,11 +359,16 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   // Drawings and indicator setups are stored per instrument: switching symbols
   // must not carry another instrument's trendlines across, and returning to a
   // symbol must restore exactly what was left there.
-  const instrumentKey = `${provider}:${symbol}`;
+  const baseInstrumentKey = `${provider}:${symbol}`;
+  // ONE deliberately preserves independent chart work. BOTH synchronizes the
+  // two stores losslessly through full Drawing objects (same engine/schema).
+  const instrumentKey = replica ? `${baseInstrumentKey}:gflow` : baseInstrumentKey;
 
   // Guards the initial load: without it the empty starting state would be
   // written back over the saved drawings before the load resolves.
   const loadedKeyRef = useRef<string | null>(null);
+  const mirrorReadyRef = useRef(false);
+  const drawingsRef = useRef<Drawing[]>(drawings);
 
   useEffect(() => {
     let alive = true;
@@ -486,13 +379,19 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
         api.getIndicators(instrumentKey),
       ]);
       if (!alive) return;
-      setDrawings(saved as Drawing[]);
+      const restored = saved as Drawing[];
+      setDrawings(restored);
+      drawingsRef.current = restored;
       setIndicators(savedIndicators ?? DEFAULT_INDICATOR_CONFIG);
       setSelectedDrawingId(null);
       loadedKeyRef.current = instrumentKey;
+      mirrorReadyRef.current = false;
+      window.dispatchEvent(new CustomEvent('lset:lse-drawing-snapshot', {
+        detail: { source: drawingRole, symbol, drawings: restored },
+      }));
     })();
     return () => { alive = false; };
-  }, [instrumentKey]);
+  }, [instrumentKey, drawingRole, symbol]);
 
   // Debounced persistence: the UI state updates instantly (setDrawings), but the
   // network/disk write is coalesced so a slider drag or resize (which commits at
@@ -505,8 +404,9 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     if (p) { pendingPersistRef.current = null; void api.setDrawings(p.key, p.data); }
   }, []);
 
-  const handleDrawingsChange = useCallback((next: Drawing[]) => {
+  const handleDrawingsChange = useCallback((next: Drawing[], publish = true) => {
     setDrawings(next); // instant, never blocked by persistence
+    drawingsRef.current = next;
     if (loadedKeyRef.current === instrumentKey) {
       pendingPersistRef.current = { key: instrumentKey, data: next };
       if (persistTimerRef.current !== null) clearTimeout(persistTimerRef.current);
@@ -516,130 +416,152 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
         if (p) { pendingPersistRef.current = null; void api.setDrawings(p.key, p.data); }
       }, 450);
     }
-  }, [instrumentKey]);
+    if (publish && drawingTarget === 'both' && mirrorReadyRef.current) {
+      window.dispatchEvent(new CustomEvent('lset:lse-drawing-state', {
+        detail: { source: drawingRole, symbol, drawings: next },
+      }));
+    }
+  }, [instrumentKey, drawingTarget, drawingRole, symbol]);
 
-  const drawingsRef = useRef<Drawing[]>(drawings);
-  const lastNativeRevisionRef = useRef<number | null>(null);
-  const lastNativePathRef = useRef<string | null>(null);
   useEffect(() => { drawingsRef.current = drawings; }, [drawings]);
 
   const selectDrawingTool = useCallback((tool: DrawingTool) => {
     setActiveTool(tool);
-    const edgeTool = tool ? GT_TO_EDGE_TOOL[tool]?.code : 0;
     window.dispatchEvent(new CustomEvent('lset:drawing-tool', {
-      detail: { tool, edgeTool: edgeTool ?? 0 },
+      detail: { source: drawingRole, tool, edgeTool: 0 },
     }));
-  }, []);
+  }, [drawingRole]);
 
-  // Keep shell and toolbar mode in lock-step. BOTH does not become ready until
-  // the native snapshot arrives and is merged, preventing a blind overwrite.
+  // Both LSE surfaces run ChartDrawingOverlay itself, so every tool now shares
+  // one vocabulary and one geometry. A tool selected on toolbar 1 arms both
+  // charts; the chart that completes placement disarms the other immediately.
   useEffect(() => {
+    const onTool = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.source === drawingRole) return;
+      setActiveTool((detail.tool || null) as DrawingTool);
+    };
+    window.addEventListener('lset:drawing-tool', onTool);
+    return () => window.removeEventListener('lset:drawing-tool', onTool);
+  }, [drawingRole]);
+
+  // The visible primary rail owns the target selector. The replica listens;
+  // there is no second control and no mode polling.
+  useEffect(() => {
+    if (replica && !replicaRail) return;
     localStorage.setItem('green-terminal.drawing-target.v1', drawingTarget);
-    // Every mode or instrument transition needs a fresh native snapshot. In
-    // particular, changing symbols while BOTH is active must merge the new
-    // instrument's two stores instead of treating the previous market's
-    // bridge as ready and replacing Green Terminal's drawings blindly.
-    drawingBridgeReadyRef.current = false;
+    mirrorReadyRef.current = false;
     setDrawingBridgeReady(false);
     window.dispatchEvent(new CustomEvent('lset:drawing-mode', {
-      detail: { mode: drawingTarget, symbol },
+      detail: { source: drawingRole, mode: drawingTarget, symbol },
     }));
-  }, [drawingTarget, symbol]);
+    window.dispatchEvent(new CustomEvent('lset:lse-replica-probe'));
+    if (drawingTarget === 'both' && loadedKeyRef.current === instrumentKey) {
+      window.dispatchEvent(new CustomEvent('lset:lse-drawing-snapshot', {
+        detail: { source: drawingRole, symbol, drawings: drawingsRef.current },
+      }));
+    }
+  }, [replica, replicaRail, drawingRole, drawingTarget, symbol, instrumentKey]);
 
   useEffect(() => {
+    const onMode = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.source === drawingRole) return;
+      const mode: DrawingTargetMode = detail.mode === 'both' ? 'both' : 'one';
+      mirrorReadyRef.current = false;
+      setDrawingTarget(mode);
+      if (mode === 'both' && loadedKeyRef.current === instrumentKey) {
+        // Let React commit the mode first; a synchronous snapshot would be
+        // received by this instance's previous ONE-mode listener and ignored.
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('lset:lse-drawing-snapshot', {
+            detail: { source: drawingRole, symbol, drawings: drawingsRef.current },
+          }));
+        }, 0);
+      }
+    };
+    window.addEventListener('lset:drawing-mode', onMode);
+    return () => window.removeEventListener('lset:drawing-mode', onMode);
+  }, [replica, drawingRole, instrumentKey, symbol]);
+
+  // Presence is event-driven. The primary rail can therefore distinguish a
+  // genuine same-symbol replica from a hidden/unmounted flow surface without
+  // querying or coupling to React internals.
+  useEffect(() => {
+    if (!replica) return;
+    const announce = () => window.dispatchEvent(new CustomEvent('lset:lse-replica-status', {
+      detail: { mounted: true, symbol },
+    }));
+    announce();
+    window.addEventListener('lset:lse-replica-probe', announce);
+    return () => {
+      window.removeEventListener('lset:lse-replica-probe', announce);
+      window.dispatchEvent(new CustomEvent('lset:lse-replica-status', {
+        detail: { mounted: false, symbol },
+      }));
+    };
+  }, [replica, symbol]);
+
+  useEffect(() => {
+    if (replica) return;
     const onStatus = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      setDrawingBridgeLinked(!!detail.linked);
-      setDrawingBridgeReason(String(detail.reason || ''));
-      if (!detail.linked) {
-        drawingBridgeReadyRef.current = false;
+      const linked = !!detail.mounted &&
+        normalizedDrawingSymbol(String(detail.symbol || '')) === normalizedDrawingSymbol(symbol);
+      setDrawingBridgeLinked(linked);
+      setDrawingBridgeReason(linked ? '' : (detail.mounted
+        ? 'BOTH paused — chart instruments differ'
+        : 'BOTH waiting for G-Flow'));
+      if (!linked) {
+        mirrorReadyRef.current = false;
         setDrawingBridgeReady(false);
       }
     };
-    window.addEventListener('lset:drawing-bridge-status', onStatus);
-    return () => window.removeEventListener('lset:drawing-bridge-status', onStatus);
-  }, []);
+    window.addEventListener('lset:lse-replica-status', onStatus);
+    window.dispatchEvent(new CustomEvent('lset:lse-replica-probe'));
+    return () => window.removeEventListener('lset:lse-replica-status', onStatus);
+  }, [replica, symbol]);
 
+  // Exact same-engine synchronization. The first exchange after entering BOTH
+  // is a deterministic union so neither independent store is erased. Once the
+  // union is acknowledged, full Drawing snapshots are authoritative; edits,
+  // deletion, locking, text and every advanced geometry propagate losslessly.
   useEffect(() => {
-    const onNative = (event: Event) => {
+    const onMirror = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      const revision = Number(detail.revision);
-      const previousRevision = lastNativeRevisionRef.current;
-      const route = String(detail.path || '');
-      const previousPath = lastNativePathRef.current;
-      if (route) lastNativePathRef.current = route;
-      if (Number.isFinite(revision)) lastNativeRevisionRef.current = revision;
-      // A route change or a revision counter moving backwards means the iframe
-      // has a new DrawingManager store. Its first snapshot must be unioned with
-      // GT, even if the prior engine session had already reached ready state.
-      const nativeSessionChanged =
-        (!!route && previousPath !== null && route !== previousPath) ||
-        (previousRevision !== null && Number.isFinite(revision) && revision < previousRevision);
-      const nativeRevisionChanged = Number.isFinite(revision) &&
-        (previousRevision === null ? revision > 0 : revision !== previousRevision);
-      if (drawingTarget !== 'both') {
-        // A native placement is one-shot just like GT's overlay. Disarm the
-        // visible rail after EdgeDepth commits so ONE cannot accidentally
-        // create a second copy on the next chart click. Revision zero is the
-        // manager's boot snapshot, not a placement.
-        if (nativeRevisionChanged) selectDrawingTool(null);
+      if (detail.source === drawingRole || drawingTarget !== 'both') return;
+      if (normalizedDrawingSymbol(String(detail.symbol || '')) !== normalizedDrawingSymbol(symbol)) return;
+      if (loadedKeyRef.current !== instrumentKey || !Array.isArray(detail.drawings)) return;
+      const incoming = detail.drawings as Drawing[];
+      if (!mirrorReadyRef.current) {
+        const byId = new Map<string, Drawing>();
+        for (const drawing of [...drawingsRef.current, ...incoming]) byId.set(drawing.id, drawing);
+        const merged = [...byId.values()].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+        mirrorReadyRef.current = true;
+        setDrawingBridgeReady(true);
+        handleDrawingsChange(merged, false);
+        window.dispatchEvent(new CustomEvent('lset:lse-drawing-state', {
+          detail: { source: drawingRole, symbol, drawings: merged },
+        }));
         return;
       }
-      const match = route.match(/^\/terminal\/(?:binancef|bybit|hl)\/([^/?#]+)/);
-      let nativeSymbol = '';
-      try { nativeSymbol = decodeURIComponent(match?.[1] || ''); } catch { nativeSymbol = match?.[1] || ''; }
-      if (!nativeSymbol || normalizedDrawingSymbol(nativeSymbol) !== normalizedDrawingSymbol(symbol)) {
-        setDrawingBridgeLinked(false);
-        drawingBridgeReadyRef.current = false;
-        setDrawingBridgeReady(false);
-        setDrawingBridgeReason('BOTH paused — chart instruments differ');
+      if ((event as CustomEvent).type === 'lset:lse-drawing-snapshot') {
+        window.dispatchEvent(new CustomEvent('lset:lse-drawing-state', {
+          detail: { source: drawingRole, symbol, drawings: drawingsRef.current },
+        }));
         return;
       }
-      if (nativeRevisionChanged) selectDrawingTool(null);
-      let parsed: { items?: NativeDrawing[] };
-      try { parsed = JSON.parse(String(detail.json || '')); } catch { return; }
-      if (!Array.isArray(parsed.items)) return;
-
-      const current = drawingsRef.current;
-      const byBridgeId = new Map<number, Drawing>();
-      for (const drawing of current) byBridgeId.set(drawingBridgeId(drawing.id), drawing);
-      const mirrored: Drawing[] = [];
-      for (const native of parsed.items) {
-        const existing = byBridgeId.get(Number(native.id));
-        const converted = nativeToGtDrawing(native, existing?.id);
-        if (converted) mirrored.push(existing ? { ...existing, ...converted, id: existing.id } : converted);
+      if (JSON.stringify(incoming) !== JSON.stringify(drawingsRef.current)) {
+        handleDrawingsChange(incoming, false);
       }
-      // GT-only tools remain independent even while BOTH is selected. The
-      // first snapshot for a mode/instrument/iframe session is a UNION: keep
-      // supported GT drawings that are not in the native store, then send that
-      // merged snapshot back. Once ready, native snapshots are authoritative
-      // for the shared subset so native deletions propagate to GT.
-      const gtOnly = current.filter((drawing) =>
-        !drawing.type || !GT_TO_EDGE_TOOL[drawing.type]?.key);
-      const nativeIds = new Set(parsed.items.map((drawing) => Number(drawing.id)));
-      const gtSharedOnlyInFirstMerge = (!drawingBridgeReadyRef.current || nativeSessionChanged)
-        ? current.filter((drawing) =>
-            !!drawing.type && !!GT_TO_EDGE_TOOL[drawing.type]?.key &&
-            !nativeIds.has(drawingBridgeId(drawing.id)))
-        : [];
-      const next = [...gtOnly, ...gtSharedOnlyInFirstMerge, ...mirrored];
-      setDrawingBridgeLinked(true);
-      setDrawingBridgeReason('');
-      drawingBridgeReadyRef.current = true;
-      setDrawingBridgeReady(true);
-      if (JSON.stringify(next) !== JSON.stringify(current)) handleDrawingsChange(next);
     };
-    window.addEventListener('lset:gflow-drawings', onNative);
-    return () => window.removeEventListener('lset:gflow-drawings', onNative);
-  }, [drawingTarget, symbol, handleDrawingsChange, selectDrawingTool]);
-
-  useEffect(() => {
-    if (drawingTarget !== 'both' || !drawingBridgeLinked || !drawingBridgeReady) return;
-    const items = drawings.map(gtDrawingToNative).filter((d): d is NativeDrawing => !!d);
-    window.dispatchEvent(new CustomEvent('lset:drawing-state', {
-      detail: { json: JSON.stringify({ v: 1, magnet: true, hidden_all: false, rail_collapsed: true, items }) },
-    }));
-  }, [drawings, drawingTarget, drawingBridgeLinked, drawingBridgeReady]);
+    window.addEventListener('lset:lse-drawing-snapshot', onMirror);
+    window.addEventListener('lset:lse-drawing-state', onMirror);
+    return () => {
+      window.removeEventListener('lset:lse-drawing-snapshot', onMirror);
+      window.removeEventListener('lset:lse-drawing-state', onMirror);
+    };
+  }, [drawingRole, drawingTarget, symbol, instrumentKey, handleDrawingsChange]);
 
   // Never lose the last edit: flush pending writes on symbol switch, unmount,
   // and tab close.
@@ -961,7 +883,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           must follow the terminal's light/dark class like every other panel. */}
       <div
         className={`shrink-0 flex flex-col bg-[var(--panel)] border-[var(--edge)] transition-opacity duration-150 ${railSide === 'right' ? 'border-l' : 'border-r'} ${railDrag ? 'opacity-40' : 'opacity-100'}`}
-        style={{ order: railSide === 'right' ? 2 : 0 }}
+        style={{ order: railSide === 'right' ? 2 : 0, display: replica && !replicaRail ? 'none' : undefined }}
       >
         <div
           className={`group flex h-7 shrink-0 items-center justify-center border-b border-[var(--edge)] ${railDrag ? 'cursor-grabbing' : 'cursor-grab'}`}
@@ -988,14 +910,14 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           onClick={() => setDrawingTarget((mode) => mode === 'one' ? 'both' : 'one')}
           className={`mx-1 my-1 flex h-[54px] shrink-0 flex-col items-center justify-center rounded-md border transition-colors ${
             drawingTarget === 'both'
-              ? drawingBridgeLinked && (!activeTool || !!GT_TO_EDGE_TOOL[activeTool]?.key)
+              ? drawingBridgeLinked
                 ? 'border-teal-400/70 bg-teal-400/10 text-teal-300'
                 : 'border-amber-400/70 bg-amber-400/10 text-amber-300'
               : 'border-[var(--edge)] bg-[var(--panel2)] text-foreground/65 hover:border-teal-400/50 hover:text-teal-300'
           }`}
           title={drawingTarget === 'one'
             ? 'ONE — draw independently on whichever chart you use. Click for BOTH.'
-            : `${drawingBridgeReason || 'BOTH — mirror supported drawings on both charts.'}${activeTool && !GT_TO_EDGE_TOOL[activeTool]?.key ? ' This tool is Green Terminal only.' : ''}`}
+            : `${drawingBridgeReason || 'BOTH — mirror every drawing exactly on both LSE chart engines.'}`}
         >
           <span className="text-[7px] font-bold tracking-[0.12em] opacity-75">TARGET</span>
           <svg width="17" height="12" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -1005,8 +927,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
           </svg>
           <span className="text-[8px] font-extrabold tracking-wide">{
             drawingTarget !== 'both' ? 'ONE'
-              : !drawingBridgeLinked ? 'BOTH!'
-                : activeTool && !GT_TO_EDGE_TOOL[activeTool]?.key ? 'ONE' : 'BOTH'
+              : !drawingBridgeLinked ? 'BOTH!' : 'BOTH'
           }</span>
         </button>
         <div className="flex-1 overflow-y-auto border-t border-[var(--edge)]">
@@ -1630,6 +1551,10 @@ function LayoutButton() {
 }
 
 let root: Root | null = null;
+let replicaRoot: Root | null = null;
+let replicaHost: HTMLElement | null = null;
+let replicaShowRail = false;
+let replicaAttachGeneration = 0;
 // Registered by the mounted TerminalChart; lets the shell's gear button open
 // the appearance dialog without owning any React state.
 let openAppearanceFn: ((view?: 'appearance' | 'chart') => void) | null = null;
@@ -1642,23 +1567,66 @@ let props: ChartProps = {
   chartType: 'candlestick', trades: [], engineIndicators: undefined,
 };
 
-function render() {
-  if (!root) return;
-  // ChartSettingsProvider is required by ProChart and its settings dialogs; it
-  // is the single source of truth for the chart's appearance settings and is
-  // backed by the workspace file via lib/api.
-  // MemoryRouter: some chart components (the sign-in modal reached from the
-  // tool rail) call useNavigate, which throws without a Router ancestor. The
-  // terminal has no routes of its own, so an in-memory router satisfies them
-  // without touching the shell's URL.
-  root.render(
+function renderReplica() {
+  if (!replicaRoot) return;
+  replicaRoot.render(
     <MemoryRouter>
       <ChartSettingsProvider>
-        <TerminalChart {...props} indicatorPatch={indicatorPatch} />
+        <TerminalChart {...props} indicatorPatch={indicatorPatch} replica replicaRail={replicaShowRail} />
       </ChartSettingsProvider>
     </MemoryRouter>
   );
 }
+
+function render() {
+  if (root) {
+    // ChartSettingsProvider is required by ProChart and its settings dialogs;
+    // it is the single source of truth for chart appearance in both surfaces.
+    root.render(
+      <MemoryRouter>
+        <ChartSettingsProvider>
+          <TerminalChart {...props} indicatorPatch={indicatorPatch} />
+        </ChartSettingsProvider>
+      </MemoryRouter>
+    );
+  }
+  // The same normalized props object is rendered into G-Flow. This is a view
+  // fan-out only: candles, quote and indicator payloads are reused by reference,
+  // so mounting the replica creates no socket, fetch, polling loop or data copy.
+  renderReplica();
+}
+
+const LSEChartReplica = {
+  async attach(el: HTMLElement, options: { showRail?: boolean } = {}) {
+    const showRail = !!options.showRail;
+    if (replicaHost === el) {
+      if (replicaShowRail !== showRail) {
+        replicaShowRail = showRail;
+        renderReplica();
+      }
+      return;
+    }
+    const generation = ++replicaAttachGeneration;
+    replicaRoot?.unmount();
+    replicaRoot = null;
+    replicaHost = el;
+    replicaShowRail = showRail;
+    await initWorkspaceBridge();
+    if (generation !== replicaAttachGeneration || replicaHost !== el) return;
+    replicaRoot = createRoot(el);
+    renderReplica();
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+  },
+  detach(el?: HTMLElement) {
+    if (el && replicaHost !== el) return;
+    ++replicaAttachGeneration;
+    replicaRoot?.unmount();
+    replicaRoot = null;
+    if (replicaHost) replicaHost.replaceChildren();
+    replicaHost = null;
+  },
+  mounted() { return !!replicaRoot; },
+};
 
 // The shell and the engine name chart types differently: the shell
 // offers candles/bars/line/area, the engine takes candlestick/line/area/renko.
@@ -1993,6 +1961,7 @@ const LSEBacktestResults = {
 declare global {
   interface Window {
     LSEChart: typeof LSEChart;
+    LSEChartReplica: typeof LSEChartReplica;
     LSEChartPanes: typeof LSEChartPanes;
     LSEManualBacktest: typeof LSEManualBacktest;
     LSEEconCalendar: typeof LSEEconCalendar;
@@ -2174,6 +2143,7 @@ const CHART_TYPE_TO_SHELL: Record<ChartType, string> = {
   };
 };
 window.LSEChart = LSEChart;
+window.LSEChartReplica = LSEChartReplica;
 window.LSEChartPanes = LSEChartPanes;
 window.LSEManualBacktest = LSEManualBacktest;
 window.LSEEconCalendar = LSEEconCalendar;

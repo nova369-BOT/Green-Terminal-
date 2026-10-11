@@ -728,21 +728,23 @@ void check_initialization() {
         // live initial candle load (otherwise the chart floods with current
         // market data before the replay swaps in). The replay session populates
         // candles for the lesson window via the normal pipeline.
-        if (!EducationBoot::instance().is_embedded() &&
-            !EducationBoot::instance().is_pack()) {
-            g_app.candle_mgr->initial_load();
-        }
-        auto initial_chart = std::make_unique<ChartWidget>(pair, g_app.app_ctx, tick_size);
-        if (EducationBoot::instance().is_pack() && EducationBoot::instance().pack_realtime())
-            initial_chart->set_rt_mode(true);
-        g_app.widgets.push_back(std::move(initial_chart));
-        // The native shell (topbar + stats strip) is suppressed in embedded
-        // lesson mode (React owns it), so skip its init too - it subscribes the
-        // global ticker24h feed, which would be a live leak in a replay lesson.
-        // Pack mode also skips it: no WS means the strip would render empty.
-        if (!EducationBoot::instance().is_embedded() &&
-            !EducationBoot::instance().is_pack()) {
-            AppShell::init(g_app.app_ctx, pair);
+        if (!url_flow_only()) {
+            if (!EducationBoot::instance().is_embedded() &&
+                !EducationBoot::instance().is_pack()) {
+                g_app.candle_mgr->initial_load();
+            }
+            auto initial_chart = std::make_unique<ChartWidget>(pair, g_app.app_ctx, tick_size);
+            if (EducationBoot::instance().is_pack() && EducationBoot::instance().pack_realtime())
+                initial_chart->set_rt_mode(true);
+            g_app.widgets.push_back(std::move(initial_chart));
+            // The native shell (topbar + stats strip) is suppressed in embedded
+            // lesson mode (React owns it), so skip its init too - it subscribes the
+            // global ticker24h feed, which would be a live leak in a replay lesson.
+            // Pack mode also skips it: no WS means the strip would render empty.
+            if (!EducationBoot::instance().is_embedded() &&
+                !EducationBoot::instance().is_pack()) {
+                AppShell::init(g_app.app_ctx, pair);
+            }
         }
         chart_initialized = true;
         return;
@@ -1722,7 +1724,8 @@ void main_loop() {
     // Pack mode never ran AppShell::init (no WS → empty strip), so it takes
     // the no-shell branch even though it renders the native transport bar.
     const auto& edu = EducationBoot::instance();
-    const bool full_shell = !edu.is_embedded() && !edu.is_pack() && !rec_focus;
+    const bool full_shell = !edu.is_embedded() && !edu.is_pack() && !rec_focus &&
+                            !url_flow_only();
     // Event (archive) + demo (pack) chromes suppress the native topbar/statsbar
     // (the React host owns the top nav) but still want the live terminal's bottom
     // telemetry strip (symbol · WS · FPS · present interval · UTC). Draw the status bar only.
@@ -1757,7 +1760,8 @@ void main_loop() {
     workspace::tick(g_app.widgets, g_app.app_ctx,
         {g_initial_route.exchange, g_initial_route.symbol},
         g_init_complete && !EducationBoot::instance().is_embedded() &&
-        !EducationBoot::instance().is_pack() && !g_app.replay_mgr->is_active() &&
+        !EducationBoot::instance().is_pack() && !url_flow_only() &&
+        !g_app.replay_mgr->is_active() &&
         !g_live_flow_rebuild.armed && !ClipRecorder::focus_active());
     LayoutManager::render_dockspace(nullptr,
         g_initial_route.exchange, g_initial_route.symbol);

@@ -2,6 +2,7 @@
 #include "theme.h"
 #include "imgui_internal.h"
 #include "../core/education_boot.h"
+#include "../core/url_router.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -57,6 +58,23 @@ void LayoutManager::setup_default_layout(const std::string& exchange, const std:
     std::string chart_name  = "Chart " + exchange + " " + symbol + "###chart_" + exchange + "_" + symbol;
     std::string dom_name    = "###dom_" + exchange + "_" + symbol;
     std::string trades_name = "###trades_" + exchange + "_" + symbol;
+
+    if (url_flow_only()) {
+        // Green Terminal owns the chart surface. Give the native canvas only
+        // the widgets it uniquely contributes: DOM above the observed tape.
+        // No empty central chart dock is created, so every pixel and draw call
+        // in this runtime belongs to genuine order flow.
+        ImGuiID dock_trades;
+        ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Down, 0.37f,
+                                    &dock_trades, &dock_main);
+        ImGui::DockBuilderDockWindow(dom_name.c_str(), dock_main);
+        ImGui::DockBuilderDockWindow(trades_name.c_str(), dock_trades);
+        ImGui::DockBuilderFinish(dockspace_id);
+        is_initialized = true;
+        layout_exchange = exchange;
+        layout_symbol = symbol;
+        return;
+    }
 
     if (EducationBoot::instance().is_embedded()) {
         // Lesson/Studio layout: NO Watchlist, NO Depth. Chart fills the center;

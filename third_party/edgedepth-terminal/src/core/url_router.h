@@ -344,3 +344,18 @@ inline bool url_drawing_controls_disabled() {
     return false;
 #endif
 }
+
+// G-Flow composition flag: the host supplies the exact LSE chart, product
+// context and drawing overlay. The native runtime therefore renders only its
+// genuine order-flow widgets (DOM + trade tape). Standalone EdgeDepth remains
+// unchanged. Keeping the real flow runtime avoids simulated depth while
+// removing duplicate chart work, candle history and top chrome.
+inline bool url_flow_only() {
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({
+        return /[?&]flow=1(?:&|$)/.test(window.location.search) ? 1 : 0;
+    }) != 0;
+#else
+    return false;
+#endif
+}

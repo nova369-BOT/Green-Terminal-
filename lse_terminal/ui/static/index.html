@@ -606,7 +606,11 @@ def my_ind(df, length=20):
     <div id="of-dock" class="hidden" aria-label="Order-flow dock">
       <div id="ofd-resize" title="Drag to resize · drag to the right edge to minimize (reopen via the Order flow or Real-time button)"></div>
       <div id="ofd-col">
-        <div id="ofd-stage" aria-label="Order-flow engine host"></div>
+        <div id="ofd-stage" class="gflow-surface" aria-label="G-Flow chart and order-flow workspace">
+          <div id="ofd-chart-stage" class="gflow-chart-stage" aria-label="LSE chart replica"></div>
+          <div id="ofd-flow-stage" class="gflow-flow-stage" aria-label="Live depth and trades"></div>
+          <div id="ofd-note" class="gflow-note hidden" role="status"></div>
+        </div>
       </div>
     </div>
     </div><!-- /#chart-stage -->
@@ -666,9 +670,11 @@ def my_ind(df, length=20):
       <div id="of-banner-title" class="of-bt">G-FLOW RUNTIME NOT LOADED</div>
       <div id="of-banner-detail" class="of-bd"></div>
     </div>
-    <!-- Host rect only: the engine iframe lives once in #of-portal (end of
-         body) and is positioned over this stage whenever the page is open. -->
-    <div id="of-stage"></div>
+    <div id="of-stage" class="gflow-surface" aria-label="G-Flow chart and order-flow workspace">
+      <div id="of-chart-stage" class="gflow-chart-stage" aria-label="LSE chart replica"></div>
+      <!-- Host rect only: the single warm flow runtime is positioned here. -->
+      <div id="of-flow-stage" class="gflow-flow-stage" aria-label="Live depth and trades"></div>
+    </div>
   </section>
   <!-- Host for the ported manual backtester (mounted on demand). -->
   <section id="manual-backtest" class="hidden"></section>
