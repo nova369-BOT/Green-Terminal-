@@ -376,7 +376,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
     (async () => {
       const [saved, savedIndicators] = await Promise.all([
         api.getDrawings(instrumentKey),
-        api.getIndicators(instrumentKey),
+        api.getIndicators(baseInstrumentKey),
       ]);
       if (!alive) return;
       const restored = saved as Drawing[];
@@ -391,7 +391,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
       }));
     })();
     return () => { alive = false; };
-  }, [instrumentKey, drawingRole, symbol]);
+  }, [instrumentKey, baseInstrumentKey, drawingRole, symbol]);
 
   // Debounced persistence: the UI state updates instantly (setDrawings), but the
   // network/disk write is coalesced so a slider drag or resize (which commits at
@@ -580,9 +580,23 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const handleIndicatorsChange = useCallback((next: IndicatorConfig) => {
     setIndicators(next);
     if (loadedKeyRef.current === instrumentKey) {
-      void api.setIndicators(instrumentKey, next);
+      void api.setIndicators(baseInstrumentKey, next);
     }
-  }, [instrumentKey]);
+    window.dispatchEvent(new CustomEvent('lset:lse-indicators', {
+      detail: { source: drawingRole, symbol, indicators: next },
+    }));
+  }, [instrumentKey, baseInstrumentKey, drawingRole, symbol]);
+
+  useEffect(() => {
+    const onIndicators = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.source === drawingRole || !detail.indicators) return;
+      if (normalizedDrawingSymbol(String(detail.symbol || '')) !== normalizedDrawingSymbol(symbol)) return;
+      setIndicators(detail.indicators as IndicatorConfig);
+    };
+    window.addEventListener('lset:lse-indicators', onIndicators);
+    return () => window.removeEventListener('lset:lse-indicators', onIndicators);
+  }, [drawingRole, symbol]);
 
   useEffect(() => {
     if (!indicatorPatch) return;
@@ -1625,7 +1639,9 @@ const LSEChartReplica = {
     if (replicaHost) replicaHost.replaceChildren();
     replicaHost = null;
   },
-  mounted() { return !!replicaRoot; },
+  // True while mounted OR an async workspace-hydration attach is pending, so
+  // a visibility change can cancel that pending attach before it allocates.
+  mounted() { return !!replicaHost; },
 };
 
 // The shell and the engine name chart types differently: the shell

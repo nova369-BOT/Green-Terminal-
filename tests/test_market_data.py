@@ -293,6 +293,9 @@ def test_gflow_uses_exact_lse_chart_and_one_drawing_toolbar():
     assert "replica ? `${baseInstrumentKey}:gflow`" in mount
     assert "lset:lse-drawing-snapshot" in mount
     assert "lset:lse-drawing-state" in mount
+    assert "lset:lse-indicators" in mount
+    assert "api.getIndicators(baseInstrumentKey)" in mount
+    assert "api.setIndicators(baseInstrumentKey" in mount
     # BOTH starts with a deterministic union in the exact same Drawing schema;
     # unlike the retired C++ converter, no tool subset is filtered out.
     assert "for (const drawing of [...drawingsRef.current, ...incoming])" in mount
@@ -305,6 +308,11 @@ def test_gflow_uses_exact_lse_chart_and_one_drawing_toolbar():
     assert "if (!url_flow_only())" in main
     assert "!url_flow_only();" in main
     assert "if (url_flow_only())" in layout
+    # Visibility and geometry are observer driven; no five-times-per-second
+    # layout polling or pointless native timeframe retry survives.
+    assert "new ResizeObserver(ofSchedulePortalSync)" in app
+    assert "setInterval(tick, 200)" not in app
+    assert "ofPushTimeframe" not in app
 
 
 def test_no_demo_auto_open_on_price_chart():

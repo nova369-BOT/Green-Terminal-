@@ -805,11 +805,6 @@ async function loadChart() {
   // Any explicit (re)load returns us to the live tail: drop the History
   // Navigator's history pin so streaming resumes normally.
   state.historyPinned = false;
-  // One chart experience: the docked order-flow engine follows the shell's
-  // timeframe through every path that lands here (toolbar click, workspace
-  // restore, mega-selector). No-ops when the dock is closed, TF-sync is off,
-  // the engine is cold, or the timeframe did not actually change.
-  if (typeof ofPushTimeframe === "function") ofPushTimeframe(false);
   if (!state.provider || !state.symbol) {
     // Keyless / no instrument: stay in the honest waiting state.
     if (!state.provider || state.dataWaiting) {
@@ -13059,21 +13054,12 @@ function showOptionsPage() {
   optRefresh();
 }
 
-/* ── Phase 4: MARKET → ORDER FLOW — hosts the REAL EdgeDepth runtime ─────
-   Not a lookalike: #of-frame loads /edgedepth/ (official WASM build of
-   edgedepth-terminal). DOM / heatmap / tape / footprint all run inside
-   that engine. This shell only provides GREEN TERMINAL navigation, status
-   (gateway reachability + artifact readiness), and layout. */
+/* ── MARKET → G-FLOW composition ────────────────────────────────────────
+   The chart is the actual LSE React engine, fed from the existing shell state.
+   #of-frame keeps the native runtime only for genuine DOM and trade tape.
+   This shell owns lifecycle, reachability status and responsive composition. */
 const ofState = {
   poll: 0, ready: false, symbol: "BTC", bound: false,
-  // Timeframe bridge into the engine (Module.__set_chart_timeframe):
-  // last seconds pushed, and the retry timer that waits for the WASM
-  // runtime to finish booting after a (re)load.
-  lastTfSec: 0, tfTimer: 0,
-  // One visible GT drawing rail drives both chart engines. These are command
-  // bridge values only; market data remains owned by each existing engine.
-  drawingMode: "one", drawingSymbol: "", drawingTool: 0, drawingBound: false,
-  drawingLinked: false,
 };
 
 // Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
@@ -13155,7 +13141,10 @@ function ofUpdateFlowChip(venue, symbol) {
    active HOST RECT: #of-stage (full G-Flow page) wins when that page is
    open, else #ofd-stage (the Price & Chart dock). With no host on screen
    the portal hides, exactly like the old in-section frame did. */
-const ofPortal = { timer: 0, host: null };
+const ofPortal = {
+  started: false, raf: 0, host: null,
+  resizeObserver: null, mutationObserver: null,
+};
 
 function ofActiveHost() {
   const page = $("orderflow");
@@ -13215,26 +13204,44 @@ function ofSyncPortal() {
   }
 }
 
+function ofSchedulePortalSync() {
+  if (ofPortal.raf) return;
+  ofPortal.raf = requestAnimationFrame(() => {
+    ofPortal.raf = 0;
+    ofSyncPortal();
+  });
+}
+
 function ofStartPortal() {
-  if (ofPortal.timer) return;
-  const tick = () => ofSyncPortal();
-  // 200 ms keeps the frame glued through layout changes no event covers
-  // (flex reflows, fonts, section swaps); the direct calls below make the
-  // interactive paths (resize drag, page swaps) feel instant.
-  ofPortal.timer = setInterval(tick, 200);
-  window.addEventListener("resize", tick);
-  window.addEventListener("scroll", tick, true);
-  document.addEventListener("fullscreenchange", tick);
-  tick();
+  if (ofPortal.started) return;
+  ofPortal.started = true;
+  // Event/observer driven: no permanent 200 ms layout polling. Direct resize
+  // drag calls still update immediately; observers cover flex reflow, font
+  // settlement and section visibility changes, coalesced to one animation frame.
+  window.addEventListener("resize", ofSchedulePortalSync);
+  window.addEventListener("scroll", ofSchedulePortalSync, true);
+  document.addEventListener("fullscreenchange", ofSchedulePortalSync);
+  if (typeof ResizeObserver !== "undefined") {
+    ofPortal.resizeObserver = new ResizeObserver(ofSchedulePortalSync);
+    [$("chart-stage"), $("of-dock"), $("ofd-stage"), $("orderflow"), $("of-stage")]
+      .filter(Boolean).forEach((el) => ofPortal.resizeObserver.observe(el));
+  }
+  if (typeof MutationObserver !== "undefined") {
+    ofPortal.mutationObserver = new MutationObserver(ofSchedulePortalSync);
+    [$("charts"), $("of-dock"), $("orderflow")].filter(Boolean).forEach((el) =>
+      ofPortal.mutationObserver.observe(el, {
+        attributes: true, attributeFilter: ["class", "style"],
+      }));
+  }
+  ofSyncPortal();
 }
 
 /* ── G-Flow dock on Price & Chart ──────────────────────────────────────
-   The complete engine (its own chart, DOM, heatmap, tape, footprint,
-   replay, workspaces — everything the WASM terminal ships) docked beside
-   the LSE chart. Open state / width / TF-sync persist per browser. */
+   The exact LSE replica shares the stage with native DOM/tape. Open state and
+   width persist; no second chart timeframe or candle source exists. */
 // rtForced: transient (never persisted) — Real-time auto-max is a mode
 // takeover, restored on exit; never a saved user preference.
-const ofDock = { open: true, w: 0, max: false, tfSync: true, bound: false, rtForced: false };
+const ofDock = { open: true, w: 0, max: false, bound: false, rtForced: false };
 
 function ofDockLoadPrefs() {
   try {
@@ -13242,14 +13249,13 @@ function ofDockLoadPrefs() {
     if (typeof p.open === "boolean") ofDock.open = p.open;
     if (typeof p.w === "number" && p.w >= 0) ofDock.w = p.w;
     if (typeof p.max === "boolean") ofDock.max = p.max;
-    if (typeof p.tfSync === "boolean") ofDock.tfSync = p.tfSync;
   } catch (e) { /* first run */ }
 }
 
 function ofDockSavePrefs() {
   try {
     localStorage.setItem("gt-ofdock", JSON.stringify({
-      open: ofDock.open, w: ofDock.w, max: ofDock.max, tfSync: ofDock.tfSync,
+      open: ofDock.open, w: ofDock.w, max: ofDock.max,
     }));
   } catch (e) { /* storage unavailable */ }
 }
@@ -13278,8 +13284,6 @@ function ofDockApply() {
   if (t) t.classList.toggle("on", !!ofDock.open);
   const mx = $("ofd-max");
   if (mx) mx.textContent = ofDock.max ? "Restore" : "Max";
-  const tf = $("ofd-tfsync");
-  if (tf) tf.textContent = "TF: " + (ofDock.tfSync ? "on" : "off");
   ofSyncPortal();
   if (ofDock.open) {
     refreshOrderFlowStatus();
@@ -13298,10 +13302,6 @@ function ofBindDock() {
   // auto-maxed the surface, cancel its auto-restore so exiting RT doesn't
   // fight the user.
   on("ofd-max", () => { ofDock.max = !ofDock.max; ofDock.rtForced = false; ofDockSavePrefs(); ofDockApply(); });
-  on("ofd-tfsync", () => {
-    ofDock.tfSync = !ofDock.tfSync; ofDockSavePrefs(); ofDockApply();
-    if (ofDock.tfSync) ofPushTimeframe(true);
-  });
   on("ofd-page", () => { showOrderFlowPage(); });
   // Width drag: the handle rides the dock's left edge.
   const grip = $("ofd-resize");
@@ -13412,49 +13412,6 @@ function ofFollowChartSymbol(sym) {
   }
 }
 
-/* ── Timeframe bridge ──────────────────────────────────────────────────
-   The engine exports Module.__set_chart_timeframe(sec) (main.cpp, the same
-   change_timeframe path its own topbar uses). Push the shell timeframe when
-   it maps onto a resolution the gateway serves; seconds/tick/range charts
-   stay LSE-only and the engine keeps its own setting. After an engine
-   (re)boot the export appears only once the runtime is up, so a short retry
-   timer waits for it. */
-function ofTfSeconds(tf) {
-  const m = typeof tfMinutes === "function" ? tfMinutes(tf) : 0;
-  if (!m || m <= 0) return 0;
-  const sec = Math.round(m * 60);
-  return [60, 180, 300, 900, 1800, 3600, 7200, 14400, 86400].includes(sec) ? sec : 0;
-}
-
-function ofPushTimeframe(force) {
-  if (!ofDock.tfSync) return;
-  const fr = $("of-frame");
-  if (!fr || !fr.getAttribute("src")) return;
-  const sec = ofTfSeconds(state.timeframe);
-  if (!sec) return;
-  if (!force && sec === ofState.lastTfSec) return;
-  if (ofState.tfTimer) { clearInterval(ofState.tfTimer); ofState.tfTimer = 0; }
-  let tries = 0;
-  const attempt = () => {
-    tries += 1;
-    let f = null;
-    try {
-      const M = fr.contentWindow && fr.contentWindow.Module;
-      f = M && (M.__set_chart_timeframe || M._set_chart_timeframe);
-    } catch (e) { f = null; }
-    if (typeof f === "function") {
-      try { f(sec); ofState.lastTfSec = sec; } catch (e) { /* engine mid-boot */ }
-      if (ofState.tfTimer) { clearInterval(ofState.tfTimer); ofState.tfTimer = 0; }
-      return;
-    }
-    if (tries > 90 && ofState.tfTimer) { clearInterval(ofState.tfTimer); ofState.tfTimer = 0; }
-  };
-  attempt();
-  if (ofState.lastTfSec !== sec && !ofState.tfTimer) {
-    ofState.tfTimer = setInterval(attempt, 700);
-  }
-}
-
 // Point the warm G-Flow iframe at a new symbol ON THE ENGINE'S CURRENT
 // VENUE. Reloading the engine's URL is the supported switch path: the
 // WASM client is router-based on /terminal/<venue>/<symbol> and boots
@@ -13482,105 +13439,17 @@ function loadOrderFlowSymbol(sym) {
       // toggle), so the dock's duplicate RT mode is removed (migration
       // rule: port a view, then delete it from the dock). The engine
       // carries all flags across its own symbol/venue navigations.
-      // draw=0 removes both the native rail and its reserved plot width;
-      // DrawingManager stays live for the host command/state bridge.
+      // draw=0 and flow=1 leave only the genuine DOM/tape runtime; the LSE
+      // renderer owns all chart and drawing work.
       fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0&draw=0&flow=1";
-      // Fresh boot: the engine starts on its own default timeframe, so the
-      // bridge pushes the chart's timeframe once the runtime is up.
-      ofState.lastTfSec = 0;
-      ofPushTimeframe(true);
     }
   }
   ofUpdateFlowChip(venue, vsym);
 }
 
-/* ── Unified drawing-tool bridge ───────────────────────────────────────
-   Toolbar 1 emits commands/state; hosted EdgeDepth consumes them between
-   frames and publishes its validated drawing snapshot only on mutations.
-   This channel contains annotation geometry only — never candles, quotes or
-   order flow — so it cannot create a second feed or polling loop. */
-function ofDrawingMarketsMatch(gtSymbol) {
-  const route = ofEngineRoute();
-  if (!route) return false;
-  return ofNormalizeSymbol(gtSymbol) === ofNormalizeSymbol(route.symbol);
-}
-
-function ofPublishDrawingSnapshot() {
-  const fr = $("of-frame");
-  try {
-    const w = fr && fr.contentWindow;
-    if (w && typeof w.__gtDrawingState === "string") {
-      window.dispatchEvent(new CustomEvent("lset:gflow-drawings", {
-        detail: { json: w.__gtDrawingState, path: w.location.pathname },
-      }));
-      return true;
-    }
-  } catch (e) { /* iframe is between routes */ }
-  return false;
-}
-
-function ofReportDrawingBridge() {
-  const linked = ofDrawingMarketsMatch(ofState.drawingSymbol);
-  const becameLinked = linked && !ofState.drawingLinked;
-  ofState.drawingLinked = linked;
-  window.dispatchEvent(new CustomEvent("lset:drawing-bridge-status", {
-    detail: {
-      linked,
-      reason: linked ? "" : (ofEngineRoute()
-        ? "BOTH paused — chart instruments differ"
-        : "BOTH waiting for G-Flow"),
-    },
-  }));
-  // Matching can become true later (for example after the user changes the
-  // native venue/symbol). Pull immediately on that transition; waiting for a
-  // drawing mutation would leave BOTH visibly linked but not actually ready.
-  if (becameLinked && ofState.drawingMode === "both") ofPublishDrawingSnapshot();
-  return linked;
-}
-
-function ofBindDrawingBridge() {
-  if (ofState.drawingBound) return;
-  ofState.drawingBound = true;
-
-  window.addEventListener("lset:drawing-mode", (event) => {
-    const detail = event.detail || {};
-    ofState.drawingMode = detail.mode === "both" ? "both" : "one";
-    ofState.drawingSymbol = String(detail.symbol || state.symbol || "");
-    const wasLinked = ofState.drawingLinked;
-    const linked = ofReportDrawingBridge();
-    // Switching to BOTH first pulls the native snapshot. React unions it with
-    // GT's current drawings before the merged state is sent back, so enabling
-    // mirroring never blindly erases either chart's existing work. A newly
-    // linked market is already handled by ofReportDrawingBridge above.
-    if (ofState.drawingMode === "both" && linked && wasLinked)
-      ofPublishDrawingSnapshot();
-  });
-
-  const pushTool = () => {
-    const fr = $("of-frame");
-    try { if (fr && fr.contentWindow) fr.contentWindow.__gtDrawingToolCmd = ofState.drawingTool; }
-    catch (e) { /* engine mid-boot */ }
-  };
-  const drawingFrame = $("of-frame");
-  if (drawingFrame) drawingFrame.addEventListener("load", pushTool);
-  window.addEventListener("lset:drawing-tool", (event) => {
-    const code = Number(event.detail && event.detail.edgeTool);
-    // Unsupported GT-only tools deliberately send Cursor (0): G-Flow cannot
-    // accidentally retain the previous armed native tool.
-    ofState.drawingTool = Number.isInteger(code) && code >= 0 ? code : 0;
-    pushTool();
-  });
-
-  window.addEventListener("lset:drawing-state", (event) => {
-    if (ofState.drawingMode !== "both" || !ofReportDrawingBridge()) return;
-    const json = event.detail && event.detail.json;
-    if (typeof json !== "string" || !json.length) return;
-    const fr = $("of-frame");
-    try {
-      if (fr && fr.contentWindow) fr.contentWindow.__gtDrawingImport = json;
-    } catch (e) { /* engine mid-route; the next React state change retries */ }
-  });
-}
+/* Drawing synchronization now stays entirely inside the two LSE React
+   renderers. The native flow-only iframe receives no drawing commands or
+   geometry, which removes the lossy cross-engine conversion path. */
 
 // Wire the switcher controls once (idempotent — the page can re-enter).
 function bindOrderFlowControls() {
@@ -13641,7 +13510,6 @@ async function refreshOrderFlowStatus() {
   if (engineRoute) {
     ofState.symbol = ofNormalizeSymbol(engineRoute.symbol) || ofState.symbol;
   }
-  if (ofState.drawingMode === "both") ofReportDrawingBridge();
   ofUpdateFlowChip();
   set("of-sym", ofState.symbol || "—");
   // The Price & Chart dock mirrors the same honest state (one truth, two
