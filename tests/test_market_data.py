@@ -283,6 +283,11 @@ def test_unified_drawing_toolbar_bridge_markers():
     assert "lset:drawing-state" in app and "__gtDrawingImport" in app
     assert "TARGET" in mount and "drawingTarget === 'both'" in mount
     assert "lset:gflow-drawings" in mount
+    # BOTH starts with a union, not a destructive one-way replacement, and a
+    # market that becomes linkable later immediately pulls its native state.
+    assert "gtSharedOnlyInFirstMerge" in mount
+    assert "drawingBridgeReadyRef.current" in mount
+    assert "ofPublishDrawingSnapshot" in app
     assert "url_drawing_controls_disabled" in router
     assert "!url_drawing_controls_disabled()" in widget
 

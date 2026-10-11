@@ -13073,6 +13073,7 @@ const ofState = {
   // One visible GT drawing rail drives both chart engines. These are command
   // bridge values only; market data remains owned by each existing engine.
   drawingMode: "one", drawingSymbol: "", drawingTool: 0, drawingBound: false,
+  drawingLinked: false,
 };
 
 // Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
@@ -13481,8 +13482,24 @@ function ofDrawingMarketsMatch(gtSymbol) {
   return ofNormalizeSymbol(gtSymbol) === ofNormalizeSymbol(route.symbol);
 }
 
+function ofPublishDrawingSnapshot() {
+  const fr = $("of-frame");
+  try {
+    const w = fr && fr.contentWindow;
+    if (w && typeof w.__gtDrawingState === "string") {
+      window.dispatchEvent(new CustomEvent("lset:gflow-drawings", {
+        detail: { json: w.__gtDrawingState, path: w.location.pathname },
+      }));
+      return true;
+    }
+  } catch (e) { /* iframe is between routes */ }
+  return false;
+}
+
 function ofReportDrawingBridge() {
   const linked = ofDrawingMarketsMatch(ofState.drawingSymbol);
+  const becameLinked = linked && !ofState.drawingLinked;
+  ofState.drawingLinked = linked;
   window.dispatchEvent(new CustomEvent("lset:drawing-bridge-status", {
     detail: {
       linked,
@@ -13491,6 +13508,10 @@ function ofReportDrawingBridge() {
         : "BOTH waiting for G-Flow"),
     },
   }));
+  // Matching can become true later (for example after the user changes the
+  // native venue/symbol). Pull immediately on that transition; waiting for a
+  // drawing mutation would leave BOTH visibly linked but not actually ready.
+  if (becameLinked && ofState.drawingMode === "both") ofPublishDrawingSnapshot();
   return linked;
 }
 
@@ -13502,21 +13523,14 @@ function ofBindDrawingBridge() {
     const detail = event.detail || {};
     ofState.drawingMode = detail.mode === "both" ? "both" : "one";
     ofState.drawingSymbol = String(detail.symbol || state.symbol || "");
+    const wasLinked = ofState.drawingLinked;
     const linked = ofReportDrawingBridge();
-    // Switching to BOTH first pulls the native snapshot. React merges it with
+    // Switching to BOTH first pulls the native snapshot. React unions it with
     // GT's current drawings before the merged state is sent back, so enabling
-    // mirroring never blindly erases existing native work.
-    if (ofState.drawingMode === "both" && linked) {
-      const fr = $("of-frame");
-      try {
-        const w = fr && fr.contentWindow;
-        if (w && typeof w.__gtDrawingState === "string") {
-          window.dispatchEvent(new CustomEvent("lset:gflow-drawings", {
-            detail: { json: w.__gtDrawingState, path: w.location.pathname },
-          }));
-        }
-      } catch (e) { /* iframe is between routes */ }
-    }
+    // mirroring never blindly erases either chart's existing work. A newly
+    // linked market is already handled by ofReportDrawingBridge above.
+    if (ofState.drawingMode === "both" && linked && wasLinked)
+      ofPublishDrawingSnapshot();
   });
 
   const pushTool = () => {

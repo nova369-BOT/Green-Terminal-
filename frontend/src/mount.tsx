@@ -193,6 +193,11 @@ function abgrToColor(value?: number): string {
   const v = Number(value ?? 0xffeee6df) >>> 0;
   return `#${(v & 255).toString(16).padStart(2, '0')}${((v >>> 8) & 255).toString(16).padStart(2, '0')}${((v >>> 16) & 255).toString(16).padStart(2, '0')}`;
 }
+function abgrToOpacity(value?: number): number {
+  if (value === undefined) return 100;
+  return Math.round((((Number(value) >>> 24) & 255) / 255) * 100);
+}
+const SHARED_FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2.618, 3.618];
 function gtDrawingToNative(d: Drawing): NativeDrawing | null {
   if (!d.type) return null;
   const map = GT_TO_EDGE_TOOL[d.type];
@@ -208,6 +213,11 @@ function gtDrawingToNative(d: Drawing): NativeDrawing | null {
     locked: !!d.locked, text: d.text || '', font_size: d.strokeWidth || d.textFontSize || 14,
   };
   if (d.fillColor) out.fill = colorToAbgr(d.fillColor, d.fillOpacity ?? 18);
+  if (d.type === 'fibonacci' && d.fibLevels?.length) {
+    out.fib_mask = SHARED_FIB_LEVELS.reduce((mask, level, index) =>
+      d.fibLevels!.some((candidate) => Math.abs(candidate - level) < 1e-9)
+        ? mask | (1 << index) : mask, 0);
+  }
   if (d.type === 'long' || d.type === 'short') {
     const entry = d.points[0], target = d.points[1] || entry;
     if (!entry) return null;
@@ -228,10 +238,18 @@ function nativeToGtDrawing(n: NativeDrawing, existingId?: string): Drawing | nul
   let points = n.anchors.map(([time, price]) => ({ time: Number(time), price: Number(price) }));
   const d: Drawing = {
     id: existingId || `gflow:${n.id}`, type, points,
-    color: abgrToColor(n.color), strokeWidth: Number(n.width || 1.5),
+    color: abgrToColor(n.color), opacity: abgrToOpacity(n.color),
+    strokeWidth: Number(n.width || 1.5),
     lineStyle: n.pattern === 1 ? 'dashed' : n.pattern === 2 ? 'dotted' : 'solid',
     locked: !!n.locked, text: n.text || '',
   };
+  if (n.fill) {
+    d.fillColor = abgrToColor(n.fill);
+    d.fillOpacity = abgrToOpacity(n.fill);
+  }
+  if (type === 'fibonacci' && n.fib_mask !== undefined) {
+    d.fibLevels = SHARED_FIB_LEVELS.filter((_, index) => (Number(n.fib_mask) & (1 << index)) !== 0);
+  }
   if (type === 'brush') d.brushChartPoints = points;
   if ((type === 'long' || type === 'short') && points[0]) {
     const entry = points[0], edgeTime = points[1]?.time ?? entry.time;
@@ -257,6 +275,10 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   const [drawingBridgeLinked, setDrawingBridgeLinked] = useState(false);
   const [drawingBridgeReason, setDrawingBridgeReason] = useState('BOTH waiting for G-Flow');
   const [drawingBridgeReady, setDrawingBridgeReady] = useState(false);
+  // State controls rendering/state publication; the ref is updated before
+  // synchronous CustomEvent dispatches so a mode or symbol transition cannot
+  // be handled by the previous render's stale "ready" closure.
+  const drawingBridgeReadyRef = useRef(false);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const [toolbarAnchor, setToolbarAnchor] = useState<{ x: number; y: number } | null>(null);
   const [drawings, setDrawings] = useState<Drawing[]>([]);
@@ -498,6 +520,7 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
 
   const drawingsRef = useRef<Drawing[]>(drawings);
   const lastNativeRevisionRef = useRef<number | null>(null);
+  const lastNativePathRef = useRef<string | null>(null);
   useEffect(() => { drawingsRef.current = drawings; }, [drawings]);
 
   const selectDrawingTool = useCallback((tool: DrawingTool) => {
@@ -512,7 +535,12 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
   // the native snapshot arrives and is merged, preventing a blind overwrite.
   useEffect(() => {
     localStorage.setItem('green-terminal.drawing-target.v1', drawingTarget);
-    if (drawingTarget === 'one') setDrawingBridgeReady(false);
+    // Every mode or instrument transition needs a fresh native snapshot. In
+    // particular, changing symbols while BOTH is active must merge the new
+    // instrument's two stores instead of treating the previous market's
+    // bridge as ready and replacing Green Terminal's drawings blindly.
+    drawingBridgeReadyRef.current = false;
+    setDrawingBridgeReady(false);
     window.dispatchEvent(new CustomEvent('lset:drawing-mode', {
       detail: { mode: drawingTarget, symbol },
     }));
@@ -523,7 +551,10 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
       const detail = (event as CustomEvent).detail || {};
       setDrawingBridgeLinked(!!detail.linked);
       setDrawingBridgeReason(String(detail.reason || ''));
-      if (!detail.linked) setDrawingBridgeReady(false);
+      if (!detail.linked) {
+        drawingBridgeReadyRef.current = false;
+        setDrawingBridgeReady(false);
+      }
     };
     window.addEventListener('lset:drawing-bridge-status', onStatus);
     return () => window.removeEventListener('lset:drawing-bridge-status', onStatus);
@@ -534,27 +565,37 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
       const detail = (event as CustomEvent).detail || {};
       const revision = Number(detail.revision);
       const previousRevision = lastNativeRevisionRef.current;
+      const route = String(detail.path || '');
+      const previousPath = lastNativePathRef.current;
+      if (route) lastNativePathRef.current = route;
       if (Number.isFinite(revision)) lastNativeRevisionRef.current = revision;
+      // A route change or a revision counter moving backwards means the iframe
+      // has a new DrawingManager store. Its first snapshot must be unioned with
+      // GT, even if the prior engine session had already reached ready state.
+      const nativeSessionChanged =
+        (!!route && previousPath !== null && route !== previousPath) ||
+        (previousRevision !== null && Number.isFinite(revision) && revision < previousRevision);
+      const nativeRevisionChanged = Number.isFinite(revision) &&
+        (previousRevision === null ? revision > 0 : revision !== previousRevision);
       if (drawingTarget !== 'both') {
         // A native placement is one-shot just like GT's overlay. Disarm the
         // visible rail after EdgeDepth commits so ONE cannot accidentally
-        // create a second copy on the next chart click.
-        if (previousRevision !== null && Number.isFinite(revision) && revision !== previousRevision)
-          selectDrawingTool(null);
+        // create a second copy on the next chart click. Revision zero is the
+        // manager's boot snapshot, not a placement.
+        if (nativeRevisionChanged) selectDrawingTool(null);
         return;
       }
-      const route = String(detail.path || '');
       const match = route.match(/^\/terminal\/(?:binancef|bybit|hl)\/([^/?#]+)/);
       let nativeSymbol = '';
       try { nativeSymbol = decodeURIComponent(match?.[1] || ''); } catch { nativeSymbol = match?.[1] || ''; }
       if (!nativeSymbol || normalizedDrawingSymbol(nativeSymbol) !== normalizedDrawingSymbol(symbol)) {
         setDrawingBridgeLinked(false);
+        drawingBridgeReadyRef.current = false;
         setDrawingBridgeReady(false);
         setDrawingBridgeReason('BOTH paused — chart instruments differ');
         return;
       }
-      if (previousRevision !== null && Number.isFinite(revision) && revision !== previousRevision)
-        selectDrawingTool(null);
+      if (nativeRevisionChanged) selectDrawingTool(null);
       let parsed: { items?: NativeDrawing[] };
       try { parsed = JSON.parse(String(detail.json || '')); } catch { return; }
       if (!Array.isArray(parsed.items)) return;
@@ -568,14 +609,23 @@ function TerminalChart({ provider, symbol, timeframe, candles, chartType = 'cand
         const converted = nativeToGtDrawing(native, existing?.id);
         if (converted) mirrored.push(existing ? { ...existing, ...converted, id: existing.id } : converted);
       }
-      // GT-only tools remain independent even while BOTH is selected; exact
-      // common tools are replaced by the native snapshot so native deletes
-      // propagate back to Green Terminal.
+      // GT-only tools remain independent even while BOTH is selected. The
+      // first snapshot for a mode/instrument/iframe session is a UNION: keep
+      // supported GT drawings that are not in the native store, then send that
+      // merged snapshot back. Once ready, native snapshots are authoritative
+      // for the shared subset so native deletions propagate to GT.
       const gtOnly = current.filter((drawing) =>
         !drawing.type || !GT_TO_EDGE_TOOL[drawing.type]?.key);
-      const next = [...gtOnly, ...mirrored];
+      const nativeIds = new Set(parsed.items.map((drawing) => Number(drawing.id)));
+      const gtSharedOnlyInFirstMerge = (!drawingBridgeReadyRef.current || nativeSessionChanged)
+        ? current.filter((drawing) =>
+            !!drawing.type && !!GT_TO_EDGE_TOOL[drawing.type]?.key &&
+            !nativeIds.has(drawingBridgeId(drawing.id)))
+        : [];
+      const next = [...gtOnly, ...gtSharedOnlyInFirstMerge, ...mirrored];
       setDrawingBridgeLinked(true);
       setDrawingBridgeReason('');
+      drawingBridgeReadyRef.current = true;
       setDrawingBridgeReady(true);
       if (JSON.stringify(next) !== JSON.stringify(current)) handleDrawingsChange(next);
     };
