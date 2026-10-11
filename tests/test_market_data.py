@@ -256,11 +256,12 @@ def test_shell_phase3_ui_markers():
     html = (Path(__file__).resolve().parents[1]
             / "lse_terminal/ui/static/index.html").read_text()
     for needle in (
-        "GREEN TERMINAL", "instrument-bar", "info-rail", "term-status",
+        "GREEN TERMINAL", "instrument-bar", "term-status",
         "ws-controls", "chart-stage", "ib-live", "watchlist",
         "chart-type", "ind-open",
     ):
         assert needle in html, f"missing {needle}"
+    assert 'id="info-rail"' not in html
 
 
 def test_no_demo_auto_open_on_price_chart():
