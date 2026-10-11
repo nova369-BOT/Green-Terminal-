@@ -11250,6 +11250,8 @@ const SUBRAIL = {
   markets: [
     { id: "sub-mk-charts", label: "CHART",
       go: () => { $("rail-markets").click(); renderSubrail("markets", "sub-mk-charts"); } },
+    { id: "sub-mk-flow", label: "G-FLOW",
+      go: () => { $("rail-markets").click(); showOrderFlowPage(); } },
     { id: "sub-mk-options", label: "OPTIONS",
       go: () => { $("rail-markets").click(); showOptionsPage(); } },
     { id: "sub-mk-news", label: "NEWS",
@@ -11406,6 +11408,7 @@ const FLYOUT_TITLES = {
    Keyed by sub-view id; missing keys just render label-only, cleanly. */
 const FLYOUT_ICONS = {
   "sub-mk-charts": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="M7.5 14l3-4 3 3 4-6"/></svg>',
+  "sub-mk-flow": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 10.5h15M4 15h8.5M4 19.5h12.5"/></svg>',
   "sub-mk-options": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
   "sub-mk-news": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 8h3v9a2 2 0 0 1-2 2"/><path d="M7.5 9h6M7.5 12h6M7.5 15h4"/></svg>',
   "sub-mk-screener": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></svg>',
@@ -11414,6 +11417,7 @@ const FLYOUT_ICONS = {
    below; these keep the marquee sections crisp). */
 const FLYOUT_DESCS = {
   "sub-mk-charts": "Live price action & drawing tools",
+  "sub-mk-flow": "Real-time order-flow & market depth",
   "sub-mk-options": "Options chain, greeks & strategies",
   "sub-mk-news": "Global headline wall & newsroom",
   "sub-mk-screener": "Scan the whole live universe",
@@ -13157,47 +13161,18 @@ function showOptionsPage() {
   optRefresh();
 }
 
-/* ── MARKET → PRICE & CHART: real embedded EdgeDepth flow runtime ────────
-   Not a lookalike: #of-frame loads /edgedepth/ (the real WASM build of
-   edgedepth-terminal). Its lean companion runs DOM / cumulative depth /
-   tape / CVD; its mutually exclusive Advanced flow surface retains native
-   heatmap, Footprint, TPO, replay and flow studies without exposing a second
-   standard chart-tool suite. This shell provides GREEN TERMINAL
-   navigation, status (gateway reachability + artifact readiness), and layout. */
+/* ── Phase 4: MARKET → ORDER FLOW — hosts the REAL EdgeDepth runtime ─────
+   Not a lookalike: #of-frame loads /edgedepth/ (official WASM build of
+   edgedepth-terminal). DOM / heatmap / tape / footprint all run inside
+   that engine. This shell only provides GREEN TERMINAL navigation, status
+   (gateway reachability + artifact readiness), and layout. */
 const ofState = {
-  poll: 0, ready: false, symbol: "BTC", venue: "hl", bound: false,
-  // `flow` = DOM/depth/tape companion with NO second price chart.
-  // `workspace` = advanced flow takeover (internal route name; also used by RT).
-  surface: "flow", pendingRtCmd: 0,
+  poll: 0, ready: false, symbol: "BTC", bound: false,
   // Timeframe bridge into the engine (Module.__set_chart_timeframe):
-  // only the explicit full workspace has a chart to receive it.
+  // last seconds pushed, and the retry timer that waits for the WASM
+  // runtime to finish booting after a (re)load.
   lastTfSec: 0, tfTimer: 0,
 };
-
-// Two mutually exclusive views of the SAME iframe/WASM client. The default
-// integrated surface spends every pixel on order flow and does not construct
-// an EdgeDepth ChartWidget. Advanced flow is an explicit takeover: the GT
-// chart steps aside for EdgeDepth-native Footprint, TPO, heatmap, replay and
-// RT. Embed flags remove its duplicate price styles, drawings and standard
-// indicators; MARKET → PRICE & CHART remains their sole owner.
-const OF_FLOW_QUERY = [
-  "watchlist=0", // Green Terminal owns symbol navigation
-  "brand=0",     // Green Terminal is the only product identity
-  "host=gt",     // non-visual host bridge
-  "surface=flow",// DOM + cumulative depth + tape; no second price chart
-].join("&");
-const OF_WORKSPACE_QUERY = [
-  "watchlist=0", // GT remains the only market navigator
-  "brand=0",     // one product identity
-  "host=gt",     // command/ack bridge for host-owned RT
-  "rt=0",        // RT is controlled by GT, never duplicated in the native shell
-  "tf=0",        // GT owns timeframe and pushes it through the exact chart API
-  "ctypes=flow", // Footprint / TPO / Flow & Positioning only; no price-style menu
-  "draw=0",      // GT PRICE & CHART is the only drawing-tool owner
-  "ind=flow",    // retain flow studies, remove duplicate standard indicators
-].join("&");
-const ofSurfaceQuery = () => ofState.surface === "workspace"
-  ? OF_WORKSPACE_QUERY : OF_FLOW_QUERY;
 
 // Hyperliquid perps offered as quick picks in the G-Flow symbol switcher.
 // These are the deepest, most-traded coins; the input is a free-text
@@ -13246,10 +13221,7 @@ function ofEngineRoute() {
   try {
     const p = fr && fr.contentWindow && fr.contentWindow.location.pathname;
     const m = p && p.match(/^\/terminal\/(binancef|bybit|hl)\/([^/?#]+)/);
-    if (m) {
-      ofState.venue = m[1];
-      return { venue: m[1], symbol: decodeURIComponent(m[2]) };
-    }
+    if (m) return { venue: m[1], symbol: decodeURIComponent(m[2]) };
   } catch (e) { /* mid-boot / detached frame: no claim */ }
   return null;
 }
@@ -13332,16 +13304,12 @@ function ofStartPortal() {
 }
 
 /* ── G-Flow dock on Price & Chart ──────────────────────────────────────
-   Default surface = flow companion only (DOM + cumulative depth + tape).
-   There is ONE standard price chart: Green Terminal's. Advanced flow/Real-time
-   deliberately takes over the whole stage before the restricted EdgeDepth flow
-   chart exists on screen, so two chart-tool suites are never presented. */
-// workspace + rtForced are transient (never persisted): a new launch always
-// returns to the unified chart + flow-panel workspace the user approved.
-const ofDock = {
-  open: true, w: 0, max: false, tfSync: true, bound: false,
-  rtForced: false, workspace: false,
-};
+   The complete engine (its own chart, DOM, heatmap, tape, footprint,
+   replay, workspaces — everything the WASM terminal ships) docked beside
+   the LSE chart. Open state / width / TF-sync persist per browser. */
+// rtForced: transient (never persisted) — Real-time auto-max is a mode
+// takeover, restored on exit; never a saved user preference.
+const ofDock = { open: true, w: 0, max: false, tfSync: true, bound: false, rtForced: false };
 
 function ofDockLoadPrefs() {
   try {
@@ -13383,99 +13351,37 @@ function ofDockApply() {
     if (cap > 0 && ofDock.w > cap) ofDock.w = cap;
     d.style.flexBasis = ofDock.w + "px";
   }
-  // Advanced flow is always a takeover, never a second chart beside GT.
-  if (ofDock.workspace) ofDock.max = true;
   const stage = $("chart-stage");
-  if (stage) {
-    stage.classList.toggle("ofd-max", !!(ofDock.open && ofDock.max));
-    stage.classList.toggle("ofd-workspace", !!(ofDock.open && ofDock.workspace));
-  }
-  const charts = $("charts");
-  if (charts) charts.classList.toggle("of-workspace", !!(ofDock.open && ofDock.workspace));
+  if (stage) stage.classList.toggle("ofd-max", !!(ofDock.open && ofDock.max));
   const t = $("of-dock-toggle");
   if (t) t.classList.toggle("on", !!ofDock.open);
   const mx = $("ofd-max");
   if (mx) mx.textContent = ofDock.max ? "Restore" : "Max";
-  const ws = $("ofd-page");
-  if (ws) {
-    ws.textContent = ofDock.workspace ? "Flow panels" : "Advanced flow";
-    ws.title = ofDock.workspace
-      ? "Return to the Green Terminal chart with DOM, depth and tape"
-      : "Open native Footprint, TPO, heatmap, replay and flow studies";
-  }
-  const dockRt = $("ofd-rt");
-  if (dockRt) dockRt.hidden = !ofDock.workspace;
-  const dockRtCaret = $("ofd-rt-caret");
-  if (dockRtCaret) {
-    dockRtCaret.hidden = !ofDock.workspace || !$("rt-toggle")?.classList.contains("rt-on");
-  }
   const tf = $("ofd-tfsync");
   if (tf) tf.textContent = "TF: " + (ofDock.tfSync ? "on" : "off");
-
-  const wantedSurface = ofDock.workspace ? "workspace" : "flow";
-  const surfaceChanged = ofState.surface !== wantedSurface;
-  ofState.surface = wantedSurface;
-  if (wantedSurface === "flow") {
-    if (ofState.tfTimer) clearInterval(ofState.tfTimer);
-    ofState.tfTimer = 0;
-    ofState.lastTfSec = 0;
-  }
   ofSyncPortal();
   if (ofDock.open) {
     refreshOrderFlowStatus();
-    // A surface switch and a symbol follow collapse into one target URL in
-    // loadOrderFlowSymbol; assigning an identical src is a no-op.
     ofFollowChartSymbol(state.symbol);
-    if (surfaceChanged) loadOrderFlowSymbol(ofState.symbol);
   }
-  // The GT chart shares the stage in flow mode: kick a resize so it reflows.
+  // The LSE chart shares the stage: kick a resize so it reflows its canvas.
   window.dispatchEvent(new Event("resize"));
 }
 
 function ofBindDock() {
   if (ofDock.bound) return;
   const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
-  on("of-dock-toggle", () => {
-    ofDock.open = !ofDock.open;
-    if (!ofDock.open) ofState.pendingRtCmd = 0;
-    ofDockSavePrefs(); ofDockApply();
-  });
-  on("ofd-close", () => {
-    ofState.pendingRtCmd = 0;
-    ofDock.open = false; ofDockSavePrefs(); ofDockApply();
-  });
+  on("of-dock-toggle", () => { ofDock.open = !ofDock.open; ofDockSavePrefs(); ofDockApply(); });
+  on("ofd-close", () => { ofDock.open = false; ofDockSavePrefs(); ofDockApply(); });
   // A manual Max/Restore is the user's deliberate choice: if Real-time
   // auto-maxed the surface, cancel its auto-restore so exiting RT doesn't
   // fight the user.
-  on("ofd-max", () => {
-    if (ofDock.workspace) return; // Advanced flow owns the stage until exited.
-    ofDock.max = !ofDock.max; ofDock.rtForced = false;
-    ofDockSavePrefs(); ofDockApply();
-  });
+  on("ofd-max", () => { ofDock.max = !ofDock.max; ofDock.rtForced = false; ofDockSavePrefs(); ofDockApply(); });
   on("ofd-tfsync", () => {
     ofDock.tfSync = !ofDock.tfSync; ofDockSavePrefs(); ofDockApply();
     if (ofDock.tfSync) ofPushTimeframe(true);
   });
-  on("ofd-page", () => {
-    if (ofDock.workspace) {
-      ofState.pendingRtCmd = 0;
-      ofDock.workspace = false;
-      ofDock.rtForced = false;
-      ofDock.max = false;
-    } else {
-      ofDock.workspace = true;
-      ofDock.max = true;
-    }
-    ofDockApply();
-  });
-  // The normal PRICE & CHART RT button and this takeover-header button are
-  // two placements of the same host command, never two independent controls.
-  // Exactly one is visible at a time because GT's command bar hides while the
-  // advanced flow surface owns the stage.
-  on("ofd-rt", () => {
-    const hostRt = $("rt-toggle");
-    if (hostRt) hostRt.click();
-  });
+  on("ofd-page", () => { showOrderFlowPage(); });
   // Width drag: the handle rides the dock's left edge.
   const grip = $("ofd-resize");
   if (grip) {
@@ -13559,9 +13465,7 @@ function ofFollowChartSymbol(sym) {
   // Follow onto the venue the ENGINE is on — never force one. Before the
   // engine's route is readable (mid-boot) HL is the boot default.
   const cur = ofEngineRoute();
-  const venue = (cur && OF_VENUES[cur.venue]) ? cur.venue
-    : (OF_VENUES[ofState.venue] ? ofState.venue : "hl");
-  ofState.venue = venue;
+  const venue = (cur && OF_VENUES[cur.venue]) ? cur.venue : "hl";
   if (OF_VENUES[venue].listed(coin)) {
     if (note && note.dataset.kind === "venue") { note.classList.add("hidden"); note.dataset.kind = ""; }
     if (ofActiveHost() && coin !== ofState.symbol) {
@@ -13602,9 +13506,7 @@ function ofTfSeconds(tf) {
 }
 
 function ofPushTimeframe(force) {
-  // The default companion has no ChartWidget by design. Only the explicit
-  // native workspace/Real-time takeover has a timeframe receiver.
-  if (!ofDock.tfSync || ofState.surface !== "workspace") return;
+  if (!ofDock.tfSync) return;
   const fr = $("of-frame");
   if (!fr || !fr.getAttribute("src")) return;
   const sec = ofTfSeconds(state.timeframe);
@@ -13613,11 +13515,6 @@ function ofPushTimeframe(force) {
   if (ofState.tfTimer) { clearInterval(ofState.tfTimer); ofState.tfTimer = 0; }
   let tries = 0;
   const attempt = () => {
-    if (ofState.surface !== "workspace") {
-      if (ofState.tfTimer) clearInterval(ofState.tfTimer);
-      ofState.tfTimer = 0;
-      return;
-    }
     tries += 1;
     let f = null;
     try {
@@ -13651,22 +13548,24 @@ function loadOrderFlowSymbol(sym) {
   const label = $("of-sym");
   if (label) label.textContent = coin;
   const cur = ofEngineRoute();
-  const venue = (cur && OF_VENUES[cur.venue]) ? cur.venue
-    : (OF_VENUES[ofState.venue] ? ofState.venue : "hl");
-  ofState.venue = venue;
+  const venue = (cur && OF_VENUES[cur.venue]) ? cur.venue : "hl";
   const vsym = OF_VENUES[venue].mapCoin(coin);
   const fr = $("of-frame");
   // Only (re)load when the runtime is ready; refreshOrderFlowStatus boots
   // the first frame once artifacts are present.
   if (fr && ofState.ready) {
-    const target = "/terminal/" + venue + "/" + encodeURIComponent(vsym)
-      + "?" + ofSurfaceQuery();
-    // Compare the assigned target too: during navigation contentWindow still
-    // reports the previous route for a moment. This prevents reload loops while
-    // still allowing an in-engine venue switch to become the next target.
-    if (fr.getAttribute("src") !== target) {
-      fr.setAttribute("src", target);
+    if (!cur || cur.symbol !== vsym) {
+      // ?watchlist=0 — GT owns the watchlist (unified market list in the
+      // sidebar); the embedded terminal must not show a second one.
+      // &rt=0 — Real-time now lives natively on the LSE chart (toolbar
+      // toggle), so the dock's duplicate RT mode is removed (migration
+      // rule: port a view, then delete it from the dock). The engine
+      // carries both flags across its own symbol/venue navigations.
+      fr.src = "/terminal/" + venue + "/" + encodeURIComponent(vsym) + "?watchlist=0&rt=0";
+      // Fresh boot: the engine starts on its own default timeframe, so the
+      // bridge pushes the chart's timeframe once the runtime is up.
       ofState.lastTfSec = 0;
+      ofPushTimeframe(true);
     }
   }
   ofUpdateFlowChip(venue, vsym);
@@ -13695,34 +13594,14 @@ function bindOrderFlowControls() {
       if (state.symbol) loadOrderFlowSymbol(state.symbol);
     });
   }
-  const fr = $("of-frame");
-  if (fr) {
-    fr.addEventListener("load", () => {
-      // The command property may be written before WASM is ready: main.cpp
-      // intentionally leaves it queued until a ChartWidget exists. Only
-      // consume our host-side pending copy after the WORKSPACE document loaded;
-      // about:blank and a cancelled flow navigation can also emit `load`.
-      if (ofState.pendingRtCmd) {
-        try {
-          const u = new URL(fr.contentWindow.location.href);
-          const workspaceLoaded = u.searchParams.get("host") === "gt"
-            && u.searchParams.get("surface") !== "flow";
-          if (workspaceLoaded) {
-            fr.contentWindow.__gtRtCmd = ofState.pendingRtCmd;
-            ofState.pendingRtCmd = 0;
-          }
-        } catch (e) { /* next workspace load/status retry owns the command */ }
-      }
-      if (ofState.surface === "workspace") ofPushTimeframe(true);
-    });
-  }
   ofState.bound = true;
 }
 
 function stopOrderFlowHost() {
-  // Only the status poll stops. The one iframe stays mounted when PRICE &
-  // CHART is temporarily hidden, so returning does not create a second engine
-  // or reconnect merely because another Green Terminal section was viewed.
+  // Only the status poll stops. The iframe STAYS mounted (hidden with its
+  // section): its WebSocket and book stay warm, so coming back to ORDER
+  // FLOW is instant instead of a full WASM reboot. (ofState.ready is
+  // write-only; nothing reads it.)
   if (ofState.poll) { clearInterval(ofState.poll); ofState.poll = 0; }
 }
 
@@ -13776,7 +13655,7 @@ async function refreshOrderFlowStatus() {
   // block exchange domains at telecom level (e.g. Binance in Nigeria);
   // the only fix is a VPN on the machine running Green Terminal.
   const curVenue = (engineRoute && OF_VENUES[engineRoute.venue])
-    ? engineRoute.venue : (OF_VENUES[ofState.venue] ? ofState.venue : "hl");
+    ? engineRoute.venue : "hl";
   const vinfo = vch && vch.venues && vch.venues[curVenue];
   // Outranks the listing note ("venue"): an unreachable exchange is the
   // harder truth. When it clears, the next follow event restores listing.
@@ -13804,8 +13683,8 @@ async function refreshOrderFlowStatus() {
       banner.classList.remove("hidden");
       $("of-banner-title").textContent = "G-FLOW RUNTIME NOT LOADED";
       $("of-banner-detail").textContent =
-        "G-Flow hosts the order-flow engine (DOM, cumulative depth, tape, " +
-        "live CVD; heatmap/Footprint in Advanced flow). Missing: " + missing.join(", ") +
+        "G-Flow hosts the order-flow engine (DOM, heatmap, " +
+        "tape, footprint). Missing: " + missing.join(", ") +
         ". Green Terminal loads the built runtime when present; no " +
         "simulated depth is substituted.";
     } else if (vinfo && vinfo.ok === false) {
@@ -13853,22 +13732,33 @@ async function refreshOrderFlowStatus() {
 }
 
 function showOrderFlowPage() {
-  // Compatibility entry point for old menu/actions. G-Flow is no longer a
-  // separate MARKET tab: open Advanced flow as an in-place takeover of
-  // PRICE & CHART. Its embedded route exposes only native flow workflows;
-  // “Flow panels” returns to GT's sole standard chart-tool surface.
-  subrailMark("sub-mk-charts");
-  if ($("orderflow")) $("orderflow").classList.add("hidden");
-  $("charts").classList.remove("hidden");
+  subrailMark("sub-mk-flow");
+  document.title = "G-Flow · Green Terminal";
+  // Same chrome rules as PRICE & CHART (sidebar stays for symbol sync).
+  // NOTE: setSidebar() lives inside setupRail() and is NOT in scope here —
+  // calling it threw and aborted the page swap (ORDER FLOW highlighted but
+  // the chart stayed put). Toggle the class directly like showOptionsPage.
   $("side").classList.remove("hidden");
+  $("optpage").classList.add("hidden");
+  $("scrpage").classList.add("hidden");
+  $("news").classList.add("hidden");
+  $("charts").classList.add("hidden");
+  $("lse-connect").classList.add("hidden");
+  stopOrderFlowHost();
+  $("orderflow").classList.remove("hidden");
   bindOrderFlowControls();
-  ofState.pendingRtCmd = 0;
-  ofDock.open = true;
-  ofDock.workspace = true;
-  ofDock.max = true;
-  ofDock.rtForced = false;
-  ofDockApply();
-  document.title = "Advanced G-Flow · Green Terminal";
+  // Unified symbol: G-Flow follows the main chart automatically — no manual
+  // "Use chart symbol" click. If the charted instrument has real Hyperliquid
+  // depth we retarget the warm engine to it; otherwise the runtime keeps its
+  // last coin (an honest empty state for LSE/FX lands with the docked view).
+  const ofCoin = ofNormalizeSymbol(state.symbol);
+  const ofHasFlow = OF_HL_PRESETS.includes(ofCoin);
+  if (ofHasFlow) ofState.symbol = ofCoin;
+  refreshOrderFlowStatus();
+  if (ofHasFlow && ofState.ready) loadOrderFlowSymbol(ofCoin);
+  if (!ofState.poll) ofState.poll = setInterval(refreshOrderFlowStatus, 5000);
+  // Reuse instrument header for L1 context above the EdgeDepth surface.
+  refreshInstrumentBarSoon();
 }
 
 /* G-Flow boot: restore the dock (open by default — Price & Chart IS the
@@ -13878,7 +13768,6 @@ function showOrderFlowPage() {
 try {
   ofDockLoadPrefs();
   ofBindDock();
-  bindOrderFlowControls();
   ofDockApply();
   ofStartPortal();
 } catch (e) {
@@ -15742,16 +15631,6 @@ function setupRail() {
   const setSidebar = (show) => $("side").classList.toggle("hidden", !show);
   $("rail-markets").onclick = () => {
     setActive("rail-markets");
-    // MARKET itself always means the unified PRICE & CHART surface. An
-    // explicitly expanded native workspace returns to flow panels here rather
-    // than surviving as a hidden second sub-page.
-    if (typeof ofDock !== "undefined" && ofDock.workspace) {
-      ofState.pendingRtCmd = 0;
-      ofDock.workspace = false;
-      ofDock.rtForced = false;
-      ofDock.max = false;
-      ofDockApply();
-    }
     refreshInstrumentBarSoon();
     setTitle();
     setSidebar(true);
@@ -21090,8 +20969,8 @@ try {
       }
     } catch (e) { console.error("goto navigator", e); }
     // Real-time toggle: drives the G-Flow engine's own RT view through the
-    // __gtRtCmd/__gtRtOn bridge. Starting it swaps the flow-only document for
-    // the full native workspace before the RT command is consumed.
+    // __gtRtCmd/__gtRtOn window bridge (the engine's pill is hidden in the
+    // embed; only the button moved up here — see setupRtToggle below).
     try { setupRtToggle(); } catch (e) { console.error("rt toggle", e); }
   } else {
     setTimeout(mountLayoutBtn, 250);
@@ -21099,13 +20978,14 @@ try {
 })();
 
 // ── Real-time toggle (shell side) ──────────────────────────────────────────
-// ONE host button, driving the G-Flow engine's OWN Real-time view. The default
-// flow document has no chart; starting RT navigates the same iframe to Advanced
-// flow and queues the command until its ChartWidget exists. The native RT
-// display remains fully functional without its duplicate native pill.
-// __gtRtCmd (1 = on, 2 = off) is the command and the engine publishes truth in
-// __gtRtOn every frame, so the visible host placement never invents state.
-// RT settings remain available through the caret beside the visible RT button.
+// ONE button, driving the G-Flow engine's OWN Real-time view. The engine's
+// toolbar pill is hidden in the embed (?rt=0) — only the button moved up
+// here; the Real-time display and every line of its code stay inside
+// G-Flow, fully functional. The bridge is two window flags on the engine
+// frame (same origin): __gtRtCmd (1 = on, 2 = off) is the command, and the
+// engine reports truth back in __gtRtOn every frame, so this button can
+// never claim a state the engine is not actually in (honesty doctrine).
+// RT settings: right-click the engine chart while Real-time is on.
 function rtFrameWin() {
   const fr = document.getElementById("of-frame");
   return (fr && fr.contentWindow) || null;
@@ -21116,59 +20996,28 @@ function setupRtToggle() {
   const caret = document.getElementById("rt-caret");
   const paint = (on) => {
     btn.classList.toggle("rt-on", !!on);
-    const dockRt = document.getElementById("ofd-rt");
-    if (dockRt) {
-      dockRt.classList.toggle("rt-on", !!on);
-      dockRt.textContent = on ? "Exit RT" : "Real-time";
-    }
-    const dockCaret = document.getElementById("ofd-rt-caret");
-    if (dockCaret) dockCaret.hidden = !on || !ofDock.workspace;
-    // Mirror engine truth exactly: settings carets exist only while RT is on.
+    // Mirror the engine pill exactly: the settings caret exists only while
+    // Real-time is on.
     if (caret) caret.hidden = !on;
   };
   btn.addEventListener("click", () => {
-    // A second click while the workspace is still booting cancels the queued
-    // takeover instead of scheduling a surprising RT entry later.
-    if (ofState.pendingRtCmd === 1) {
-      ofState.pendingRtCmd = 0;
-      ofDock.workspace = false;
-      ofDock.rtForced = false;
-      ofDock.max = false;
-      ofDockApply();
-      status("Real-time start cancelled");
-      return;
-    }
     const w = rtFrameWin();
     if (!w) { status("order-flow engine not loaded yet"); return; }
     const on = !!w.__gtRtOn;
     if (!on) {
-      // The normal dock has no EdgeDepth price chart. Native Real-time is an
-      // explicit takeover: switch the one iframe to Advanced flow first,
-      // hide GT's price canvas, then leave command 1 queued until the freshly
-      // booted ChartWidget exists. At no point are two price charts visible.
+      // Takeover: Real-time owns the whole chart surface. The chart column
+      // and info rail step aside so NONE of their chrome (drawing toolbar,
+      // instrument chips, stale rail numbers) can paint beside/over the
+      // engine; exiting RT restores exactly what was there. ofDock.rtForced
+      // marks that WE maxed it (never persisted to prefs; a manual
+      // Max/Restore click is the user's choice and cancels the restore).
       try {
-        ofDock.open = true;
-        ofDock.workspace = true;
-        ofDock.max = true;
-        ofDock.rtForced = true;
-        ofState.pendingRtCmd = 1;
-        ofDockApply();
-        // If the workspace was already loaded there may be no iframe load
-        // event; post immediately as well. A reload safely discards this copy
-        // and the pending command is posted by the load handler.
-        const next = rtFrameWin();
-        if (next) {
-          next.__gtRtCmd = 1;
-          try {
-            const u = new URL(next.location.href);
-            if (u.searchParams.get("host") === "gt"
-                && u.searchParams.get("surface") !== "flow") {
-              ofState.pendingRtCmd = 0;
-            }
-          } catch (e) { /* navigation in flight: load handler owns the command */ }
-        }
+        let dirty = false;
+        if (!ofDock.open) { ofDock.open = true; dirty = true; }
+        if (!ofDock.max) { ofDock.max = true; ofDock.rtForced = true; dirty = true; }
+        if (dirty) ofDockApply();
       } catch (e) { console.error("rt dock open", e); }
-      return;
+      w.__gtRtCmd = 1;
     } else {
       // RT is on. If its surface was minimized away (drag-to-minimize
       // collapsed the dock), the lit button brings the flow view back
@@ -21231,27 +21080,22 @@ function setupRtToggle() {
     menu.hidden = true;
     clearInterval(menuTimer);
   };
-  if (menu) {
-    const openMenu = (ev, anchor) => {
+  if (caret && menu) {
+    caret.addEventListener("click", (ev) => {
       ev.stopPropagation();
       if (!menu.hidden) { closeMenu(); return; }
       const w = rtFrameWin();
       if (!w || !w.__gtRtOn) return;
       renderMenu();
-      // Pin under whichever placement is visible: PRICE & CHART's toolbar or
-      // Advanced flow's takeover header. Both drive this same settings menu.
-      const r = anchor.getBoundingClientRect();
+      // Pin directly under the Real-time button (fixed: the toolbar clips
+      // absolutely-positioned children, so anchor against the viewport).
+      const r = document.getElementById("rt-slot").getBoundingClientRect();
       menu.style.top = Math.round(r.bottom + 7) + "px";
       menu.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 300))) + "px";
       menu.hidden = false;
       // Engine applies commands next frame; keep the painted state honest.
       menuTimer = setInterval(renderMenu, 300);
-    };
-    if (caret) {
-      caret.addEventListener("click", (ev) => openMenu(ev, document.getElementById("rt-slot")));
-    }
-    const dockCaret = document.getElementById("ofd-rt-caret");
-    if (dockCaret) dockCaret.addEventListener("click", (ev) => openMenu(ev, dockCaret));
+    });
     menu.addEventListener("click", (ev) => {
       ev.stopPropagation();
       const row = ev.target.closest(".rtm-row[data-c]");
@@ -21305,16 +21149,9 @@ function setupRtToggle() {
     const on = w ? !!w.__gtRtOn : false;
     paint(on);
     if (on && !wasOn) {
-      if (!ofDock.max || !ofDock.workspace) {
-        ofDock.workspace = true;
-        ofDock.max = true;
-        ofDock.rtForced = true;
-        ofDockApply();
-      }
+      if (!ofDock.max) { ofDock.max = true; ofDock.rtForced = true; ofDockApply(); }
     } else if (!on && wasOn && ofDock.rtForced) {
-      // Return from native RT to the approved one-chart + flow-panels view.
       ofDock.rtForced = false;
-      ofDock.workspace = false;
       ofDock.max = false;
       ofDockApply();
     }

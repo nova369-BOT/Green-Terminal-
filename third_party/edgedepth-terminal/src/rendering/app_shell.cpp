@@ -726,12 +726,9 @@ namespace {
         // the host drives it through the __gtRtCmd bridge in main_loop()
         // (main.cpp), which runs every frame with or without this toolbar.
         const bool rt_hidden = url_rt_disabled();
-        const bool tf_hidden = url_timeframe_disabled();
         const bool compact = ImGui::GetContentRegionAvail().x < 760.0f;
-        const std::span<const int> visible_favs = tf_hidden
-            ? std::span<const int>{}
-            : compact ? std::span<const int>(&current_tf, 1)
-                      : std::span<const int>(g_tf_favs);
+        const std::span<const int> visible_favs = compact
+            ? std::span<const int>(&current_tf, 1) : std::span<const int>(g_tf_favs);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImGui::PushFont(Fonts::ui());
         const float h = 30.0f, padx = 11.0f, caretw = 30.0f;
@@ -742,7 +739,7 @@ namespace {
         const float rt_label_w = ImGui::CalcTextSize(kRtLabel).x;
         const float rt_trail_w = rt_locked ? Theme::pro_tag_size().x + 8.0f : realtime ? 16.0f : 0.0f;
         const float rt_w = rt_padx + rt_dot + rt_dot_gap + rt_label_w + rt_trail_w + rt_padx;
-        float total = tf_hidden ? 0.0f : caretw + 1.0f;
+        float total = caretw + 1.0f;
         for (int sec : visible_favs) total += ImGui::CalcTextSize(tf_label(sec)).x + padx * 2.0f;
         if (!rt_hidden) total += rt_gap + rt_w;
         const ImVec2 p0 = ImGui::GetCursorScreenPos();
@@ -775,28 +772,23 @@ namespace {
             dl->AddText(ImVec2(x + (w - ts.x) * 0.5f, p0.y + (h - ts.y) * 0.5f), u32(fav_col), lbl);
             x += w;
         }
-        // caret cell - bg-2, line-2 left hairline, accent caret (2c).
-        // In a Green Terminal embed the host owns timeframe selection, so this
-        // visible cell hides while the non-visual RT-settings bridge below
-        // keeps running.
-        if (!tf_hidden) {
-            const bool menu_open = ImGui::IsPopupOpen("##tf_menu");
-            ImGui::SetCursorScreenPos(ImVec2(x, p0.y));
-            if (ImGui::InvisibleButton("##tf_caret", ImVec2(caretw, h))) ImGui::OpenPopup("##tf_menu");
-            const bool chov = ImGui::IsItemHovered();
-            if (chov) Theme::tooltip(realtime
-                ? "All timeframes and favourites. Picking one leaves real-time mode and shows candles."
-                : "All timeframes and favourites.");
-            if (chov) dl->AddRectFilled(ImVec2(x + 1, p0.y + 1),
-                ImVec2(x + caretw - 1, p0.y + h - 1), u32(Tokens::HOVER));
-            {
-                const float cx = x + caretw * 0.5f, cy = p0.y + h * 0.5f;
-                const ImU32 cc = u32(Tokens::TX2);
-                if (menu_open) dl->AddTriangleFilled(ImVec2(cx - 4, cy + 2), ImVec2(cx + 4, cy + 2), ImVec2(cx, cy - 3), cc);
-                else           dl->AddTriangleFilled(ImVec2(cx - 4, cy - 2), ImVec2(cx + 4, cy - 2), ImVec2(cx, cy + 3), cc);
-            }
-            x += caretw + 1.0f;
+        // caret cell - bg-2, line-2 left hairline, accent caret (2c)
+        const bool menu_open = ImGui::IsPopupOpen("##tf_menu");
+        ImGui::SetCursorScreenPos(ImVec2(x, p0.y));
+        if (ImGui::InvisibleButton("##tf_caret", ImVec2(caretw, h))) ImGui::OpenPopup("##tf_menu");
+        const bool chov = ImGui::IsItemHovered();
+        if (chov) Theme::tooltip(realtime
+            ? "All timeframes and favourites. Picking one leaves real-time mode and shows candles."
+            : "All timeframes and favourites.");
+        if (chov) dl->AddRectFilled(ImVec2(x + 1, p0.y + 1),
+            ImVec2(x + caretw - 1, p0.y + h - 1), u32(Tokens::HOVER));
+        {
+            const float cx = x + caretw * 0.5f, cy = p0.y + h * 0.5f;
+            const ImU32 cc = u32(Tokens::TX2);
+            if (menu_open) dl->AddTriangleFilled(ImVec2(cx - 4, cy + 2), ImVec2(cx + 4, cy + 2), ImVec2(cx, cy - 3), cc);
+            else           dl->AddTriangleFilled(ImVec2(cx - 4, cy - 2), ImVec2(cx + 4, cy - 2), ImVec2(cx, cy + 3), cc);
         }
+        x += caretw + 1.0f;
 
         // ── Real-time pill ────────────────────────────────────────────────
         // on     = accent-soft fill, accent border, accent text, filled dot
@@ -863,14 +855,13 @@ namespace {
             ImGui::OpenPopup("##rt_settings");
         ImGui::PopFont();
 
-        // Layout anchor so the next SameLine item flows from the bar's right
-        // edge. A fully hidden control must reserve no phantom toolbar width.
+        // layout anchor so the next SameLine item flows from the bar's right edge
         ImGui::SetCursorScreenPos(p0);
-        if (total > 0.0f) ImGui::Dummy(ImVec2(total, h));
+        ImGui::Dummy(ImVec2(total, h));
 
         // dropdown, pinned under the bar
         ImGui::SetNextWindowPos(ImVec2(p0.x, p0.y + h + 5.0f), ImGuiCond_Appearing);
-        if (!tf_hidden) render_tf_menu(chart);
+        render_tf_menu(chart);
         // RT settings, pinned under the pill
         ImGui::SetNextWindowPos(ImVec2(rx, p0.y + h + 5.0f), ImGuiCond_Appearing);
         ImGui::SetNextWindowSizeConstraints(ImVec2(300, 0), ImVec2(340, ImGui::GetMainViewport()->WorkSize.y - 80));
@@ -906,64 +897,61 @@ namespace {
 
         const float cy = (Layout::TOPBAR_H - 30.0f) * 0.5f;
 
-        if (!url_brand_disabled()) {
-            // ── brand - brass mark + Green Terminal wordmark + G-FLOW pill. ──
-            const float mark_h = 12.0f;                            // streak-block height (~= wordmark)
-            const float mark_w = 272.0f * mark_h / 104.0f;         // full mark render width (~31px)
-            const float gap1 = 9.0f, gap2 = 12.0f;                 // mark->word, word->pill
-            ImGui::PushFont(Fonts::ui_semibold());
-            const float word_w  = ImGui::CalcTextSize("Green Terminal").x;
-            const float word_fs = ImGui::GetFontSize();
-            ImGui::PopFont();
-            // G-FLOW pill - Inter SemiBold micro-label face with 0.06em tracking.
-            static const char* const kBeta = "G-FLOW";
-            ImGui::PushFont(Fonts::label());
-            ImFont*      beta_font = ImGui::GetFont();
-            const float  beta_fs   = ImGui::GetFontSize();
-            const ImVec2 beta_ts0  = ImGui::CalcTextSize(kBeta);
-            ImGui::PopFont();
-            const float beta_track  = beta_fs * 0.06f;              // 0.06em letter-spacing (web .beta)
-            const float beta_text_w = beta_ts0.x + beta_track * static_cast<float>(strlen(kBeta) - 1);
-            const ImVec2 beta_ts(beta_text_w, beta_ts0.y);
-            const float beta_padx = 6.0f, beta_pady = 2.0f;
-            const float beta_w = beta_ts.x + beta_padx * 2.0f;
-            const float beta_h = beta_ts.y + beta_pady * 2.0f;
-            const float brand_w = mark_w + gap1 + word_w + gap2 + beta_w;
+        // ── brand - brass mark + Green Terminal wordmark + G-FLOW pill. ──
+        const float mark_h = 12.0f;                            // streak-block height (~= wordmark)
+        const float mark_w = 272.0f * mark_h / 104.0f;         // full mark render width (~31px)
+        const float gap1 = 9.0f, gap2 = 12.0f;                 // mark->word, word->pill
+        ImGui::PushFont(Fonts::ui_semibold());
+        const float word_w  = ImGui::CalcTextSize("Green Terminal").x;
+        const float word_fs = ImGui::GetFontSize();
+        ImGui::PopFont();
+        // G-FLOW pill - Inter SemiBold micro-label face with 0.06em tracking.
+        static const char* const kBeta = "G-FLOW";
+        ImGui::PushFont(Fonts::label());
+        ImFont*      beta_font = ImGui::GetFont();
+        const float  beta_fs   = ImGui::GetFontSize();
+        const ImVec2 beta_ts0  = ImGui::CalcTextSize(kBeta);
+        ImGui::PopFont();
+        const float beta_track  = beta_fs * 0.06f;              // 0.06em letter-spacing (web .beta)
+        const float beta_text_w = beta_ts0.x + beta_track * static_cast<float>(strlen(kBeta) - 1);
+        const ImVec2 beta_ts(beta_text_w, beta_ts0.y);
+        const float beta_padx = 6.0f, beta_pady = 2.0f;
+        const float beta_w = beta_ts.x + beta_padx * 2.0f;
+        const float beta_h = beta_ts.y + beta_pady * 2.0f;
+        const float brand_w = mark_w + gap1 + word_w + gap2 + beta_w;
 
-            ImGui::SetCursorPos(ImVec2(12.0f, cy));
-            const ImVec2 bp = ImGui::GetCursorScreenPos();
-            const bool brand_click = ImGui::InvisibleButton("##brand_home", ImVec2(brand_w, 30.0f));
-            if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-            const float mid = bp.y + 15.0f;                        // vertical centre of the band
+        ImGui::SetCursorPos(ImVec2(12.0f, cy));
+        const ImVec2 bp = ImGui::GetCursorScreenPos();
+        const bool brand_click = ImGui::InvisibleButton("##brand_home", ImVec2(brand_w, 30.0f));
+        if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        const float mid = bp.y + 15.0f;                        // vertical centre of the band
 
-            draw_brand_mark(dl, ImVec2(bp.x, mid - mark_h * 0.5f), mark_h);
+        draw_brand_mark(dl, ImVec2(bp.x, mid - mark_h * 0.5f), mark_h);
 
-            ImGui::PushFont(Fonts::ui_semibold());
-            dl->AddText(ImVec2(bp.x + mark_w + gap1, mid - word_fs * 0.5f), u32(Tokens::TX1), "Green Terminal");
-            ImGui::PopFont();
+        ImGui::PushFont(Fonts::ui_semibold());
+        dl->AddText(ImVec2(bp.x + mark_w + gap1, mid - word_fs * 0.5f), u32(Tokens::TX1), "Green Terminal");
+        ImGui::PopFont();
 
-            const float beta_x = bp.x + mark_w + gap1 + word_w + gap2;
-            draw_tracked_text(dl, beta_font, beta_fs,
-                              ImVec2(beta_x + beta_padx, mid - beta_ts.y * 0.5f),
-                              u32(Tokens::LOGO_TX), kBeta, beta_track);
+        const float beta_x = bp.x + mark_w + gap1 + word_w + gap2;
+        draw_tracked_text(dl, beta_font, beta_fs,
+                          ImVec2(beta_x + beta_padx, mid - beta_ts.y * 0.5f),
+                          u32(Tokens::LOGO_TX), kBeta, beta_track);
 
-            if (brand_click) {
+        if (brand_click) {
 #ifdef __EMSCRIPTEN__
-                EM_ASM({ window.location.href = "/"; });
+            EM_ASM({ window.location.href = "/"; });
 #endif
-            }
-
-            // divider
-            ImGui::SameLine(0.0f, 14.0f);
-            {
-                const ImVec2 p = ImGui::GetCursorScreenPos();
-                dl->AddLine(ImVec2(p.x, vp->Pos.y + 12.0f),
-                            ImVec2(p.x, vp->Pos.y + Layout::TOPBAR_H - 12.0f),
-                            u32(Tokens::BD2));
-            }
-            ImGui::SameLine(0.0f, 14.0f);
-
         }
+
+        // divider
+        ImGui::SameLine(0.0f, 14.0f);
+        {
+            const ImVec2 p = ImGui::GetCursorScreenPos();
+            dl->AddLine(ImVec2(p.x, vp->Pos.y + 12.0f),
+                        ImVec2(p.x, vp->Pos.y + Layout::TOPBAR_H - 12.0f),
+                        u32(Tokens::BD2));
+        }
+        ImGui::SameLine(0.0f, 14.0f);
 
         // ── symbol pill ──────────────────────────────────────────────────────
         ImGui::SetCursorPosY(cy);
@@ -1032,14 +1020,10 @@ namespace {
         }
         rx -= igap;
 
-        // Drawing tools - pencil + dropdown (mirrors the left rail). Green
-        // Terminal embeds suppress this duplicate entry; the drawing manager
-        // and any existing drawings remain alive.
-        if (!url_drawing_controls_disabled()) {
-            rx -= ico; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
-            if (ctx.drawings) drawing::render_topbar_button(ctx.drawing_mgr());
-            rx -= igap;
-        }
+        // drawing tools - pencil + dropdown (mirrors the left rail)
+        rx -= ico; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
+        if (ctx.drawings) drawing::render_topbar_button(ctx.drawing_mgr());
+        rx -= igap;
 
         // theme icon → Tweaks panel (accent · candles · density · heat)
         rx -= ico; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
@@ -1061,13 +1045,11 @@ namespace {
         //  beside the layers control, so it renders in EVERY chrome including the
         //  embedded /demo + event replays where this native topbar is suppressed.)
 
-        // Standalone layout/workspace menu. Green Terminal owns hosted
-        // layouts, so Advanced flow exposes no duplicate Workspace button.
-        if (!url_green_terminal_host()) {
-            rx -= default_w; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
-            if (tb_button("Workspace", default_w)) ImGui::OpenPopup("##tb_layout");
-            vdiv();
-        }
+        // Default (layout) menu
+        rx -= default_w; ImGui::SetCursorScreenPos(ImVec2(rx, icy));
+        if (tb_button("Workspace", default_w)) ImGui::OpenPopup("##tb_layout");
+
+        vdiv();
 
         // Live <-> Replay toggle (functional)
         rx -= seg_w;
@@ -1123,13 +1105,8 @@ namespace {
         {
             static bool show_demo = false, show_metrics = false;
             if (Theme::begin_popup("##tb_layout")) {
-                // Green Terminal owns hosted layouts. Keep EdgeDepth workspace
-                // persistence and layout controls complete in standalone, but
-                // do not expose a second layout system inside Advanced flow.
-                if (!url_green_terminal_host()) {
-                    if (ImGui::MenuItem("Reset Layout")) workspace::reset_default();
-                    workspace::menu();
-                }
+                if (ImGui::MenuItem("Reset Layout")) workspace::reset_default();
+                workspace::menu();
                 ImGui::MenuItem("Market Header", nullptr, &g_market_header_open);
                 if (ImGui::BeginMenu("Chart shortcuts")) {
                     ImGui::TextUnformatted("Shift + drag: select a move");

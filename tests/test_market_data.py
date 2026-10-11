@@ -340,50 +340,32 @@ def test_edgedepth_artifacts_endpoint(client: TestClient):
 
 
 def test_orderflow_workspace_markers():
-    """G-Flow is a real flow companion inside MARKET → PRICE & CHART."""
+    """MARKET → G-FLOW section hosts the real order-flow iframe."""
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     html = (root / "lse_terminal/ui/static/index.html").read_text()
     app = (root / "lse_terminal/ui/static/app.js").read_text()
-    assert 'id="orderflow"' in html  # inert compatibility host, never a sub-tab
+    assert 'id="orderflow"' in html
     assert 'id="of-frame"' in html
     assert "GT DATA ENGINE" in html
     assert "showOrderFlowPage" in app
-    assert "sub-mk-flow" not in app
-    assert '"surface=flow"' in app
-    assert '"host=gt"' in app
-    # Hosted Advanced flow keeps native flow workflows but never exposes a
-    # second standard chart-tool suite; standalone EdgeDepth is unaffected.
-    for flag in ('"rt=0"', '"tf=0"', '"ctypes=flow"', '"draw=0"', '"ind=flow"'):
-        assert flag in app, f"advanced flow missing embed contract {flag}"
-    assert 'id="ofd-page"' in html and "Advanced flow" in html
-    assert 'id="ofd-rt"' in html and 'id="ofd-rt-caret"' in html
-    native = root / "third_party/edgedepth-terminal/src"
-    chart = (native / "ui/chart_widget.cpp").read_text()
-    settings = (native / "ui/workspace_settings.cpp").read_text()
-    workspaces = (native / "core/workspace_manager.cpp").read_text()
-    shell = (native / "rendering/app_shell.cpp").read_text()
-    # Restriction flags govern state/restoration as well as hiding menu rows.
-    assert "apply_chart_type(ChartType::FootprintCluster)" in chart
-    assert "flow_studies_only" in settings and 'name == "MACD"' in settings
-    assert "edgedepth.workspaces.gt.v1" in workspaces
-    assert "if (!url_green_terminal_host())" in shell
-    # No lookalike DOM ladder or second iframe in the shell: real flow widgets
-    # and the mutually exclusive Advanced-flow surface share one engine frame.
+    assert "sub-mk-flow" in app
+    # No lookalike DOM ladder in the shell (real engine lives in the iframe).
     assert "of-ladder" not in html
-    assert html.count('id="of-frame"') == 1
+    # Unified chart: the single engine iframe lives in the body-level portal
+    # and is surfaced BOTH on the full G-Flow page (#of-stage host) and in
+    # the Price & Chart dock (#of-dock / #ofd-stage host) — one engine, one
+    # socket, no duplicate books.
     assert 'id="of-portal"' in html
     assert 'id="of-dock"' in html
     assert 'id="ofd-stage"' in html
     assert 'id="of-dock-toggle"' in html
-    assert 'id="ofd-page"' in html
     for marker in ("ofActiveHost", "ofSyncPortal", "ofEngineRoute",
                    "ofUpdateFlowChip", "ofFollowChartSymbol",
                    "ofPushTimeframe"):
-        assert marker in app, f"missing one-chart flow glue: {marker}"
-    # Vendored authoritative EdgeDepth source and real flow components present.
+        assert marker in app, f"missing unified-chart glue: {marker}"
+    # Vendored authoritative EdgeDepth source present.
     assert (root / "third_party/edgedepth-terminal/src/ui/dom_widget.cpp").is_file()
-    assert (root / "third_party/edgedepth-terminal/src/ui/cvd_widget.cpp").is_file()
     assert (root / "third_party/edgedepth-terminal/src/core/heatmap_manager.cpp").is_file()
     assert (root / "third_party/edgedepth-terminal/protos/messages.proto").is_file()
     assert (root / "third_party/edgedepth-gateway/proto/edgedepth.proto").is_file()
@@ -416,8 +398,5 @@ def test_gateway_serves_all_three_venues():
     assert "exchange=hl" not in app
     for venue_key in ("hl:", "binancef:", "bybit:"):
         assert venue_key in app, f"OF_VENUES missing {venue_key}"
-    # The last engine venue survives the short unreadable-route window during a
-    # same-iframe surface navigation; a fresh boot still starts at hl/BTC.
-    assert 'venue: "hl"' in app
-    assert 'OF_VENUES[ofState.venue]' in app
+    assert 'cur.venue : "hl"' in app  # boot default before a route exists
     assert 'symbol: "BTC"' in app

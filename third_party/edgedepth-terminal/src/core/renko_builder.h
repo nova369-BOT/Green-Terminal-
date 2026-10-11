@@ -1,8 +1,7 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <vector>
+#include <cstdint>
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RenkoBuilder - price-driven bricks from the candle CLOSE series

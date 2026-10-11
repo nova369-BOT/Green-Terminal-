@@ -20,20 +20,13 @@
 #include <cstdlib>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-// Hosted Advanced flow gets its own workspace namespace. Its deliberately
-// restricted chart type, studies and chrome must never rewrite the user's
-// standalone EdgeDepth workspace (or restore standalone-only standard tools).
 EM_JS(char*, workspace_read, (), {
-    try { const hosted = new URLSearchParams(location.search).get('host') === 'gt';
-          const key = hosted ? 'edgedepth.workspaces.gt.v1' : 'edgedepth.workspaces.v1';
-          const value = localStorage.getItem(key) || '';
+    try { const value = localStorage.getItem('edgedepth.workspaces.v1') || '';
           if (value.length > 4194304) return 0;
           return stringToNewUTF8(value); } catch (_) { return 0; }
 });
 EM_JS(int, workspace_write, (const char* text), {
-    try { const hosted = new URLSearchParams(location.search).get('host') === 'gt';
-          const key = hosted ? 'edgedepth.workspaces.gt.v1' : 'edgedepth.workspaces.v1';
-          localStorage.setItem(key, UTF8ToString(text)); return 1; }
+    try { localStorage.setItem('edgedepth.workspaces.v1', UTF8ToString(text)); return 1; }
     catch (_) { return 0; }
 });
 // This tab's own layout. sessionStorage is per tab, survives a reload and a
@@ -41,16 +34,12 @@ EM_JS(int, workspace_write, (const char* text), {
 // terminal windows keep their own layouts while the shared library's
 // "current" stays the default a brand-new window opens with.
 EM_JS(char*, workspace_read_tab, (), {
-    try { const hosted = new URLSearchParams(location.search).get('host') === 'gt';
-          const key = hosted ? 'edgedepth.workspace.gt.tab.v1' : 'edgedepth.workspace.tab.v1';
-          const value = sessionStorage.getItem(key) || '';
+    try { const value = sessionStorage.getItem('edgedepth.workspace.tab.v1') || '';
           if (value.length > 4194304) return 0;
           return stringToNewUTF8(value); } catch (_) { return 0; }
 });
 EM_JS(void, workspace_write_tab, (const char* text), {
-    try { const hosted = new URLSearchParams(location.search).get('host') === 'gt';
-          const key = hosted ? 'edgedepth.workspace.gt.tab.v1' : 'edgedepth.workspace.tab.v1';
-          sessionStorage.setItem(key, UTF8ToString(text)); } catch (_) {}
+    try { sessionStorage.setItem('edgedepth.workspace.tab.v1', UTF8ToString(text)); } catch (_) {}
 });
 EM_JS(void, workspace_export, (const char* text), {
     const url = URL.createObjectURL(new Blob([UTF8ToString(text)], {type:'application/json'}));
@@ -206,13 +195,11 @@ void apply(const Json& doc) {
     else LayoutManager::reset_layout_for(active_pair.exchange,active_pair.symbol);
 }
 Json preset(int index) {
-    const bool flow_only = url_flow_chart_types_only();
-    Json settings = {{"chart_type",(flow_only || index == 0) ? 1 : 0},{"timeframe",60},
+    Json settings = {{"chart_type",index == 0 ? 1 : 0},{"timeframe",60},
         {"rt_mode",index == 1},{"liq_dense_field",index == 3},{"liq_profile_enabled",false},
         {"heatmap_enabled",index == 1},{"indicators",Json::array()}};
     if (index != 1) {
-        if (!url_standard_indicators_disabled())
-            settings["indicators"].push_back({{"name","Vol (USDT)"}});
+        settings["indicators"].push_back({{"name","Vol (USDT)"}});
         settings["indicators"].push_back({{"name","CVD"}});
     }
     if (index == 0) settings["footprint"] = {{"comparison",1},{"stacked_levels",3}};
@@ -285,9 +272,7 @@ void tick(std::vector<std::unique_ptr<Widget>>& widgets, const AppContext& ctx,
             window.addEventListener('pagehide', () => _workspace_flush());
             document.addEventListener('visibilitychange', () => { if (document.hidden) _workspace_flush(); });
             window.addEventListener('storage', (event) => {
-                const hosted = new URLSearchParams(location.search).get('host') === 'gt';
-                const key = hosted ? 'edgedepth.workspaces.gt.v1' : 'edgedepth.workspaces.v1';
-                if (event.key === key) _workspace_storage_changed();
+                if (event.key === 'edgedepth.workspaces.v1') _workspace_storage_changed();
             });
         });
 #endif

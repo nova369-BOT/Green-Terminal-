@@ -69,11 +69,7 @@ public:
     void subscribe_stats(const StreamKey& key, StreamHandler<Terminal::Stat> handler);
     void subscribe_liquidations(const StreamKey& key, StreamHandler<Terminal::Liquidation> handler);
     void subscribe_patterns(const StreamKey& key, StreamHandler<Terminal::PatternOverlay> handler);
-    // Orderbook data is applied centrally by OrderbookManager, so consumers do
-    // not need callbacks. They still register identity here: DOM and cumulative
-    // Depth may share one key, and closing either must not release the other's
-    // server subscription.
-    void subscribe_orderbook(const StreamKey& key, void* owner);
+    void subscribe_orderbook(const StreamKey& key); // , StreamHandler<Terminal::Orderbook> handler
 
     void unsubscribe_trades(const StreamKey &key, void *widget_ptr);
     // Removes both single-candle and historical-batch callbacks for the key.

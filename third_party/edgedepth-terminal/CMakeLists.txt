@@ -358,7 +358,6 @@ set(PROJECT_SRC
         src/core/logo_manager.cpp
         src/core/message_context.h
         src/core/trade_at_price.h
-        src/core/live_cvd.h
         src/core/drawing_manager.h
         src/core/drawing_manager.cpp
 
@@ -406,8 +405,6 @@ set(PROJECT_SRC
         src/ui/price_profile_renderer.cpp
         src/ui/trades_widget.h
         src/ui/trades_widget.cpp
-        src/ui/cvd_widget.h
-        src/ui/cvd_widget.cpp
         src/ui/watchlist_widget.h
         src/ui/watchlist_widget.cpp
         src/ui/orderbook_widget.h
